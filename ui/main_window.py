@@ -1,11 +1,12 @@
 # ui/main_window.py
 from __future__ import annotations
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot, QThreadPool
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QToolBar, QPushButton, QLabel, QStatusBar,
+    QToolBar, QPushButton, QLabel, QStatusBar,
     QApplication, QDockWidget
 )
 
@@ -16,7 +17,6 @@ from ui.editor.stage_view import StageView
 from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
 from ui.workers.generator_worker import GeneratorWorker
-from ui.viewer3d.quick_3d_widget import Quick3DWidget
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
 
@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("OpenTDS — Stage Generator")
-        self.resize(1600, 950)
+        self.resize(1200, 850)
 
         self._stage = Stage(name="Stage IPSC", width=20.0, depth=15.0)
         self._setup_ui()
@@ -52,11 +52,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Splitter 2D | 3D
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(splitter)
-
-        # Pannello 2D
+        # Pannello editor 2D (occupa tutto)
         panel_2d = QWidget()
         v2 = QVBoxLayout(panel_2d)
         v2.setContentsMargins(8, 8, 8, 8)
@@ -70,19 +66,7 @@ class MainWindow(QMainWindow):
         self._view = StageView(self._scene)
         v2.addWidget(self._view)
 
-        splitter.addWidget(panel_2d)
-
-        # Pannello 3D
-        panel_3d = QWidget()
-        v3 = QVBoxLayout(panel_3d)
-        v3.setContentsMargins(0, 0, 0, 0)
-        v3.setSpacing(0)
-
-        self._viewer3d = Quick3DWidget(self._stage)
-        v3.addWidget(self._viewer3d)
-
-        splitter.addWidget(panel_3d)
-        splitter.setSizes([800, 800])
+        layout.addWidget(panel_2d)
 
         # Property dock
         self._prop_dock = PropertyDock(self)
@@ -131,19 +115,19 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        btn_del = QPushButton("🗑 Elimina")
+        btn_del = QPushButton("\U0001f5d1 Elimina")
         btn_del.setToolTip("Elimina oggetti selezionati")
         btn_del.clicked.connect(self._scene.push_remove_selected)
         toolbar.addWidget(btn_del)
 
         toolbar.addSeparator()
 
-        btn_undo = QPushButton("↩️ Undo")
+        btn_undo = QPushButton("\u21a9\ufe0f Undo")
         btn_undo.setToolTip("Annulla (Ctrl+Z)")
         btn_undo.clicked.connect(self._scene.undo_stack.undo)
         toolbar.addWidget(btn_undo)
 
-        btn_redo = QPushButton("↪️ Redo")
+        btn_redo = QPushButton("\u21aa\ufe0f Redo")
         btn_redo.setToolTip("Ripeti (Ctrl+Shift+Z)")
         btn_redo.clicked.connect(self._scene.undo_stack.redo)
         toolbar.addWidget(btn_redo)
@@ -154,23 +138,23 @@ class MainWindow(QMainWindow):
 
         file_menu = menubar.addMenu("&File")
 
-        save_action = QAction("&Salva Stage…", self)
+        save_action = QAction("&Salva Stage\u2026", self)
         save_action.setShortcut(QKeySequence("Ctrl+S"))
         save_action.triggered.connect(self._on_save)
         file_menu.addAction(save_action)
 
-        open_action = QAction("&Apri Stage…", self)
+        open_action = QAction("&Apri Stage\u2026", self)
         open_action.setShortcut(QKeySequence("Ctrl+O"))
         open_action.triggered.connect(self._on_open)
         file_menu.addAction(open_action)
 
         file_menu.addSeparator()
 
-        export_png_action = QAction("Esporta &PNG…", self)
+        export_png_action = QAction("Esporta &PNG\u2026", self)
         export_png_action.triggered.connect(self._on_export_png)
         file_menu.addAction(export_png_action)
 
-        export_pdf_action = QAction("Esporta &PDF…", self)
+        export_pdf_action = QAction("Esporta &PDF\u2026", self)
         export_pdf_action.triggered.connect(self._on_export_pdf)
         file_menu.addAction(export_pdf_action)
 
@@ -201,7 +185,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(del_action)
 
         gen_menu = menubar.addMenu("&Genera")
-        gen_action = QAction("&Genera Stage IPSC…", self)
+        gen_action = QAction("&Genera Stage IPSC\u2026", self)
         gen_action.setShortcut(QKeySequence("Ctrl+G"))
         gen_action.triggered.connect(self._gen_dock.show)
         gen_menu.addAction(gen_action)
@@ -210,7 +194,7 @@ class MainWindow(QMainWindow):
         self._status = QStatusBar()
         self.setStatusBar(self._status)
         self._status.showMessage(
-            "Pronto — zoom rotella | drag oggetti | Ctrl+Z undo | seleziona per proprietà"
+            "Pronto \u2014 zoom rotella | drag oggetti | Ctrl+Z undo | seleziona per propriet\u00e0"
         )
 
     def _connect_signals(self):
@@ -222,24 +206,21 @@ class MainWindow(QMainWindow):
         self._gen_panel.generateRequested.connect(self._on_generate_requested)
         self._gen_panel.stopRequested.connect(self._on_stop_requested)
 
-    @Slot()
-    def _on_item_added(self):
-        self._viewer3d.refresh()
+    @Slot(StageItemWrapper)
+    def _on_item_added(self, _wrapper):
+        pass
 
     @Slot(int)
     def _on_item_updated(self, item_id: int):
-        # Se l'item aggiornato è quello selezionato, refresh dock
         wrapper = self._prop_dock._wrapper
         if wrapper and wrapper.item.id == item_id:
             self._prop_dock.set_item(wrapper)
-        self._viewer3d.refresh()
 
     @Slot(int)
     def _on_item_removed(self, item_id: int):
         wrapper = self._prop_dock._wrapper
         if wrapper and wrapper.item.id == item_id:
             self._prop_dock.set_item(None)
-        self._viewer3d.refresh()
 
     @Slot(int, dict)
     def _on_property_changed(self, item_id: int, props: dict):
@@ -276,7 +257,7 @@ class MainWindow(QMainWindow):
 
     @Slot(GeneratorConfig)
     def _on_generate_requested(self, config: GeneratorConfig):
-        self._status.showMessage("Generazione stage in corso…")
+        self._status.showMessage("Generazione stage in corso\u2026")
         worker = GeneratorWorker(config)
         worker.signals.finished.connect(self._on_generation_finished)
         worker.signals.error.connect(self._on_generation_error)
@@ -285,18 +266,15 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_stop_requested(self):
-        # Non c'è un modo clean di fermare un QRunnable in corso
-        # Il worker finirà naturalmente in pochi ms
         self._status.showMessage("Generazione interrotta")
         self._gen_panel.on_generation_finished()
 
     @Slot(object)
     def _on_generation_finished(self, result: object):
-        result: GeneratorResult = result  # type: ignore
+        result: GeneratorResult = result
         self._status.showMessage(
             f"Stage generato! Score: {result.score} | Tentativi: {result.attempts} | Bersagli: {len(result.stage.items)}"
         )
-        # Sostituisci lo stage nell'editor
         self._replace_stage(result.stage)
         self._gen_panel.on_generation_finished()
         self._current_worker = None
@@ -308,16 +286,17 @@ class MainWindow(QMainWindow):
         self._current_worker = None
 
     def _replace_stage(self, new_stage: Stage):
-        """Sostituisce lo stage corrente con uno nuovo, aggiornando editor e 3D."""
-        # Pulisci scene
+        """Sostituisce lo stage nell'editor 2D."""
         self._scene.clear()
-        self._stage = new_stage
-        self._scene.stage = new_stage
+        self._stage.name = new_stage.name
+        self._stage.width = new_stage.width
+        self._stage.depth = new_stage.depth
+        self._stage.items.clear()
+        self._stage._next_id = new_stage._next_id
+        for it in new_stage.items:
+            self._stage.items.append(it)
+        self._scene.stage = self._stage
         self._scene._items.clear()
         self._scene._setup_grid()
         self._scene._sync_from_model()
-        # Aggiorna 3D
-        self._viewer3d.update_dimensions(new_stage.width, new_stage.depth)
-        self._viewer3d.refresh()
-        # Reset property dock
         self._prop_dock.set_item(None)

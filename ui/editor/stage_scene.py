@@ -24,7 +24,7 @@ class StageItemWrapper(QObject):
 
 
 class GridItem(QGraphicsItem):
-    """Griglia metrica sullo sfondo."""
+    """Griglia metrica sullo sfondo con confini e parapalle."""
     def __init__(self, width_m: float, depth_m: float, scale: float = 40.0, parent=None):
         super().__init__(parent)
         self.width_m = width_m
@@ -35,18 +35,60 @@ class GridItem(QGraphicsItem):
 
     def boundingRect(self):
         from PySide6.QtCore import QRectF
-        return QRectF(0, 0, self.width_m * self.scale, self.depth_m * self.scale)
+        margin = 60
+        return QRectF(-margin, -margin,
+                       self.width_m * self.scale + margin * 2,
+                       self.depth_m * self.scale + margin * 2)
 
     def paint(self, painter, option, widget=None):
-        painter.setPen(self.pen)
         w = self.width_m * self.scale
         h = self.depth_m * self.scale
+
+        # ─── PARAPALLE DI FONDO (area fondale) ───
+        backstop_brush = QBrush(QColor("#5c3a1e"))
+        backstop_brush.setStyle(Qt.BrushStyle.CrossPattern)
+        painter.setBrush(backstop_brush)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(0, int(h - 20), int(w), 20)
+
+        # Etichetta PARAPALLE
+        painter.setPen(QPen(QColor("#5c3a1e"), 1))
+        font = painter.font()
+        font.setPointSize(9)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(4, int(h - 6), "⬇ PARAPALLE DI FONDO")
+
+        # Area di ingresso (start position)
+        start_brush = QBrush(QColor("#22c55e"))
+        start_brush.setStyle(Qt.BrushStyle.Dense4Pattern)
+        painter.setBrush(start_brush)
+        painter.setPen(Qt.PenStyle.NoPen)
+        start_w = 2.0 * self.scale
+        start_h = 2.0 * self.scale
+        painter.drawRect(int(w / 2 - start_w / 2), 0, int(start_w), int(start_h))
+
+        # ─── GRIGLIA ───
+        painter.setPen(self.pen)
         for i in range(int(self.width_m) + 1):
             x = i * self.scale
-            painter.drawLine(x, 0, x, h)
+            painter.drawLine(int(x), 0, int(x), int(h))
         for i in range(int(self.depth_m) + 1):
             y = i * self.scale
-            painter.drawLine(0, y, w, y)
+            painter.drawLine(0, int(y), int(w), int(y))
+
+        # ─── ETICHETTE DIREZIONALI ───
+        font.setPointSize(8)
+        font.setBold(False)
+        painter.setFont(font)
+
+        # UP-RANGE (verso tiratore, in alto nella vista 2D)
+        painter.setPen(QPen(QColor("#22c55e"), 1))
+        painter.drawText(4, 14, "🟢 UP-RANGE (ingresso tiratore)")
+
+        # DOWN-RANGE (verso parapalle, in basso nella vista 2D)
+        painter.setPen(QPen(QColor("#ef4444"), 1))
+        painter.drawText(4, int(h - 22), "🔴 DOWN-RANGE (verso parapalle)")
 
 
 def _snap_pos(pos, scale):

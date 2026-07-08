@@ -57,15 +57,15 @@ class Stage3DModel(QObject):
                 "color": it.color,
             }
         elif it.item_type == ItemType.FAULT_LINE:
-            # Linea sul pavimento
+            # Fault line rialzata (visibile come cordolo basso)
             return {
                 "type": "fault",
                 "x": it.x,
-                "y": 0.01,
+                "y": 0.03,
                 "z": it.y,
                 "scaleX": it.width,
-                "scaleY": 0.02,
-                "scaleZ": 0.05,
+                "scaleY": 0.06,
+                "scaleZ": 0.08,
                 "rotation": it.rotation,
                 "color": it.color,
             }
@@ -175,3 +175,15 @@ class Quick3DWidget(QQuickWidget):
         self.rootContext().setContextProperty("stageWidth", width)
         self.rootContext().setContextProperty("stageDepth", depth)
         self._model.rebuild()
+
+    def reset_camera(self):
+        """Resetta la camera 3D alla posizione orbitale iniziale."""
+        root = self.rootObject()
+        if root:
+            root.resetOrbitCamera()
+
+    def connect_fullscreen_signal(self, callback):
+        """Collega il segnale requestFullscreen del QML a un callback."""
+        root = self.rootObject()
+        if root:
+            root.requestFullscreen.connect(callback)
