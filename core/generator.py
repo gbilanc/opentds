@@ -349,24 +349,18 @@ class StageGenerator:
                                count: int, item_type: ItemType,
                                base_width: callable, base_height: float,
                                color: str, label: str) -> List[StageItem]:
-        """Piazza item (muri/barriere) tra area di tiro e bersagli.
+        """Piazza item (muri/barriere) fuori dall'area di tiro, tra area e bersagli.
+
+        Per ogni item: sceglie un bersaglio casuale e un punto interno all'area
+        di tiro, poi piazza l'item sulla linea tra i due, FUORI dal perimetro.
         Ogni item deve bloccare almeno 1 bersaglio senza nasconderne troppi.
         """
         items = []
-        targets = [it for it in existing if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
+        targets = [it for it in existing if _is_scoring_target(it.item_type)]
         if not targets or not self._perimeter_poly or not self._interior_samples:
             return items
 
         min_visible = max(1, math.ceil(len(targets) * 0.7))
-        poly_max_y = max(p[1] for p in self._perimeter_poly)
-        min_target_y = min(t.y for t in targets)
-
-        zone_lo = poly_max_y + 0.5
-        zone_hi = min_target_y - 0.5
-        if zone_lo >= zone_hi:
-            return items
 
         for _ in range(count):
             placed = False
@@ -374,30 +368,33 @@ class StageGenerator:
                 t = random.choice(targets)
                 ox, oy = random.choice(self._interior_samples)
 
+                # Direzione dal punto interno al bersaglio
+                dx = t.x - ox
                 dy = t.y - oy
-                t_frac_lo = (zone_lo - oy) / dy if abs(dy) > 1e-6 else 0.5
-                t_frac_hi = (zone_hi - oy) / dy if abs(dy) > 1e-6 else 0.5
-                t_frac_lo = max(0.2, min(t_frac_lo, t_frac_hi))
-                t_frac_hi = min(0.8, max(t_frac_lo, t_frac_hi))
-                if t_frac_lo >= t_frac_hi:
+                dist = math.hypot(dx, dy)
+                if dist < 2.0:
                     continue
-                t_frac = random.uniform(t_frac_lo, t_frac_hi)
+                nx, ny = dx / dist, dy / dist
 
-                x = ox + (t.x - ox) * t_frac
-                y = oy + dy * t_frac
-                x = max(1.5, min(stage.width - 1.5, x))
+                # Posiziona l'item a una frazione della distanza (tra area e target)
+                t_frac = random.uniform(0.3, 0.7)
+                wx = ox + nx * dist * t_frac
+                wy = oy + ny * dist * t_frac
+                wx = max(1.5, min(stage.width - 1.5, wx))
+                wy = max(1.5, min(stage.depth - 1.5, wy))
 
-                if point_in_polygon(x, y, self._perimeter_poly):
+                # Deve stare FUORI dal perimetro
+                if point_in_polygon(wx, wy, self._perimeter_poly):
                     continue
 
-                angle_to_target = math.degrees(math.atan2(t.y - oy, t.x - ox))
+                angle_to_target = math.degrees(math.atan2(dy, dx))
                 rotation = angle_to_target + random.choice([-90, 90])
 
-                item = StageItem(0, item_type, x, y,
+                item = StageItem(0, item_type, wx, wy,
                                  base_width(), base_height,
                                  rotation, color, label)
 
-                # Deve bloccare ALMENO 1 bersaglio
+                # Deve bloccare ALMENO 1 bersaglio (linea di vista interrotta)
                 blocks_any = False
                 for t2 in targets:
                     for ox2, oy2 in self._interior_samples:
@@ -412,17 +409,10 @@ class StageGenerator:
                 if not blocks_any:
                     continue
 
-                # Non deve sovrapporsi ad altri ostacoli (muri, barriere, porte)
-                item_obb_geom = item_obb(item)
-                collides_with_obstacle = False
-                if item_obb_geom:
-                    for obs in existing + items:
-                        if obs.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR):
-                            obs_obb = item_obb(obs)
-                            if obs_obb and obb_distance(item_obb_geom, obs_obb) < 0.1:
-                                collides_with_obstacle = True
-                                break
-                if collides_with_obstacle:
+                # Non deve sovrapporsi ad altri ostacoli (usa is_valid_position)
+                from core.ipsc_rules import IPSCRulesEngine
+                local_engine = IPSCRulesEngine(stage)
+                if not local_engine.is_valid_position(item, existing + items):
                     continue
 
                 # Non deve nascondere TROPPI bersagli
