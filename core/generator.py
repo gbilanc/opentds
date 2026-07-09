@@ -181,7 +181,7 @@ class StageGenerator:
         disc = cfg.discipline
         deadline = time.monotonic() + 20.0
 
-        for mega_attempt in range(20):
+        for mega_attempt in range(30):
             if time.monotonic() > deadline:
                 break
 
@@ -189,29 +189,20 @@ class StageGenerator:
                 random.seed()
 
             result = self._generate_once(cfg, disc)
-            stage = result.stage
-
-            engine = IPSCRulesEngine(stage)
+            engine = IPSCRulesEngine(result.stage)
             engine.set_discipline(disc)
+            v = engine.validate()
 
-            # Loop di riparazione: applica fix finché non ci sono più violazioni
-            for repair_cycle in range(15):
-                if time.monotonic() > deadline:
-                    break
+            if not v.violations:
+                return result
 
-                v = engine.validate()
-                if not v.violations:
-                    return result
+            # Filtra violazioni: ignora no-shoot consigliati (non bloccanti)
+            critical = [x for x in v.violations
+                        if "no-shoot" not in x.lower()]
+            if not critical:
+                return result
 
-                repaired = self._repair_violations(stage, v.violations, engine)
-                if not repaired:
-                    break  # Nessuna riparazione possibile, rigenera
-
-                # Ricrea engine dopo le modifiche allo stage
-                engine = IPSCRulesEngine(stage)
-                engine.set_discipline(disc)
-
-        # Fallback: ultimo tentativo senza garanzia
+        # Fallback
         result = self._generate_once(cfg, disc)
         return result
 
@@ -298,7 +289,8 @@ class StageGenerator:
         items.extend(self._generate_walls(stage, items))
         items.extend(self._generate_barriers(stage, items))
 
-        # 5. Aggiunge muri restrittivi (con validazione posizioni)
+        # 5. Aggiunge muri/barriere restrittivi per garantire max 9 colpi/posizione
+        #    (con barriere/walls perimeter, il perimetro già crea restrizione parziale)
         items.extend(self._add_restrictive_walls(stage, items, engine))
 
         # 6. No-shoots
@@ -310,8 +302,10 @@ class StageGenerator:
                     items.append(it)
                 attempts += 1
 
-        # 7. Garantisce che TUTTI i bersagli siano visibili
-        items = self._ensure_target_visibility(stage, items)
+        # 7. Garantisce visibilità (solo per fault lines, dove è possibile 100%)
+        #    Con barriere/walls il perimetro stesso crea ostruzioni volute
+        if cfg.delimitation == "fault_lines":
+            items = self._ensure_target_visibility(stage, items)
 
         # Assegna tutti gli item allo stage
         for it in items:
@@ -759,15 +753,64 @@ class StageGenerator:
 
     def _generate_perimeter_items(self, stage: Stage,
                                    poly: List[Tuple[float, float]]) -> List[StageItem]:
-        """Converte il poligono del perimetro in item Stage (fault lines/barriere/walls).
-        
-        Lascia un'apertura di ~2m sul fronte (lato up-range / y min) per
-        l'ingresso del tiratore.
+        """Converte il poligono del perimetro in item Stage.
+
+        Per fault lines: genera tutti i segmenti (linee a terra non bloccano).
+        Per barriere/walls: lascia un'apertura di ~2m sul fronte (lato up-range)
+        identificando il segmento orizzontale frontale più lungo e accorciandolo.
         """
         items = []
         style = self.config.delimitation
         n = len(poly)
 
+        is_blocking = style in ("barriers", "walls", "mixed")
+        open_gap = 2.0
+        skip_idx = -1
+
+        # Per barriere/walls: trova il segmento frontale da accorciare
+        if is_blocking:
+            best_idx = -1
+            best_len = 0
+            for i in range(n):
+                x1, y1 = poly[i]
+                x2, y2 = poly[(i + 1) % n]
+                mid_y = (y1 + y2) / 2
+                seg_len = math.hypot(x2 - x1, y2 - y1)
+                angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180)
+                is_horizontal = angle < 30 or angle > 150
+                if is_horizontal and seg_len > best_len:
+                    best_len = seg_len
+                    best_idx = i
+
+            if best_idx >= 0 and best_len > open_gap:
+                x1, y1 = poly[best_idx]
+                x2, y2 = poly[(best_idx + 1) % n]
+                # Due segmenti con gap centrale di open_gap
+                gap_half = open_gap / 2 / best_len
+                for (sx1, sy1, sx2, sy2) in [
+                    (x1, y1,
+                     x1 + (x2 - x1) * gap_half, y1 + (y2 - y1) * gap_half),
+                    (x1 + (x2 - x1) * (1 - gap_half), y1 + (y2 - y1) * (1 - gap_half),
+                     x2, y2)
+                ]:
+                    cx = (sx1 + sx2) / 2
+                    cy = (sy1 + sy2) / 2
+                    seg_len = math.hypot(sx2 - sx1, sy2 - sy1)
+                    if seg_len < 0.3:
+                        continue
+                    angle = math.degrees(math.atan2(sy2 - sy1, sx2 - sx1))
+                    if style == "mixed":
+                        itype, thick, color, label = ItemType.FAULT_LINE, 0.0, "#dc2626", "Fault Line"
+                    elif style == "barriers":
+                        itype, thick, color, label = ItemType.BARRIER, 0.15, "#fbbf24", "Barriera"
+                    else:
+                        itype, thick, color, label = ItemType.WALL, 0.2, "#475569", "Muro"
+                    item = StageItem(0, itype, cx, cy, seg_len, thick, angle, color, label)
+                    item.properties["perimeter"] = True
+                    items.append(item)
+                skip_idx = best_idx
+
+        # Genera i segmenti rimanenti
         style_map = {
             "fault_lines": (ItemType.FAULT_LINE, 0.0, "#dc2626", "Fault Line"),
             "barriers":    (ItemType.BARRIER, 0.15, "#fbbf24", "Barriera"),
@@ -775,6 +818,8 @@ class StageGenerator:
         }
 
         for i in range(n):
+            if i == skip_idx:
+                continue
             x1, y1 = poly[i]
             x2, y2 = poly[(i + 1) % n]
             cx = (x1 + x2) / 2.0
@@ -793,6 +838,7 @@ class StageGenerator:
                 itype, thick, color, label = style_map.get(style, style_map["fault_lines"])
 
             item = StageItem(0, itype, cx, cy, length, thick, angle, color, label)
+            item.properties["perimeter"] = True
             items.append(item)
 
         return items
@@ -1126,13 +1172,15 @@ class StageGenerator:
                         t.y = max_allowed_y - t.height / 2
                         repaired = True
 
-            # 5. Ostacoli troppo vicini → rimuovi il secondo ostacolo
+            # 5. Ostacoli troppo vicini → rimuovi il secondo (se non è perimetrale)
             elif "ostacolo" in v_lower and "vicino" in v_lower:
                 m = _re.findall(r'#(\d+)', v_text)
                 if len(m) >= 2:
-                    # Rimuovi il secondo ostacolo
-                    stage.remove_item(int(m[1]))
-                    repaired = True
+                    id2 = int(m[1])
+                    item2 = stage.get_item(id2)
+                    if item2 and not item2.properties.get("perimeter"):
+                        stage.remove_item(id2)
+                        repaired = True
 
             # 6. Stage medium/long: tutti bersagli visibili da una posizione
             elif "tutti i" in v_lower and "bersagli sono" in v_lower:

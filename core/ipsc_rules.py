@@ -287,12 +287,16 @@ class IPSCRulesEngine:
                         f"({self.MIN_TARGET_TO_TARGET}m)")
 
         # Ostacoli non devono sovrapporsi (muri, barriere, porte)
+        # Esonero: ostacoli perimetrali (fanno parte del confine) possono toccarsi
         obstacles = walls + barriers
         for i, a in enumerate(obstacles):
             a_obb = item_obb(a)
             if a_obb is None:
                 continue
             for b in obstacles[i + 1:]:
+                # Se entrambi sono perimetrali, si possono toccare
+                if a.properties.get("perimeter") and b.properties.get("perimeter"):
+                    continue
                 b_obb = item_obb(b)
                 if b_obb and min_distance_between(a_obb, b_obb) < self.MIN_OBSTACLE_GAP:
                     violations.append(
