@@ -351,24 +351,27 @@ class StageGenerator:
                                color: str, label: str) -> List[StageItem]:
         """Piazza item (muri/barriere) fuori dall'area di tiro, tra area e bersagli.
 
-        Per ogni item: sceglie un bersaglio casuale e un punto interno all'area
-        di tiro, poi piazza l'item sulla linea tra i due, FUORI dal perimetro.
-        Ogni item deve bloccare almeno 1 bersaglio senza nasconderne troppi.
+        Tenta prima di posizionare item che bloccano almeno 1 bersaglio.
+        Se fallisce, posiziona item in punti validi qualsiasi (fallback).
         """
+        from core.ipsc_rules import IPSCRulesEngine as _Engine
         items = []
         targets = [it for it in existing if _is_scoring_target(it.item_type)]
-        if not targets or not self._perimeter_poly or not self._interior_samples:
+        if not self._perimeter_poly:
             return items
 
-        min_visible = max(1, math.ceil(len(targets) * 0.7))
+        min_visible = max(1, math.ceil(len(targets) * 0.7)) if targets else 1
+        margin = _Engine.MIN_TARGET_TO_EDGE
 
         for _ in range(count):
             placed = False
-            for _ in range(100):
+            # Passata 1: cerca posizione che blocchi almeno 1 bersaglio
+            for _ in range(150):
+                if not targets or not self._interior_samples:
+                    break
                 t = random.choice(targets)
                 ox, oy = random.choice(self._interior_samples)
 
-                # Direzione dal punto interno al bersaglio
                 dx = t.x - ox
                 dy = t.y - oy
                 dist = math.hypot(dx, dy)
@@ -376,14 +379,12 @@ class StageGenerator:
                     continue
                 nx, ny = dx / dist, dy / dist
 
-                # Posiziona l'item a una frazione della distanza (tra area e target)
                 t_frac = random.uniform(0.3, 0.7)
                 wx = ox + nx * dist * t_frac
                 wy = oy + ny * dist * t_frac
                 wx = max(1.5, min(stage.width - 1.5, wx))
                 wy = max(1.5, min(stage.depth - 1.5, wy))
 
-                # Deve stare FUORI dal perimetro
                 if point_in_polygon(wx, wy, self._perimeter_poly):
                     continue
 
@@ -394,7 +395,7 @@ class StageGenerator:
                                  base_width(), base_height,
                                  rotation, color, label)
 
-                # Deve bloccare ALMENO 1 bersaglio (linea di vista interrotta)
+                # Deve bloccare ALMENO 1 bersaglio
                 blocks_any = False
                 for t2 in targets:
                     for ox2, oy2 in self._interior_samples:
@@ -409,21 +410,38 @@ class StageGenerator:
                 if not blocks_any:
                     continue
 
-                # Non deve sovrapporsi ad altri ostacoli (usa is_valid_position)
-                from core.ipsc_rules import IPSCRulesEngine
-                local_engine = IPSCRulesEngine(stage)
+                local_engine = _Engine(stage)
                 if not local_engine.is_valid_position(item, existing + items):
                     continue
 
-                # Non deve nascondere TROPPI bersagli
                 test_items = existing + items + [item]
                 test_blockers = self._get_blocking_walls(test_items)
                 visible_now = sum(1 for t2 in targets
                                   if self._is_target_visible(t2, test_blockers))
                 if visible_now >= min_visible:
+                    item.properties["protected"] = True  # non rimuovere in ensure_visibility
                     items.append(item)
                     placed = True
                     break
+
+            # Passata 2 (fallback): piazza in qualsiasi posizione valida
+            if not placed:
+                for _ in range(100):
+                    wx = random.uniform(margin + 1, stage.width - margin - 1)
+                    wy = random.uniform(margin + 1, stage.depth - margin - 1)
+                    if point_in_polygon(wx, wy, self._perimeter_poly):
+                        continue
+                    item = StageItem(0, item_type, wx, wy,
+                                     base_width(), base_height,
+                                     random.uniform(0, 360),
+                                     color, label)
+                    local_engine = _Engine(stage)
+                    if local_engine.is_valid_position(item, existing + items):
+                        item.properties["protected"] = True
+                        items.append(item)
+                        placed = True
+                        break
+
             if not placed:
                 break
         return items
@@ -620,10 +638,11 @@ class StageGenerator:
         return points[:count] if points else [(polygon_center(self._perimeter_poly))]
 
     def _get_blocking_walls(self, items: List[StageItem]) -> List[StageItem]:
-        """Ritorna gli item che bloccano la visuale (muri, porte, barriere perimetrali in stile walls)."""
+        """Ritorna gli item che bloccano la visuale (muri, barriere, porte, hard cover)."""
         blockers = []
         for it in items:
-            if it.item_type in (ItemType.WALL, ItemType.DOOR):
+            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR,
+                                ItemType.HARD_COVER):
                 blockers.append(it)
         return blockers
 
@@ -795,7 +814,8 @@ class StageGenerator:
         min_visible = len(targets)  # 100% visibilità richiesta
 
         for _ in range(100):
-            blockers = self._get_blocking_walls(items)
+            blockers = [b for b in self._get_blocking_walls(items)
+                        if not b.properties.get("protected")]
             if not blockers:
                 break
 
@@ -803,26 +823,30 @@ class StageGenerator:
             if visible >= min_visible:
                 break
 
-            # Per ogni bloccante, simula la rimozione e conta quanti target libera
+            # Per ogni bloccante non protetto, simula la rimozione
             best_gain = 0
             best_item = None
             for b in blockers:
                 test_items = [it for it in items if it is not b]
-                test_blockers = self._get_blocking_walls(test_items)
+                test_blockers = [x for x in self._get_blocking_walls(test_items)
+                                 if not x.properties.get("protected")]
+                # Include anche i protetti per il calcolo visuale
+                all_blockers = test_blockers + [x for x in self._get_blocking_walls(test_items)
+                                                if x.properties.get("protected")]
                 test_visible = sum(1 for t in targets
-                                   if self._is_target_visible(t, test_blockers))
+                                   if self._is_target_visible(t, all_blockers))
                 gain = test_visible - visible
                 if gain > best_gain:
                     best_gain = gain
                     best_item = b
 
             if best_item is None or best_gain == 0:
-                # Se nessun muro libera target da solo, rimuovi quello che appare
-                # piú frequente nelle linee bloccate
+                # Nessun miglioramento: rimuovi quello che blocca più target
                 wall_hits = {id(w): 0 for w in blockers}
                 wall_map = {id(w): w for w in blockers}
                 invisible = [t for t in targets
-                             if not self._is_target_visible(t, blockers)]
+                             if not self._is_target_visible(t, [x for x in self._get_blocking_walls(items)
+                                                                 if not x.properties.get("protected")])]
                 for t in invisible:
                     for ox, oy in self._interior_samples:
                         for w in blockers:
@@ -944,9 +968,9 @@ class StageGenerator:
                 wall_len = random.uniform(1.5, 3.0)
 
                 new_wall = StageItem(
-                    0, ItemType.WALL, wx, wy,
+                    0, ItemType.BARRIER, wx, wy,
                     wall_len, 0.2, wall_angle,
-                    "#475569", "Muro ristr.")
+                    "#fbbf24", "Barriera ristr.")
 
                 # Valida con IPSCRulesEngine (distanza da target, ostacoli, bordo)
                 test_items = existing + new_walls
@@ -1063,10 +1087,10 @@ class StageGenerator:
                             if not (margin <= wx <= stage.width - margin and
                                     margin <= wy <= stage.depth - margin):
                                 continue
-                            wall = StageItem(0, ItemType.WALL, wx, wy,
+                            wall = StageItem(0, ItemType.BARRIER, wx, wy,
                                              1.5, 0.2,
                                              math.degrees(math.atan2(ny, nx)),
-                                             "#475569", "Muro ripar.")
+                                             "#fbbf24", "Barriera ripar.")
                             # Verifica che il target resti visibile da almeno 1 posizione
                             test_blockers = self._get_blocking_walls(stage.items + [wall])
                             if self._is_target_visible(t_block, test_blockers):
@@ -1130,10 +1154,10 @@ class StageGenerator:
                             margin = engine.MIN_TARGET_TO_EDGE
                             if (margin <= wx <= stage.width - margin and
                                 margin <= wy <= stage.depth - margin):
-                                wall = StageItem(0, ItemType.WALL, wx, wy,
+                                wall = StageItem(0, ItemType.BARRIER, wx, wy,
                                                  2.0, 0.2,
                                                  math.degrees(math.atan2(ny, nx)),
-                                                 "#475569", "Muro div.")
+                                                 "#fbbf24", "Barriera div.")
                                 stage.add_item(wall)
                                 repaired = True
 
