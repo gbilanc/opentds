@@ -226,6 +226,8 @@ class MainWindow(QMainWindow):
         self._scene.itemAdded.connect(self._refresh_info)
         self._scene.itemUpdated.connect(self._refresh_info)
         self._scene.itemRemoved.connect(self._refresh_info)
+        # Evidenziazione violazioni
+        self._info_panel.violationsUpdated.connect(self._scene.set_violations)
 
     @Slot(StageItemWrapper)
     def _on_item_added(self, _wrapper):

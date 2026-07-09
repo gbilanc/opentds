@@ -15,6 +15,7 @@ from core.ipsc_rules import IPSCRulesEngine
 
 class StageInfoPanel(QWidget):
     """Pannello laterale che mostra statistiche e violazioni IPSC live."""
+    violationsUpdated = Signal(set)  # emette set[int] di ID item con violazioni
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -124,6 +125,14 @@ class StageInfoPanel(QWidget):
         # Violazioni
         result = self._engine.validate()
         self._show_violations(result.violations)
+
+        # Estrai ID item coinvolti in violazioni e notifica la scena
+        import re
+        viol_ids: set[int] = set()
+        for v_text in result.violations:
+            for m in re.finditer(r'#(\d+)', v_text):
+                viol_ids.add(int(m.group(1)))
+        self.violationsUpdated.emit(viol_ids)
 
     def _show_violations(self, violations: list[str]):
         """Mostra o aggiorna le violazioni nella scroll area."""

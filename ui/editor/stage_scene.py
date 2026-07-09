@@ -178,6 +178,28 @@ class StageItemMixin:
         top = br.top()
         return QRectF(cx - handle_size / 2, top - handle_size - 8, handle_size, handle_size)
 
+    # ---- Evidenziazione violazioni ----
+
+    def _draw_violation_highlight(self, painter: QPainter):
+        """Disegna un bordo rosso pulsante se l'item ha una violazione IPSC."""
+        if not self.wrapper or not self.scene():
+            return
+        scene: "StageScene" = self.scene()
+        if not scene.has_violation(self.wrapper.item.id):
+            return
+        painter.save()
+        pen = QPen(QColor("#dc2626"), 3)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        br = self.boundingRect()
+        margin = 6.0
+        painter.drawRoundedRect(
+            br.adjusted(-margin, -margin, margin, margin),
+            8, 8
+        )
+        painter.restore()
+
     def _draw_rotation_handle(self, painter: QPainter):
         if not self.isSelected():
             return
@@ -299,6 +321,7 @@ class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
         painter.setPen(self._rect_pen)
         painter.drawRect(self.rect())
         self._paint_decoration(painter)
+        self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
         self._draw_rotation_handle(painter)
 
@@ -334,6 +357,7 @@ class EllipseGraphicsItem(StageItemMixin, QGraphicsEllipseItem):
         painter.setPen(self._ellipse_pen)
         painter.drawEllipse(self.rect())
         self._paint_decoration(painter)
+        self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
         self._draw_rotation_handle(painter)
 
@@ -375,6 +399,7 @@ class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
         painter.setPen(pen)
         w = self.wrapper.item.width * self.scale
         painter.drawLine(-w / 2, 0, w / 2, 0)
+        self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
         self._draw_rotation_handle(painter)
 
@@ -613,12 +638,14 @@ class StageScene(QGraphicsScene):
     itemRemoved = Signal(int)
     itemUpdated = Signal(int)
     selectionChangedWrapper = Signal(object)
+    violationsChanged = Signal()  # emesso quando cambiano le violazioni
 
     def __init__(self, stage: Stage, parent=None):
         super().__init__(parent)
         self.stage = stage
         self.scale = 40.0
         self._items: dict[int, QGraphicsItem] = {}
+        self._violation_ids: set[int] = set()
         self.undo_stack = QUndoStack(self)
         self._setup_grid()
         self._sync_from_model()
@@ -695,6 +722,21 @@ class StageScene(QGraphicsScene):
             self.selectionChangedWrapper.emit(None)
 
     # ── Public API con undo ──────────────────────────────────────────────────
+
+    # ── Evidenziazione violazioni ───────────────────────────────────────────
+
+    def set_violations(self, item_ids: set[int]):
+        """Imposta gli ID degli item con violazioni IPSC e forza il repaint."""
+        if self._violation_ids == item_ids:
+            return
+        self._violation_ids = set(item_ids)
+        self.violationsChanged.emit()
+        for g in self._items.values():
+            if hasattr(g, 'update'):
+                g.update()
+
+    def has_violation(self, item_id: int) -> bool:
+        return item_id in self._violation_ids
 
     def push_add_item(self, item: StageItem):
         self.undo_stack.push(AddItemCommand(self, item))
