@@ -44,7 +44,8 @@ class Stage3DModel(QObject):
                 "rotation": it.rotation,
                 "color": it.color,
             }
-        elif it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET):
+        elif it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                              ItemType.MINI_TARGET, ItemType.MICRO_TARGET):
             return {
                 "type": "target",
                 "x": it.x,
@@ -52,6 +53,18 @@ class Stage3DModel(QObject):
                 "z": it.y,
                 "scaleX": it.width,
                 "scaleY": it.height,
+                "scaleZ": 0.02,
+                "rotation": it.rotation,
+                "color": it.color,
+            }
+        elif it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE):
+            return {
+                "type": "steel",
+                "x": it.x,
+                "y": 0.5,
+                "z": it.y,
+                "scaleX": it.width,
+                "scaleY": it.width,
                 "scaleZ": 0.02,
                 "rotation": it.rotation,
                 "color": it.color,
@@ -66,6 +79,19 @@ class Stage3DModel(QObject):
                 "scaleX": it.width,
                 "scaleY": 0.06,
                 "scaleZ": 0.08,
+                "rotation": it.rotation,
+                "color": it.color,
+            }
+        elif it.item_type in (ItemType.HARD_COVER, ItemType.SOFT_COVER):
+            # Copertura: usa la stessa geometria di WALL ma colore diverso
+            return {
+                "type": "wall",
+                "x": it.x,
+                "y": 1.0,
+                "z": it.y,
+                "scaleX": it.width,
+                "scaleY": 2.0,
+                "scaleZ": 0.1,
                 "rotation": it.rotation,
                 "color": it.color,
             }

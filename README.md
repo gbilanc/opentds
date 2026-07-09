@@ -160,19 +160,32 @@ opentds/
 
 ## Bersagli supportati
 
-| Tipo | Codice colore | Animazione 3D |
-|---|---|---|
-| Paper Target | Rosso (#ef4444) | — |
-| Steel Target | Blu (#3b82f6) | — |
-| Swinger | Viola (#a855f7) | Oscillazione rotazione Y |
-| Drop Turner | Verde (#14b8a6) | Caduta rotazione X |
-| Mover | Arancione (#f97316) | Traslazione lineare |
+| Tipo | Codice colore IPSC | Note | Animazione 3D |
+|---|---|---|---|
+| Paper Target | Marrone (#8B4513) | Zona punti marrone (Reg. 4.1.2.1) | — |
+| Steel Target | Grigio chiaro (#d1d5db) | Superficie bianca (Reg. 4.1.2.2) | — |
+| Popper | Grigio chiaro (#d1d5db) | Metallico calibrato (App. C1-C2) | — |
+| Piatto metallico | Grigio chiaro (#d1d5db) | Non calibrato (App. C3) | — |
+| Mini Target | Marrone (#8B4513) | Formato ridotto (App. B3) | — |
+| Micro Target | Marrone (#8B4513) | Formato micro | — |
+| Swinger | Marrone scuro (#A0522D) | Bersaglio cartaceo mobile | Oscillazione rotazione Y |
+| Drop Turner | Marrone scuro (#8B6914) | Bersaglio cartaceo mobile | Caduta rotazione X |
+| Mover | Marrone chiaro (#CD853F) | Bersaglio cartaceo mobile | Traslazione lineare |
+| No-Shoot | Giallo (#eab308) | Colore diverso dai bersagli punti (Reg. 4.1.3) | — |
+| Hard Cover | Grigio scuro (#1e293b) | Copertura impenetrabile (Reg. 4.1.4.1) | — |
+| Soft Cover | Grigio (#94a3b8) | Copertura visiva (Reg. 4.1.4.2) | — |
 
 ---
 
 ## Roadmap
 
-- [ ] `shapely` per collision detection avanzato
+- [x] Colori bersagli IPSC-conformi (marrone carta, bianco metallo, giallo no-shoot)
+- [x] Validazione distanza metallici 7m, angoli sicurezza 90°, max colpi per posizione
+- [x] Tipi Popper, Piatto metallico, Mini/Micro Target, Hard/Soft Cover
+- [x] Validazione Short/Medium/Long Course
+- [x] Validazione Divisione (ottiche, compensatori, canna, capacità)
+- [x] Rapporto 3:2:1 per gare multi-stage
+- [x] Generazione briefing in PDF
 - [ ] Regole IPSC edizione 2025 complete
 - [ ] Supporto IPSC Mini Rifle e Shotgun
 - [ ] Texture 3D realistiche (legno, acciaio, terra)

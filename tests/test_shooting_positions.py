@@ -93,7 +93,7 @@ class TestShootingPositionSerializer:
                              properties={"cover": "barrier"}))
 
         data = stage_to_dict(empty_stage)
-        assert data["version"] == 2
+        assert data["version"] == 3
         assert len(data["shooting_positions"]) == 2
         assert data["shooting_positions"][0]["is_start"] is True
         assert data["shooting_positions"][1]["properties"]["cover"] == "barrier"

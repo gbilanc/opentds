@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "sourceId": "SRC-2026-07-09-001",
+  "title": "Regolamento IPSC — Edizione corrente",
+  "kind": "document",
+  "origin": {
+    "type": "file",
+    "value": "/home/giampaolo/Codium/opentds/Regolamento.pdf"
+  },
+  "capturedAt": "2026-07-09T13:18:08.179Z",
+  "mimeType": "application/pdf",
+  "hash": "sha256:40a5f1e18a5b7948f370c5dd95bfdf18fc66172a046c0722300e2a368f76ce9f",
+  "originalFiles": [
+    {
+      "path": "original/source.pdf",
+      "size": 1539471,
+      "sha256": "40a5f1e18a5b7948f370c5dd95bfdf18fc66172a046c0722300e2a368f76ce9f"
+    }
+  ],
+  "extracted": {
+    "path": "extracted.md",
+    "converter": "markitdown",
+    "sha256": "02c4e972a5ace175305ba8e364a17defcc1b9b77873a17c904b636efa6d0d394"
+  },
+  "attachments": [],
+  "status": "integrated",
+  "integratedAt": "2026-07-09T13:21:09.440Z"
+}

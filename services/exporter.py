@@ -25,29 +25,95 @@ from core.models import Stage, StageItem, ItemType
 
 TYPE_COLORS: dict[ItemType, str] = {
     ItemType.WALL: "#475569",
-    ItemType.PAPER_TARGET: "#ef4444",
-    ItemType.STEEL_TARGET: "#3b82f6",
-    ItemType.FAULT_LINE: "#dc2626",
-    ItemType.NO_SHOOT: "#f87171",
+    ItemType.PAPER_TARGET: "#8B4513",      # IPSC marrone (Regola 4.1.2.1)
+    ItemType.STEEL_TARGET: "#d1d5db",      # IPSC bianco/grigio (Regola 4.1.2.2)
+    ItemType.POPPER: "#d1d5db",            # IPSC bianco (App. C1-C2)
+    ItemType.METAL_PLATE: "#d1d5db",       # IPSC bianco (App. C3)
+    ItemType.MINI_TARGET: "#8B4513",       # IPSC marrone ridotto (App. B3)
+    ItemType.MICRO_TARGET: "#8B4513",      # IPSC marrone micro
+    ItemType.FAULT_LINE: "#dc2626",        # IPSC rosso (Regola 2.2.1.4)
+    ItemType.NO_SHOOT: "#eab308",          # IPSC colore diverso (Regola 4.1.3)
     ItemType.BARRIER: "#fbbf24",
     ItemType.DOOR: "#92400e",
-    ItemType.SWINGER: "#a855f7",
-    ItemType.DROP_TURNER: "#14b8a6",
-    ItemType.MOVER: "#f97316",
+    ItemType.HARD_COVER: "#1e293b",        # Copertura impenetrabile
+    ItemType.SOFT_COVER: "#94a3b8",        # Copertura visiva
+    ItemType.SWINGER: "#A0522D",           # Bersaglio cartaceo mobile → marrone
+    ItemType.DROP_TURNER: "#8B6914",        # Bersaglio cartaceo mobile → marrone
+    ItemType.MOVER: "#CD853F",              # Bersaglio cartaceo mobile → marrone
 }
 
 TYPE_LABELS: dict[ItemType, str] = {
     ItemType.WALL: "Muro",
     ItemType.PAPER_TARGET: "Bersaglio cartaceo",
     ItemType.STEEL_TARGET: "Bersaglio metallico",
+    ItemType.POPPER: "Popper calibrato",
+    ItemType.METAL_PLATE: "Piatto metallico",
+    ItemType.MINI_TARGET: "Mini target",
+    ItemType.MICRO_TARGET: "Micro target",
     ItemType.FAULT_LINE: "Fault line",
     ItemType.NO_SHOOT: "No-shoot",
     ItemType.BARRIER: "Barriera",
     ItemType.DOOR: "Porta",
+    ItemType.HARD_COVER: "Hard cover",
+    ItemType.SOFT_COVER: "Soft cover",
     ItemType.SWINGER: "Swinger",
     ItemType.DROP_TURNER: "Drop turner",
     ItemType.MOVER: "Mover",
 }
+
+
+# ── Helper per briefing ───────────────────────────────────────────────────────
+
+
+def _format_target_list(stage: Stage) -> str:
+    """Formatta l'elenco bersagli per il briefing."""
+    counts = {}
+    for it in stage.items:
+        label = TYPE_LABELS.get(it.item_type, it.label or it.item_type.name)
+        counts[label] = counts.get(label, 0) + 1
+    if not counts:
+        return "Nessun bersaglio"
+    return ", ".join(f"{n}×{t}" for t, n in sorted(counts.items()))
+
+
+def _count_total_rounds(stage: Stage) -> int:
+    """Calcola il numero di colpi richiesti (default: 2 per carta, 1 per metallo)."""
+    total = 0
+    for it in stage.items:
+        if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
+                            ItemType.MICRO_TARGET, ItemType.SWINGER,
+                            ItemType.DROP_TURNER, ItemType.MOVER):
+            total += 2
+        elif it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER,
+                              ItemType.METAL_PLATE):
+            total += 1
+    return total
+
+
+def _format_ready_condition(stage: Stage) -> str:
+    """Descrive la condizione di pronto dell'arma."""
+    return "Arma carica in fondina"  # default IPSC
+
+
+def _format_start_position(stage: Stage) -> str:
+    """Descrive la posizione di partenza."""
+    for sp in stage.shooting_positions:
+        if sp.is_start:
+            return f"({sp.x:.1f}, {sp.y:.1f}) — {sp.label or 'Start'}"
+    return "Area di tiro designata"
+
+
+def _format_procedure(stage: Stage) -> str:
+    """Genera la procedura del briefing."""
+    parts = ["Al segnale di avvio, ingaggiare tutti i bersagli."]
+    if stage.course_type:
+        parts.append(f"Corso: {stage.course_type.value.title()}.")
+    moving = [it for it in stage.items
+              if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
+                                  ItemType.MOVER)]
+    if moving:
+        parts.append(f"Attenzione ai {len(moving)} bersagli mobili.")
+    return " ".join(parts)
 
 
 # ── PNG ──────────────────────────────────────────────────────────────────────
@@ -239,7 +305,41 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
     _draw_legend(painter, margin, legend_y, usable_w, list(ItemType))
 
     # ═══════════════════════════════════════════════════════════════════════
-    # Pagina 2 — Lista bersagli
+    # Pagina 2 — Briefing (Reg. IPSC Sez. 3.2)
+    # ═══════════════════════════════════════════════════════════════════════
+    _new_page()
+    _draw_header(painter, f"Briefing — {stage.name}", margin, page_w)
+    y = margin + 50
+
+    briefing_items = [
+        ("Bersagli", _format_target_list(stage)),
+        ("Colpi conteggiabili", str(_count_total_rounds(stage))),
+        ("Condizione di pronto", _format_ready_condition(stage)),
+        ("Posizione di partenza", _format_start_position(stage)),
+        ("Procedura", _format_procedure(stage)),
+        ("Tipo corso", stage.course_type.value if stage.course_type else "Non specificato"),
+        ("Divisione", stage.division.value if stage.division else "Tutte"),
+        ("Angoli di sicurezza", "90° (default)"),
+        ("Distanza minima metallici", "7 m"),
+    ]
+
+    painter.setFont(QFont("Segoe UI", 9))
+    for label, value in briefing_items:
+        painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        painter.setPen(QColor("#0f172a"))
+        painter.drawText(margin, y, label)
+        y += 18
+        painter.setFont(QFont("Segoe UI", 10))
+        painter.setPen(QColor("#475569"))
+        painter.drawText(margin + 16, y, value)
+        y += 28
+        if y > page_h - margin - 30:
+            _new_page()
+            _draw_header(painter, f"Briefing (cont.) — {stage.name}", margin, page_w)
+            y = margin + 50
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Pagina 3 — Lista bersagli
     # ═══════════════════════════════════════════════════════════════════════
     _new_page()
     _draw_header(painter, f"Lista bersagli — {stage.name}", margin, page_w)

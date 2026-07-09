@@ -21,7 +21,7 @@ class TestStageToDict:
     def test_empty_stage_to_dict(self, empty_stage):
         """Stage vuoto produce dizionario minimale."""
         data = stage_to_dict(empty_stage)
-        assert data["version"] == 2
+        assert data["version"] == 3
         assert data["name"] == "Test Stage"
         assert data["width"] == 20.0
         assert data["depth"] == 15.0
@@ -224,7 +224,7 @@ class TestRoundTrip:
             save_stage(sample_stage, tmp_path)
             with open(tmp_path, encoding="utf-8") as f:
                 parsed = json.load(f)
-            assert parsed["version"] == 2
+            assert parsed["version"] == 3
             assert len(parsed["items"]) == 7
         finally:
             tmp_path.unlink(missing_ok=True)
@@ -235,16 +235,16 @@ class TestRoundTrip:
 class TestSerializerEdgeCases:
     """Casi limite per la serializzazione."""
 
-    def test_unknown_type_raises_key_error(self):
-        """Tipo sconosciuto solleva KeyError."""
+    def test_unknown_type_falls_back_to_paper(self):
+        """Tipo sconosciuto fa fallback a PAPER_TARGET (backward compat)."""
         data = {
             "name": "Bad", "width": 20.0, "depth": 15.0,
             "items": [{"id": 1, "type": "UNKNOWN_TYPE", "x": 0, "y": 0,
                         "width": 1, "height": 1, "rotation": 0,
                         "color": "#000", "label": "", "properties": {}}]
         }
-        with pytest.raises(KeyError):
-            dict_to_stage(data)
+        stage = dict_to_stage(data)
+        assert stage.items[0].item_type == ItemType.PAPER_TARGET
 
     def test_missing_fields_use_defaults(self):
         """Campi mancanti nel JSON usano valori di default."""

@@ -23,6 +23,17 @@ from PySide6.QtWidgets import (
 from core.models import Stage, StageItem, ItemType
 
 
+# Helper per classificazione tipi (condivisa con generator)
+def _is_paper_like(t: ItemType) -> bool:
+    return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
+def _is_steel_like(t: ItemType) -> bool:
+    return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
+def _is_scoring_target(t: ItemType) -> bool:
+    return _is_paper_like(t) or _is_steel_like(t) or t in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+def _is_obstacle(t: ItemType) -> bool:
+    return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER, ItemType.SOFT_COVER)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Utilities
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -477,6 +488,79 @@ class MoverGraphicsItem(RectGraphicsItem):
         painter.drawLine(-dx, -dy, dx, dy)
 
 
+# ── Nuovi tipi IPSC ─────────────────────────────────────────────────────────
+
+
+class PopperGraphicsItem(EllipseGraphicsItem):
+    """Popper: bersaglio metallico calibrato con zona calibrazione."""
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
+
+    def _paint_decoration(self, painter: QPainter):
+        r = self.rect()
+        # Cerchio di calibrazione (App. C1)
+        pen = QPen(QColor("#dc2626"), 1, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        cal_r = min(r.width(), r.height()) * 0.3
+        painter.drawEllipse(r.center(), cal_r, cal_r)
+
+
+class MetalPlateGraphicsItem(EllipseGraphicsItem):
+    """Piatto metallico: cerchio semplice non calibrato."""
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
+
+
+class MiniTargetGraphicsItem(EllipseGraphicsItem):
+    """Mini Target: bersaglio cartaceo ridotto (App. B3)."""
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
+
+    def _paint_decoration(self, painter: QPainter):
+        r = self.rect()
+        # Linea zona A/C/D semplificata
+        pen = QPen(QColor("#78350f"), 1, Qt.PenStyle.DotLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Cerchio interno per simulare zona A
+        ir = min(r.width(), r.height()) * 0.4
+        painter.drawEllipse(r.center(), ir, ir)
+
+
+class MicroTargetGraphicsItem(EllipseGraphicsItem):
+    """Micro Target: bersaglio cartaceo micro."""
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
+
+
+class HardCoverGraphicsItem(RectGraphicsItem):
+    """Hard Cover: copertura impenetrabile (Reg. 4.1.4.1)."""
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2, brush_alpha=200)
+
+    def _paint_decoration(self, painter: QPainter):
+        r = self.rect()
+        # Pattern a X per indicare impenetrabilità
+        pen = QPen(QColor("#94a3b8"), 2)
+        painter.setPen(pen)
+        painter.drawLine(r.topLeft(), r.bottomRight())
+        painter.drawLine(r.topRight(), r.bottomLeft())
+
+
+class SoftCoverGraphicsItem(RectGraphicsItem):
+    """Soft Cover: copertura visiva semitrasparente (Reg. 4.1.4.2)."""
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#475569", pen_width=1, brush_alpha=60,
+                         pen_style=Qt.PenStyle.DashLine)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Undo Commands
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -559,10 +643,16 @@ class StageScene(QGraphicsScene):
         ItemType.WALL:          (WallGraphicsItem, None),
         ItemType.PAPER_TARGET:  (TargetGraphicsItem, None),
         ItemType.STEEL_TARGET:  (TargetGraphicsItem, None),
+        ItemType.POPPER:        (PopperGraphicsItem, None),
+        ItemType.METAL_PLATE:   (MetalPlateGraphicsItem, None),
+        ItemType.MINI_TARGET:   (MiniTargetGraphicsItem, None),
+        ItemType.MICRO_TARGET:  (MicroTargetGraphicsItem, None),
         ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
         ItemType.NO_SHOOT:      (NoShootGraphicsItem, None),
         ItemType.BARRIER:       (BarrierGraphicsItem, None),
         ItemType.DOOR:          (DoorGraphicsItem, None),
+        ItemType.HARD_COVER:    (HardCoverGraphicsItem, None),
+        ItemType.SOFT_COVER:    (SoftCoverGraphicsItem, None),
         ItemType.SWINGER:       (SwingerGraphicsItem, None),
         ItemType.DROP_TURNER:   (DropTurnerGraphicsItem, None),
         ItemType.MOVER:         (MoverGraphicsItem, None),
@@ -627,7 +717,8 @@ class StageScene(QGraphicsScene):
 
     def add_target(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                    item_type: ItemType = ItemType.PAPER_TARGET):
-        color = "#ef4444" if item_type == ItemType.PAPER_TARGET else "#3b82f6"
+        # IPSC: carta = marrone, metallo = bianco/grigio (Regola 4.1.2)
+        color = "#8B4513" if item_type == ItemType.PAPER_TARGET else "#d1d5db"
         label = "Paper" if item_type == ItemType.PAPER_TARGET else "Steel"
         item = StageItem(0, item_type, x, y, w, h, 0, color, label)
         self.push_add_item(item)
@@ -637,7 +728,8 @@ class StageScene(QGraphicsScene):
         self.push_add_item(item)
 
     def add_no_shoot(self, x: float, y: float, w: float = 0.45, h: float = 0.45):
-        item = StageItem(0, ItemType.NO_SHOOT, x, y, w, h, 0, "#f87171", "No-Shoot")
+        # IPSC: colore uniforme DIVERSO dai bersagli punti (Regola 4.1.3)
+        item = StageItem(0, ItemType.NO_SHOOT, x, y, w, h, 0, "#eab308", "No-Shoot")
         self.push_add_item(item)
 
     def add_barrier(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
@@ -650,20 +742,67 @@ class StageScene(QGraphicsScene):
 
     def add_swinger(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                     amplitude: float = 45.0, speed: float = 1.0):
-        item = StageItem(0, ItemType.SWINGER, x, y, w, h, 0, "#a855f7", "Swinger",
+        # IPSC: bersaglio cartaceo mobile → marrone
+        item = StageItem(0, ItemType.SWINGER, x, y, w, h, 0, "#A0522D", "Swinger",
                          properties={"amplitude": amplitude, "speed": speed, "axis": "y"})
         self.push_add_item(item)
 
     def add_drop_turner(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                         fall_time: float = 0.5):
-        item = StageItem(0, ItemType.DROP_TURNER, x, y, w, h, 0, "#14b8a6", "Drop Turner",
+        # IPSC: bersaglio cartaceo mobile → marrone
+        item = StageItem(0, ItemType.DROP_TURNER, x, y, w, h, 0, "#8B6914", "Drop Turner",
                          properties={"trigger": "hit", "fall_time": fall_time})
         self.push_add_item(item)
 
     def add_mover(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                   distance: float = 3.0, speed: float = 1.5):
-        item = StageItem(0, ItemType.MOVER, x, y, w, h, 0, "#f97316", "Mover",
+        # IPSC: bersaglio cartaceo mobile → marrone
+        item = StageItem(0, ItemType.MOVER, x, y, w, h, 0, "#CD853F", "Mover",
                          properties={"distance": distance, "speed": speed, "direction": 0})
+        self.push_add_item(item)
+
+    # ── Nuovi tipi IPSC ──────────────────────────────────────────────────────
+
+    def add_popper(self, x: float, y: float, diameter: float = 0.30):
+        """Aggiunge un Popper (bersaglio metallico calibrato, App. C1-C2)."""
+        item = StageItem(0, ItemType.POPPER, x, y, diameter, diameter, 0,
+                         "#d1d5db", "Popper",
+                         properties={"calibrated": True, "calibration_pf": 125})
+        self.push_add_item(item)
+
+    def add_metal_plate(self, x: float, y: float, diameter: float = 0.20):
+        """Aggiunge un piatto metallico (non calibrato, App. C3)."""
+        item = StageItem(0, ItemType.METAL_PLATE, x, y, diameter, diameter, 0,
+                         "#d1d5db", "Piatto",
+                         properties={"calibrated": False, "diameter": diameter})
+        self.push_add_item(item)
+
+    def add_mini_target(self, x: float, y: float):
+        """Aggiunge un Mini Target IPSC (bersaglio cartaceo ridotto, App. B3)."""
+        item = StageItem(0, ItemType.MINI_TARGET, x, y, 0.30, 0.30, 0,
+                         "#8B4513", "Mini Target",
+                         properties={"scale": 0.75})
+        self.push_add_item(item)
+
+    def add_micro_target(self, x: float, y: float):
+        """Aggiunge un Micro Target IPSC."""
+        item = StageItem(0, ItemType.MICRO_TARGET, x, y, 0.20, 0.20, 0,
+                         "#8B4513", "Micro Target",
+                         properties={"scale": 0.50})
+        self.push_add_item(item)
+
+    def add_hard_cover(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
+        """Aggiunge Hard Cover (copertura impenetrabile, Reg. 4.1.4.1)."""
+        item = StageItem(0, ItemType.HARD_COVER, x, y, w, h, 0,
+                         "#1e293b", "Hard Cover",
+                         properties={"impenetrable": True, "height": 2.0})
+        self.push_add_item(item)
+
+    def add_soft_cover(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
+        """Aggiunge Soft Cover (copertura visiva, Reg. 4.1.4.2)."""
+        item = StageItem(0, ItemType.SOFT_COVER, x, y, w, h, 0,
+                         "#94a3b8", "Soft Cover",
+                         properties={"impenetrable": False, "height": 2.0})
         self.push_add_item(item)
 
     def update_item_from_properties(self, item_id: int, **kwargs):

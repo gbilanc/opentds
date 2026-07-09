@@ -11,17 +11,23 @@ from core.models import Stage, StageItem, ItemType
 # ─── ItemType ────────────────────────────────────────────────────────────────
 
 class TestItemType:
-    """ItemType enum: 10 tipi previsti."""
+    """ItemType enum: 16 tipi previsti (10 originali + 6 nuovi IPSC)."""
 
     def test_all_types_present(self):
-        assert len(ItemType) == 10
+        assert len(ItemType) == 16
         assert ItemType.WALL in ItemType
         assert ItemType.PAPER_TARGET in ItemType
         assert ItemType.STEEL_TARGET in ItemType
+        assert ItemType.POPPER in ItemType
+        assert ItemType.METAL_PLATE in ItemType
+        assert ItemType.MINI_TARGET in ItemType
+        assert ItemType.MICRO_TARGET in ItemType
         assert ItemType.FAULT_LINE in ItemType
         assert ItemType.NO_SHOOT in ItemType
         assert ItemType.BARRIER in ItemType
         assert ItemType.DOOR in ItemType
+        assert ItemType.HARD_COVER in ItemType
+        assert ItemType.SOFT_COVER in ItemType
         assert ItemType.SWINGER in ItemType
         assert ItemType.DROP_TURNER in ItemType
         assert ItemType.MOVER in ItemType

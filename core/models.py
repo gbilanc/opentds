@@ -9,14 +9,35 @@ from typing import List, Optional, Dict, Any
 class ItemType(Enum):
     WALL = auto()
     PAPER_TARGET = auto()
-    STEEL_TARGET = auto()
+    STEEL_TARGET = auto()      # generico (backward compat)
+    POPPER = auto()            # bersaglio metallico calibrato (App. C1-C2)
+    METAL_PLATE = auto()       # piatto metallico non calibrato (App. C3)
+    MINI_TARGET = auto()       # bersaglio cartaceo ridotto (App. B3)
+    MICRO_TARGET = auto()      # bersaglio cartaceo micro
     FAULT_LINE = auto()
     NO_SHOOT = auto()
     BARRIER = auto()
     DOOR = auto()
-    SWINGER = auto()        # bersaglio oscillante
-    DROP_TURNER = auto()    # bersaglio che cade/gira
-    MOVER = auto()          # bersaglio su rotaia
+    HARD_COVER = auto()        # copertura impenetrabile (Reg. 4.1.4.1)
+    SOFT_COVER = auto()        # copertura visiva (Reg. 4.1.4.2)
+    SWINGER = auto()           # bersaglio oscillante
+    DROP_TURNER = auto()       # bersaglio che cade/gira
+    MOVER = auto()             # bersaglio su rotaia
+
+
+class CourseType(Enum):
+    SHORT = "short"       # ≤12 colpi, max 9 da posizione (Reg. 1.2.1.1)
+    MEDIUM = "medium"     # ≤24 colpi, max 9 da posizione (Reg. 1.2.1.2)
+    LONG = "long"         # ≤32 colpi, max 9 da posizione (Reg. 1.2.1.3)
+
+
+class Division(Enum):
+    OPEN = "open"
+    STANDARD = "standard"
+    CLASSIC = "classic"
+    PRODUCTION = "production"
+    PRODUCTION_OPTICS = "production_optics"
+    REVOLVER = "revolver"
 
 
 @dataclass
@@ -36,6 +57,10 @@ class StageItem:
     #   swinger: { "amplitude": 45, "speed": 1.0, "axis": "y" }
     #   drop_turner: { "trigger": "hit", "fall_time": 0.5 }
     #   mover: { "distance": 3.0, "speed": 1.5, "direction": 0 }
+    #   popper: { "calibrated": true, "calibration_pf": 125 }
+    #   metal_plate: { "diameter": 0.2 }
+    #   mini_target: { "scale": 0.75 }
+    #   cover: { "height": 2.0, "impenetrable": true }
 
 
 @dataclass
@@ -61,6 +86,8 @@ class Stage:
     name: str = "Nuovo Stage"
     width: float = 20.0   # metri
     depth: float = 15.0   # metri
+    course_type: Optional[CourseType] = None  # Short/Medium/Long
+    division: Optional[Division] = None        # Divisione di riferimento
     items: List[StageItem] = field(default_factory=list)
     shooting_positions: List[ShootingPosition] = field(default_factory=list)
     _next_id: int = 1

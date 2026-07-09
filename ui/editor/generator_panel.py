@@ -23,7 +23,24 @@ class GeneratorPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        # Layout principale del widget (solo per contenere la scroll area)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical { width: 8px; }
+            QScrollBar::handle:vertical { background: #cbd5e1; border-radius: 4px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
+
+        # Contenitore interno
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(14)
 
@@ -129,6 +146,26 @@ class GeneratorPanel(QWidget):
 
         layout.addWidget(diff_group)
 
+        # Gruppo IPSC
+        ipsc_group = QGroupBox("Classificazione IPSC")
+        ipsc_layout = QFormLayout(ipsc_group)
+        ipsc_layout.setSpacing(8)
+
+        self._course_combo = QComboBox()
+        self._course_combo.addItems(["Non specificato", "Short Course",
+                                      "Medium Course", "Long Course"])
+        self._course_combo.setCurrentIndex(0)
+        ipsc_layout.addRow("Tipo corso:", self._course_combo)
+
+        self._div_combo = QComboBox()
+        self._div_combo.addItems(["Non specificata", "Open", "Standard",
+                                   "Classic", "Production",
+                                   "Production Optics", "Revolver"])
+        self._div_combo.setCurrentIndex(0)
+        ipsc_layout.addRow("Divisione:", self._div_combo)
+
+        layout.addWidget(ipsc_group)
+
         # Progress
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)  # Indeterminato
@@ -152,6 +189,10 @@ class GeneratorPanel(QWidget):
         # Spacer
         layout.addStretch()
 
+        # Monta scroll area
+        scroll.setWidget(content)
+        root_layout.addWidget(scroll)
+
     def _on_generate(self):
         config = self._build_config()
         self._btn_generate.setEnabled(False)
@@ -165,6 +206,8 @@ class GeneratorPanel(QWidget):
                      "C": "C", "H": "H", "F": "F", "O": "O",
                      "Z": "Z", "S": "S", "X": "X", "Y": "Y",
                      "M": "M", "N": "N", "E": "E"}
+        course_map = {"Non specificato": "", "Short Course": "short",
+                       "Medium Course": "medium", "Long Course": "long"}
         seed = self._seed_spin.value() if self._seed_spin.value() > 0 else None
         return GeneratorConfig(
             stage_width=self._width_spin.value(),
@@ -179,6 +222,7 @@ class GeneratorPanel(QWidget):
             difficulty=diff_map[self._diff_combo.currentIndex()],
             seed=seed,
             letter_shape=shape_map[self._shape_combo.currentText()],
+            course_type=course_map[self._course_combo.currentText()],
         )
 
     @Slot()

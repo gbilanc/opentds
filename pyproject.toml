@@ -30,3 +30,8 @@ include = ["core*", "services*", "ui*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 qt_api = "pyside6"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

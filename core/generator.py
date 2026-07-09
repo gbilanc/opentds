@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
-from core.models import Stage, StageItem, ItemType
+from core.models import Stage, StageItem, ItemType, CourseType
 from core.ipsc_rules import IPSCRulesEngine
 from core.geometry import (
     point_in_polygon,
@@ -18,6 +18,27 @@ from core.geometry import (
     euclidean_distance,
 )
 from core.collision import item_obb, min_distance_between as obb_distance
+
+
+# ── Helper functions per classificazione tipi IPSC ─────────────────────────
+
+def _is_paper_like(t: "ItemType") -> bool:
+    """True per tipi bersaglio cartaceo."""
+    return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
+
+def _is_steel_like(t: "ItemType") -> bool:
+    """True per tipi bersaglio metallico."""
+    return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
+
+def _is_scoring_target(t: "ItemType") -> bool:
+    """True per tutti i bersagli che assegnano punti."""
+    return _is_paper_like(t) or _is_steel_like(t) or t in (
+        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+
+def _is_obstacle(t: "ItemType") -> bool:
+    """True per ostacoli/barriere/muri/coperture."""
+    return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR,
+                  ItemType.HARD_COVER, ItemType.SOFT_COVER)
 
 
 @dataclass
@@ -37,6 +58,7 @@ class GeneratorConfig:
     max_attempts: int = 500
     discipline: str = "ipsc_pistol"  # ipsc_pistol | mini_rifle | shotgun
     letter_shape: str = "random"  # random (lettera casuale) | L | T | U | C | H | F | O | Z | S | X | Y | M | N | E
+    course_type: str = ""  # "short" | "medium" | "long" | "" = non classificato
 
 
 @dataclass
@@ -157,7 +179,11 @@ class StageGenerator:
             w = cfg.stage_width
             d = cfg.stage_depth
 
-        stage = Stage(name="Stage Generato", width=w, depth=d)
+        # Imposta tipo corso se specificato
+        ct = None
+        if cfg.course_type in ("short", "medium", "long"):
+            ct = CourseType(cfg.course_type)
+        stage = Stage(name="Stage Generato", width=w, depth=d, course_type=ct)
         engine = IPSCRulesEngine(stage)
         engine.set_discipline(disc)
         items: List[StageItem] = []
@@ -363,21 +389,22 @@ class StageGenerator:
         # Parametri bersaglio
         if ttype == ItemType.STEEL_TARGET:
             w, h = 0.30, 0.30
-            color = "#3b82f6"
+            color = "#d1d5db"  # IPSC: bianco (grigio chiaro per visibilità)
             label = "Steel"
             min_dist_from_edge = 8.0  # IPSC: distanza fissa 8m
         elif is_moving:
+            # IPSC: bersagli mobili su supporto cartaceo → marrone
             colors = {
-                ItemType.SWINGER: ("#a855f7", "Swinger"),
-                ItemType.DROP_TURNER: ("#14b8a6", "Drop Turner"),
-                ItemType.MOVER: ("#f97316", "Mover"),
+                ItemType.SWINGER: ("#A0522D", "Swinger"),
+                ItemType.DROP_TURNER: ("#8B6914", "Drop Turner"),
+                ItemType.MOVER: ("#CD853F", "Mover"),
             }
             color, label = colors.get(ttype, ("#808080", ""))
             w, h = 0.45, 0.45
             min_dist_from_edge = 1.0
         else:
             w, h = 0.45, 0.45
-            color = "#ef4444"
+            color = "#8B4513"  # IPSC: marrone zona punti
             label = "Paper"
             min_dist_from_edge = 1.0
 
@@ -499,7 +526,7 @@ class StageGenerator:
             y = paper.y - ny * ns_dist
             if point_in_polygon(x, y, poly):
                 continue
-            it = StageItem(0, ItemType.NO_SHOOT, x, y, 0.45, 0.45, 0, "#f87171", "No-Shoot")
+            it = StageItem(0, ItemType.NO_SHOOT, x, y, 0.45, 0.45, 0, "#eab308", "No-Shoot")
             if engine.is_valid_position(it, existing):
                 return it
         return None
