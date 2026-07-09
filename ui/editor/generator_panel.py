@@ -90,12 +90,12 @@ class GeneratorPanel(QWidget):
 
         self._walls_spin = QSpinBox()
         self._walls_spin.setRange(0, 15)
-        self._walls_spin.setValue(4)
+        self._walls_spin.setValue(1)
         obs_layout.addRow("Muri:", self._walls_spin)
 
         self._barriers_spin = QSpinBox()
         self._barriers_spin.setRange(0, 10)
-        self._barriers_spin.setValue(2)
+        self._barriers_spin.setValue(4)
         obs_layout.addRow("Barriere:", self._barriers_spin)
 
         self._fault_check = QCheckBox("Includi Fault Lines")
@@ -118,6 +118,14 @@ class GeneratorPanel(QWidget):
         self._seed_spin.setSpecialValueText("Casuale")
         self._seed_spin.setValue(0)
         diff_layout.addRow("Seed:", self._seed_spin)
+
+        # Forma area di tiro (lettera)
+        self._shape_combo = QComboBox()
+        self._shape_combo.addItems(
+            ["Casuale", "L", "T", "U", "C", "H", "F", "O", "Z", "S",
+             "X", "Y", "M", "N", "E"])
+        self._shape_combo.setCurrentIndex(0)
+        diff_layout.addRow("Forma area:", self._shape_combo)
 
         layout.addWidget(diff_group)
 
@@ -153,6 +161,10 @@ class GeneratorPanel(QWidget):
 
     def _build_config(self) -> GeneratorConfig:
         diff_map = {0: "easy", 1: "medium", 2: "hard"}
+        shape_map = {"Casuale": "random", "L": "L", "T": "T", "U": "U",
+                     "C": "C", "H": "H", "F": "F", "O": "O",
+                     "Z": "Z", "S": "S", "X": "X", "Y": "Y",
+                     "M": "M", "N": "N", "E": "E"}
         seed = self._seed_spin.value() if self._seed_spin.value() > 0 else None
         return GeneratorConfig(
             stage_width=self._width_spin.value(),
@@ -166,6 +178,7 @@ class GeneratorPanel(QWidget):
             include_no_shoots=self._no_shoot_check.isChecked(),
             difficulty=diff_map[self._diff_combo.currentIndex()],
             seed=seed,
+            letter_shape=shape_map[self._shape_combo.currentText()],
         )
 
     @Slot()

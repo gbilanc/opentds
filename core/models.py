@@ -39,12 +39,30 @@ class StageItem:
 
 
 @dataclass
+class ShootingPosition:
+    """Posizione di tiro del tiratore all'interno dello stage.
+    
+    Uno stage IPSC può avere una posizione di partenza (start) e
+    posizioni intermedie opzionali dove il tiratore deve
+    fermarsi per ingaggiare bersagli.
+    """
+    id: int
+    x: float = 0.0
+    y: float = 0.0
+    label: str = ""
+    is_start: bool = False  # True = posizione di partenza
+    angle: float = 0.0       # direzione di ingaggio preferita (gradi)
+    properties: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Stage:
     """Contenitore dello stage."""
     name: str = "Nuovo Stage"
     width: float = 20.0   # metri
     depth: float = 15.0   # metri
     items: List[StageItem] = field(default_factory=list)
+    shooting_positions: List[ShootingPosition] = field(default_factory=list)
     _next_id: int = 1
 
     def add_item(self, item: StageItem) -> StageItem:

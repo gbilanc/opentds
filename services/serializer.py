@@ -1,17 +1,17 @@
-# services/serializer.py
-"""Serializzazione e deserializzazione stage in JSON."""
+"""
+Serializzazione e deserializzazione stage in JSON (schema v2 con shooting positions).
+"""
 from __future__ import annotations
 import json
 from pathlib import Path
-from typing import Any, Dict
 
-from core.models import Stage, StageItem, ItemType
+from core.models import Stage, StageItem, ShootingPosition, ItemType
 
 
 def stage_to_dict(stage: Stage) -> dict:
     """Converte uno Stage in dizionario JSON-serializzabile."""
     return {
-        "version": 1,
+        "version": 2,
         "name": stage.name,
         "width": stage.width,
         "depth": stage.depth,
@@ -29,6 +29,18 @@ def stage_to_dict(stage: Stage) -> dict:
                 "properties": it.properties,
             }
             for it in stage.items
+        ],
+        "shooting_positions": [
+            {
+                "id": sp.id,
+                "x": sp.x,
+                "y": sp.y,
+                "label": sp.label,
+                "is_start": sp.is_start,
+                "angle": sp.angle,
+                "properties": sp.properties,
+            }
+            for sp in stage.shooting_positions
         ],
     }
 
@@ -57,7 +69,22 @@ def dict_to_stage(data: dict) -> Stage:
         stage.items.append(it)
         if it.id > max_id:
             max_id = it.id
-    stage._next_id = max_id + 1
+    # Shooting positions
+    max_sp_id = 0
+    for sp_data in data.get("shooting_positions", []):
+        sp = ShootingPosition(
+            id=sp_data.get("id", 0),
+            x=sp_data.get("x", 0.0),
+            y=sp_data.get("y", 0.0),
+            label=sp_data.get("label", ""),
+            is_start=sp_data.get("is_start", False),
+            angle=sp_data.get("angle", 0.0),
+            properties=sp_data.get("properties", {}),
+        )
+        stage.shooting_positions.append(sp)
+        if sp.id > max_sp_id:
+            max_sp_id = sp.id
+    stage._next_id = max(max_id, max_sp_id) + 1
     return stage
 
 

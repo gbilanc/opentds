@@ -306,9 +306,10 @@ Rectangle {
                     position: Qt.vector3d(modelData.x, modelData.y, modelData.z)
 
                     Model {
-                        source: (modelData.type === "target" || modelData.type === "noshoot" ||
-                                modelData.type === "swinger" || modelData.type === "drop_turner" ||
-                                modelData.type === "mover") ? "#Rectangle" : "#Cube"
+                        // #Cube per tutti: #Rectangle è 2D monofacciale e scompare
+                        // quando ruotato. #Cube con scaleZ sottile (0.02) dà lo stesso
+                        // effetto cartoncino ma visibile da ogni angolazione.
+                        source: "#Cube"
                         scale: Qt.vector3d(modelData.scaleX, modelData.scaleY, modelData.scaleZ)
                         eulerRotation.y: modelData.rotation
                         materials: [ PrincipledMaterial {
@@ -332,18 +333,35 @@ Rectangle {
                             }
                         }
 
-                        // Animazione Mover: traslazione oscillante
-                        SequentialAnimation on position.x {
+                        // Animazione Mover: traslazione oscillante lungo l'asse di rotazione
+                        // Calcola spostamento in coordinate locali usando l'angolo di rotazione
+                        SequentialAnimation on position {
                             running: modelData.type === "mover"
                             loops: Animation.Infinite
-                            NumberAnimation {
-                                from: modelData.x - (modelData.distance || 3.0)/2
-                                to: modelData.x + (modelData.distance || 3.0)/2
+                            PropertyAnimation {
+                                from: Qt.vector3d(
+                                    -(modelData.distance || 3.0)/2 * Math.cos(modelData.rotation * Math.PI/180),
+                                    0,
+                                    -(modelData.distance || 3.0)/2 * Math.sin(modelData.rotation * Math.PI/180)
+                                )
+                                to: Qt.vector3d(
+                                    (modelData.distance || 3.0)/2 * Math.cos(modelData.rotation * Math.PI/180),
+                                    0,
+                                    (modelData.distance || 3.0)/2 * Math.sin(modelData.rotation * Math.PI/180)
+                                )
                                 duration: 3000 / (modelData.speed || 1.5)
                             }
-                            NumberAnimation {
-                                from: modelData.x + (modelData.distance || 3.0)/2
-                                to: modelData.x - (modelData.distance || 3.0)/2
+                            PropertyAnimation {
+                                from: Qt.vector3d(
+                                    (modelData.distance || 3.0)/2 * Math.cos(modelData.rotation * Math.PI/180),
+                                    0,
+                                    (modelData.distance || 3.0)/2 * Math.sin(modelData.rotation * Math.PI/180)
+                                )
+                                to: Qt.vector3d(
+                                    -(modelData.distance || 3.0)/2 * Math.cos(modelData.rotation * Math.PI/180),
+                                    0,
+                                    -(modelData.distance || 3.0)/2 * Math.sin(modelData.rotation * Math.PI/180)
+                                )
                                 duration: 3000 / (modelData.speed || 1.5)
                             }
                         }

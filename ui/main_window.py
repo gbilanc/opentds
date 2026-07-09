@@ -10,12 +10,14 @@ from PySide6.QtWidgets import (
     QApplication, QDockWidget
 )
 
-from core.models import Stage, ItemType, StageItem
+from core.models import Stage, ItemType
 from core.generator import GeneratorConfig, GeneratorResult
 from ui.editor.stage_scene import StageScene, StageItemWrapper
 from ui.editor.stage_view import StageView
 from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
+from ui.editor.stage_info import StageInfoPanel
+from ui.viewer3d.quick_3d_widget import Quick3DWidget
 from ui.workers.generator_worker import GeneratorWorker
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
@@ -35,24 +37,14 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._current_worker: GeneratorWorker | None = None
 
-        # Dati di esempio
-        self._scene.add_wall(5.0, 7.0, 4.0, 0.2)
-        self._scene.add_wall(12.0, 10.0, 0.2, 3.0)
-        self._scene.add_target(6.0, 5.0, 0.45, 0.45, ItemType.PAPER_TARGET)
-        self._scene.add_target(13.0, 8.0, 0.30, 0.30, ItemType.STEEL_TARGET)
-        self._scene.add_fault_line(3.0, 10.0, 4.0)
-        self._scene.add_no_shoot(6.5, 5.5, 0.45, 0.45)
-        self._scene.add_barrier(10.0, 3.0, 2.0, 0.15)
-        self._scene.add_door(8.0, 2.0, 0.9, 0.05)
-
     def _setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        self._ui_layout = QHBoxLayout(central)
+        self._ui_layout.setContentsMargins(0, 0, 0, 0)
+        self._ui_layout.setSpacing(0)
 
-        # Pannello editor 2D (occupa tutto)
+        # Pannello editor 2D (sinistra)
         panel_2d = QWidget()
         v2 = QVBoxLayout(panel_2d)
         v2.setContentsMargins(8, 8, 8, 8)
@@ -66,18 +58,31 @@ class MainWindow(QMainWindow):
         self._view = StageView(self._scene)
         v2.addWidget(self._view)
 
-        layout.addWidget(panel_2d)
+        self._panel_2d = panel_2d
+        self._ui_layout.addWidget(self._panel_2d)
 
-        # Property dock
+        # Viewer 3D (a destra, inizialmente nascosto)
+        self._viewer_3d = Quick3DWidget(self._stage)
+        self._viewer_3d.setMinimumWidth(400)
+        self._viewer_3d.setVisible(False)
+        self._ui_layout.addWidget(self._viewer_3d)
+
+        # Info dock (sinistra)
+        self._info_panel = StageInfoPanel()
+        self._info_dock = QDockWidget("Info Stage", self)
+        self._info_dock.setWidget(self._info_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._info_dock)
+
+        # Property dock (destra)
         self._prop_dock = PropertyDock(self)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._prop_dock)
 
-        # Generator dock
+        # Generator dock (raggruppato con info a sinistra)
         self._gen_panel = GeneratorPanel(self)
         self._gen_dock = QDockWidget("Generazione", self)
         self._gen_dock.setWidget(self._gen_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._gen_dock)
-        self.tabifyDockWidget(self._gen_dock, self._prop_dock)
+        self.tabifyDockWidget(self._info_dock, self._gen_dock)
 
     def _setup_toolbar(self):
         toolbar = QToolBar("Strumenti")
@@ -112,6 +117,15 @@ class MainWindow(QMainWindow):
             lambda: self._scene.add_drop_turner(cx - 1.5, cy)))
         toolbar.addWidget(_btn("+ Mover", "Aggiungi mover",
             lambda: self._scene.add_mover(cx, cy + 2.5)))
+
+        toolbar.addSeparator()
+
+        # Toggle 3D viewer
+        self._btn_3d = QPushButton("🎮 3D")
+        self._btn_3d.setToolTip("Mostra/nascondi viewer 3D")
+        self._btn_3d.setCheckable(True)
+        self._btn_3d.toggled.connect(self._toggle_3d_view)
+        toolbar.addWidget(self._btn_3d)
 
         toolbar.addSeparator()
 
@@ -205,6 +219,13 @@ class MainWindow(QMainWindow):
         self._prop_dock.propertyChanged.connect(self._on_property_changed)
         self._gen_panel.generateRequested.connect(self._on_generate_requested)
         self._gen_panel.stopRequested.connect(self._on_stop_requested)
+        # Sincronizzazione 2D → 3D e Info
+        self._scene.itemAdded.connect(self._refresh_3d)
+        self._scene.itemUpdated.connect(self._refresh_3d)
+        self._scene.itemRemoved.connect(self._refresh_3d)
+        self._scene.itemAdded.connect(self._refresh_info)
+        self._scene.itemUpdated.connect(self._refresh_info)
+        self._scene.itemRemoved.connect(self._refresh_info)
 
     @Slot(StageItemWrapper)
     def _on_item_added(self, _wrapper):
@@ -285,8 +306,30 @@ class MainWindow(QMainWindow):
         self._gen_panel.on_generation_error(message)
         self._current_worker = None
 
+    @Slot(bool)
+    def _toggle_3d_view(self, visible: bool):
+        """Mostra/nasconde il viewer 3D nella UI."""
+        self._viewer_3d.setVisible(visible)
+        if visible:
+            self._viewer_3d.refresh()
+            self._viewer_3d.reset_camera()
+            self._status.showMessage("Vista 3D attivata — drag orbita | WASD pan | F11 fullscreen")
+        else:
+            self._status.showMessage("Vista 3D disattivata")
+
+    @Slot()
+    def _refresh_3d(self):
+        """Aggiorna la vista 3D dopo cambiamenti nell'editor 2D."""
+        if self._viewer_3d.isVisible():
+            self._viewer_3d.refresh()
+
+    @Slot()
+    def _refresh_info(self):
+        """Aggiorna il pannello Info Stage."""
+        self._info_panel.set_stage(self._stage)
+
     def _replace_stage(self, new_stage: Stage):
-        """Sostituisce lo stage nell'editor 2D."""
+        """Sostituisce lo stage nell'editor 2D, 3D e Info."""
         self._scene.clear()
         self._stage.name = new_stage.name
         self._stage.width = new_stage.width
@@ -300,3 +343,6 @@ class MainWindow(QMainWindow):
         self._scene._setup_grid()
         self._scene._sync_from_model()
         self._prop_dock.set_item(None)
+        # Aggiorna viewer 3D e Info
+        self._viewer_3d.update_dimensions(self._stage.width, self._stage.depth)
+        self._refresh_info()

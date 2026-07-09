@@ -1,21 +1,46 @@
-# ui/editor/stage_scene.py
-"""Scena 2D con undo/redo, griglia, snap e tutti i tipi di oggetto."""
+"""
+Scena 2D con undo/redo, griglia, snap e tutti i tipi di oggetto.
+
+Architettura:
+  StageItemMixin  → logica comune (snap, rotazione, selezione, sincronia modello)
+  ┣━ RectItem     → muri, barriere, porte, swinger, drop_turner, mover
+  ┣━ EllipseItem  → bersagli cartacei, metallici, no-shoot
+  ┗━ FaultLineItem → linea personalizzata
+"""
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Callable
 import math
-from PySide6.QtCore import Qt, Signal, QObject
-from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPainterPath
+from PySide6.QtCore import Qt, Signal, QObject, QPointF, QRectF
+from PySide6.QtGui import (
+    QPen, QBrush, QColor, QPainter, QPainterPath,
+    QUndoStack, QUndoCommand,
+)
 from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsRectItem, QGraphicsEllipseItem,
-    QGraphicsItem
+    QGraphicsItem,
 )
-from PySide6.QtGui import QUndoStack, QUndoCommand
 
 from core.models import Stage, StageItem, ItemType
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Utilities
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _snap_pos(pos: QPointF, scale: float) -> QPointF:
+    """Snap a metà della griglia (0.5 m · scale)."""
+    snap = 0.5 * scale
+    x = round(pos.x() / snap) * snap
+    y = round(pos.y() / snap) * snap
+    return QPointF(x, y)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Wrapper
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class StageItemWrapper(QObject):
-    """Wrapper Qt per uno StageItem."""
+    """Wrapper Qt per uno StageItem — emette changed quando l'item viene modificato."""
     changed = Signal()
 
     def __init__(self, item: StageItem, parent=None):
@@ -23,8 +48,12 @@ class StageItemWrapper(QObject):
         self.item = item
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Griglia
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class GridItem(QGraphicsItem):
-    """Griglia metrica sullo sfondo con confini e parapalle."""
+    """Griglia metrica sullo sfondo con confini, parapalle e indicazioni direzionali."""
     def __init__(self, width_m: float, depth_m: float, scale: float = 40.0, parent=None):
         super().__init__(parent)
         self.width_m = width_m
@@ -34,7 +63,6 @@ class GridItem(QGraphicsItem):
         self.pen.setWidthF(1)
 
     def boundingRect(self):
-        from PySide6.QtCore import QRectF
         margin = 60
         return QRectF(-margin, -margin,
                        self.width_m * self.scale + margin * 2,
@@ -44,14 +72,12 @@ class GridItem(QGraphicsItem):
         w = self.width_m * self.scale
         h = self.depth_m * self.scale
 
-        # ─── PARAPALLE DI FONDO (area fondale) ───
+        # Parapalle di fondo
         backstop_brush = QBrush(QColor("#5c3a1e"))
         backstop_brush.setStyle(Qt.BrushStyle.CrossPattern)
         painter.setBrush(backstop_brush)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRect(0, int(h - 20), int(w), 20)
-
-        # Etichetta PARAPALLE
         painter.setPen(QPen(QColor("#5c3a1e"), 1))
         font = painter.font()
         font.setPointSize(9)
@@ -59,16 +85,16 @@ class GridItem(QGraphicsItem):
         painter.setFont(font)
         painter.drawText(4, int(h - 6), "⬇ PARAPALLE DI FONDO")
 
-        # Area di ingresso (start position)
+        # Area di partenza
         start_brush = QBrush(QColor("#22c55e"))
         start_brush.setStyle(Qt.BrushStyle.Dense4Pattern)
         painter.setBrush(start_brush)
         painter.setPen(Qt.PenStyle.NoPen)
-        start_w = 2.0 * self.scale
-        start_h = 2.0 * self.scale
-        painter.drawRect(int(w / 2 - start_w / 2), 0, int(start_w), int(start_h))
+        sw = 2.0 * self.scale
+        sh = 2.0 * self.scale
+        painter.drawRect(int(w / 2 - sw / 2), 0, int(sw), int(sh))
 
-        # ─── GRIGLIA ───
+        # Griglia
         painter.setPen(self.pen)
         for i in range(int(self.width_m) + 1):
             x = i * self.scale
@@ -77,53 +103,71 @@ class GridItem(QGraphicsItem):
             y = i * self.scale
             painter.drawLine(0, int(y), int(w), int(y))
 
-        # ─── ETICHETTE DIREZIONALI ───
+        # Etichette
         font.setPointSize(8)
         font.setBold(False)
         painter.setFont(font)
-
-        # UP-RANGE (verso tiratore, in alto nella vista 2D)
         painter.setPen(QPen(QColor("#22c55e"), 1))
         painter.drawText(4, 14, "🟢 UP-RANGE (ingresso tiratore)")
-
-        # DOWN-RANGE (verso parapalle, in basso nella vista 2D)
         painter.setPen(QPen(QColor("#ef4444"), 1))
         painter.drawText(4, int(h - 22), "🔴 DOWN-RANGE (verso parapalle)")
 
 
-def _snap_pos(pos, scale):
-    snap = 0.5 * scale
-    x = round(pos.x() / snap) * snap
-    y = round(pos.y() / snap) * snap
-    from PySide6.QtCore import QPointF
-    return QPointF(x, y)
+# ═══════════════════════════════════════════════════════════════════════════════
+#  StageItemMixin — logica comune a tutti gli item grafici
+# ═══════════════════════════════════════════════════════════════════════════════
 
+class StageItemMixin:
+    """Mixin che fornisce a ogni item grafico:
+    - snap alla griglia durante il drag
+    - sincronia bidirezionale con StageItem (posizione, rotazione)
+    - handle di rotazione trascinabile
+    - evidenziazione selezione (dashed border)
+    - hover cursor
+    """
 
-def _base_item_flags(item: QGraphicsItem):
-    item.setFlags(
-        QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
-        QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
-        QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
-    )
-    item.setAcceptHoverEvents(True)
+    # ---- init helper (chiamato dalle sottoclassi) ----
 
+    def stage_item_init(self, wrapper: StageItemWrapper, scale: float):
+        """Inizializza il mixin. Chiamare nel __init__ della sottoclasse."""
+        self.wrapper = wrapper
+        self.scale = scale
+        self._is_rotating = False
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
+            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+        )
+        self.setAcceptHoverEvents(True)
 
-# ---------- ROTATION HANDLE MIXIN ----------
+    # ---- Sincronia posizione / modello ----
 
-class RotationHandleMixin:
-    """Mixin che aggiunge un handle di rotazione trascinabile agli item selezionati."""
+    def update_from_model(self):
+        """Aggiorna posizione e rotazione dal modello. Le sottoclassi
+        sovrascrivono per impostare anche la forma (rect/ellisse)."""
+        it = self.wrapper.item
+        self.setPos(it.x * self.scale, it.y * self.scale)
+        self.setRotation(it.rotation)
 
-    _is_rotating = False
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            return _snap_pos(value, self.scale)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self.wrapper.item.x = self.pos().x() / self.scale
+            self.wrapper.item.y = self.pos().y() / self.scale
+            self.wrapper.changed.emit()
+        return super().itemChange(change, value)
 
-    def _rotation_handle_rect(self):
+    # ---- Handle di rotazione ----
+
+    def _rotation_handle_rect(self) -> QRectF:
         br = self.boundingRect()
         handle_size = 12.0
         cx = br.center().x()
         top = br.top()
-        from PySide6.QtCore import QRectF
         return QRectF(cx - handle_size / 2, top - handle_size - 8, handle_size, handle_size)
 
-    def _draw_rotation_handle(self, painter):
+    def _draw_rotation_handle(self, painter: QPainter):
         if not self.isSelected():
             return
         painter.save()
@@ -143,7 +187,7 @@ class RotationHandleMixin:
         painter.drawText(self._rotation_handle_rect(), Qt.AlignmentFlag.AlignCenter, "↻")
         painter.restore()
 
-    def _handle_press_on_rotation(self, pos):
+    def _handle_press_on_rotation(self, pos: QPointF) -> bool:
         return self._rotation_handle_rect().contains(pos)
 
     def mousePressEvent(self, event):
@@ -173,9 +217,8 @@ class RotationHandleMixin:
             delta = math.degrees(current_angle - self._start_scene_angle)
             new_rotation = self._start_rotation + delta
             self.setRotation(new_rotation)
-            if hasattr(self, 'wrapper'):
-                self.wrapper.item.rotation = new_rotation
-                self.wrapper.changed.emit()
+            self.wrapper.item.rotation = new_rotation
+            self.wrapper.changed.emit()
             event.accept()
         else:
             super().mouseMoveEvent(event)
@@ -194,106 +237,134 @@ class RotationHandleMixin:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
 
+    # ---- Evidenziazione selezione ----
 
-class WallGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
+    def _draw_selection_highlight(self, painter: QPainter):
+        """Disegna il bordo tratteggiato di selezione."""
+        if not self.isSelected():
+            return
+        pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        br = self.boundingRect().adjusted(-4, -4, 4, 4)
+        if isinstance(self, QGraphicsEllipseItem):
+            painter.drawEllipse(br)
+        elif isinstance(self, QGraphicsRectItem):
+            painter.drawRect(br)
+        # FaultLineGraphicsItem gestisce il proprio bounding rect in paint()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Item grafici concreti (ciascuno eredita StageItemMixin + base Qt)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
+    """Classe base per item con forma rettangolare: muro, barriera, porta, bersagli mobili."""
+
+    def __init__(self, wrapper: StageItemWrapper, scale: float,
+                 color: str, pen_color: str = "#0f172a", pen_width: int = 2,
+                 brush_alpha: int = 255, pen_style: Qt.PenStyle = Qt.PenStyle.SolidLine,
+                 parent=None):
+        QGraphicsRectItem.__init__(self, parent)
+        self.stage_item_init(wrapper, scale)
+        self._rect_brush = QBrush(QColor(color))
+        if brush_alpha < 255:
+            c = QColor(color)
+            c.setAlpha(brush_alpha)
+            self._rect_brush = QBrush(c)
+        self._rect_pen = QPen(QColor(pen_color), pen_width)
+        self._rect_pen.setStyle(pen_style)
         self.update_from_model()
-        self.setBrush(QBrush(QColor(wrapper.item.color)))
-        self.setPen(QPen(QColor("#0f172a"), 2))
-
-    def update_from_model(self):
-        it = self.wrapper.item
-        half_w = (it.width * self.scale) / 2
-        half_h = (it.height * self.scale) / 2
-        self.setRect(-half_w, -half_h, it.width * self.scale, it.height * self.scale)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        if self.isSelected():
-            pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
-
-
-class TargetGraphicsItem(RotationHandleMixin, QGraphicsEllipseItem):
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        self.setBrush(QBrush(QColor(wrapper.item.color)))
-        self.setPen(QPen(QColor("#0f172a"), 2))
 
     def update_from_model(self):
         it = self.wrapper.item
         w = it.width * self.scale
         h = it.height * self.scale
-        self.setRect(-w/2, -h/2, w, h)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
+        self.setRect(-w / 2, -h / 2, w, h)
+        super().update_from_model()
 
     def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        if self.isSelected():
-            pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(self.boundingRect().adjusted(-4, -4, 4, 4))
+        painter.setBrush(self._rect_brush)
+        painter.setPen(self._rect_pen)
+        painter.drawRect(self.rect())
+        self._paint_decoration(painter)
+        self._draw_selection_highlight(painter)
         self._draw_rotation_handle(painter)
 
+    def _paint_decoration(self, painter: QPainter):
+        """Override per decorazioni specifiche (porta, swinger, mover…)."""
+        pass
 
-class FaultLineGraphicsItem(RotationHandleMixin, QGraphicsItem):
+
+class EllipseGraphicsItem(StageItemMixin, QGraphicsEllipseItem):
+    """Classe base per item con forma ellittica: bersagli carta/steel, no-shoot."""
+
+    def __init__(self, wrapper: StageItemWrapper, scale: float,
+                 color: str, pen_color: str = "#0f172a", pen_width: int = 2,
+                 brush_alpha: int = 255, parent=None):
+        QGraphicsEllipseItem.__init__(self, parent)
+        self.stage_item_init(wrapper, scale)
+        c = QColor(color)
+        if brush_alpha < 255:
+            c.setAlpha(brush_alpha)
+        self._ellipse_brush = QBrush(c)
+        self._ellipse_pen = QPen(QColor(pen_color), pen_width)
+        self.update_from_model()
+
+    def update_from_model(self):
+        it = self.wrapper.item
+        w = it.width * self.scale
+        h = it.height * self.scale
+        self.setRect(-w / 2, -h / 2, w, h)
+        super().update_from_model()
+
+    def paint(self, painter, option, widget=None):
+        painter.setBrush(self._ellipse_brush)
+        painter.setPen(self._ellipse_pen)
+        painter.drawEllipse(self.rect())
+        self._paint_decoration(painter)
+        self._draw_selection_highlight(painter)
+        self._draw_rotation_handle(painter)
+
+    def _paint_decoration(self, painter: QPainter):
+        """Override per X di no-shoot, etc."""
+        pass
+
+
+# ─── Implementazioni concrete ────────────────────────────────────────────────
+
+class WallGraphicsItem(RectGraphicsItem):
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
+
+
+class TargetGraphicsItem(EllipseGraphicsItem):
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
+
+
+class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
+    """Linea di fault: linea tratteggiata rossa con bounding rect custom."""
+
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        QGraphicsItem.__init__(self, parent)
+        self.stage_item_init(wrapper, scale)
         self.update_from_model()
 
     def boundingRect(self):
-        from PySide6.QtCore import QRectF
         w = self.wrapper.item.width * self.scale
         pen_w = 8
-        return QRectF(-w/2 - pen_w, -pen_w, w + pen_w*2, pen_w*2)
+        return QRectF(-w / 2 - pen_w, -pen_w, w + pen_w * 2, pen_w * 2)
 
     def paint(self, painter, option, widget=None):
         pen = QPen(QColor("#dc2626"), 3)
         pen.setDashPattern([6, 4])
         painter.setPen(pen)
         w = self.wrapper.item.width * self.scale
-        painter.drawLine(-w/2, 0, w/2, 0)
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 1, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect())
+        painter.drawLine(-w / 2, 0, w / 2, 0)
+        self._draw_selection_highlight(painter)
         self._draw_rotation_handle(painter)
 
     def update_from_model(self):
@@ -310,261 +381,92 @@ class FaultLineGraphicsItem(RotationHandleMixin, QGraphicsItem):
         return super().itemChange(change, value)
 
 
-class NoShootGraphicsItem(RotationHandleMixin, QGraphicsEllipseItem):
+class NoShootGraphicsItem(EllipseGraphicsItem):
+    """No-shoot: ellisse rossa semitrasparente con X."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        c = QColor(wrapper.item.color)
-        c.setAlpha(120)
-        self.setBrush(QBrush(c))
-        self.setPen(QPen(QColor("#dc2626"), 2))
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#dc2626", pen_width=2, brush_alpha=120)
 
-    def update_from_model(self):
-        it = self.wrapper.item
-        w = it.width * self.scale
-        h = it.height * self.scale
-        self.setRect(-w/2, -h/2, w, h)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
+    def _paint_decoration(self, painter: QPainter):
         r = self.rect()
         pen = QPen(QColor("#7f1d1d"), 2)
         painter.setPen(pen)
         painter.drawLine(r.topLeft(), r.bottomRight())
         painter.drawLine(r.topRight(), r.bottomLeft())
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
 
 
-class BarrierGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
+class BarrierGraphicsItem(RectGraphicsItem):
+    """Barriera: rettangolo giallo tratteggiato semitrasparente."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        c = QColor(wrapper.item.color)
-        c.setAlpha(80)
-        self.setBrush(QBrush(c))
-        pen = QPen(QColor("#f59e0b"), 2)
-        pen.setDashPattern([6, 4])
-        self.setPen(pen)
-
-    def update_from_model(self):
-        it = self.wrapper.item
-        half_w = (it.width * self.scale) / 2
-        half_h = (it.height * self.scale) / 2
-        self.setRect(-half_w, -half_h, it.width * self.scale, it.height * self.scale)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#f59e0b", pen_width=2, brush_alpha=80,
+                         pen_style=Qt.PenStyle.DashLine)
 
 
-class DoorGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
+class DoorGraphicsItem(RectGraphicsItem):
+    """Porta: rettangolo con maniglia."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        self.setBrush(QBrush(QColor(wrapper.item.color)))
-        self.setPen(QPen(QColor("#0f172a"), 2))
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
 
-    def update_from_model(self):
-        it = self.wrapper.item
-        half_w = (it.width * self.scale) / 2
-        half_h = (it.height * self.scale) / 2
-        self.setRect(-half_w, -half_h, it.width * self.scale, it.height * self.scale)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
+    def _paint_decoration(self, painter: QPainter):
         r = self.rect()
         pen = QPen(QColor("#0f172a"), 1)
         painter.setPen(pen)
         painter.drawLine(r.center().x(), r.top(), r.center().x(), r.bottom())
         handle = QPainterPath()
-        hx = r.center().x() + r.width()*0.15
+        hx = r.center().x() + r.width() * 0.15
         hy = r.center().y()
-        handle.addEllipse(hx-3, hy-3, 6, 6)
+        handle.addEllipse(hx - 3, hy - 3, 6, 6)
         painter.fillPath(handle, QColor("#0f172a"))
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
 
 
-class SwingerGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
-    """Swinger: bersaglio con arco di oscillazione 2D."""
+class SwingerGraphicsItem(RectGraphicsItem):
+    """Swinger: rettangolo viola con arco di oscillazione."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        self.setBrush(QBrush(QColor("#a855f7")))
-        self.setPen(QPen(QColor("#0f172a"), 2))
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
 
-    def update_from_model(self):
-        it = self.wrapper.item
-        w = it.width * self.scale
-        h = it.height * self.scale
-        self.setRect(-w/2, -h/2, w, h)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        # Arco di oscillazione
+    def _paint_decoration(self, painter: QPainter):
         amp = self.wrapper.item.properties.get("amplitude", 45)
         pen = QPen(QColor("#a855f7"), 1, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         r = 40
-        start = -amp - self.rotation()
+        start_angle = -amp - self.rotation()
         span = amp * 2
-        painter.drawArc(int(-r), int(-r), int(r*2), int(r*2), int(start*16), int(span*16))
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
+        painter.drawArc(-r, -r, r * 2, r * 2, int(start_angle * 16), int(span * 16))
 
 
-class DropTurnerGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
-    """Drop Turner: bersaglio che cade quando colpito."""
+class DropTurnerGraphicsItem(RectGraphicsItem):
+    """Drop Turner: rettangolo verde acqua con freccia caduta."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        self.setBrush(QBrush(QColor("#14b8a6")))
-        self.setPen(QPen(QColor("#0f172a"), 2))
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
 
-    def update_from_model(self):
-        it = self.wrapper.item
-        w = it.width * self.scale
-        h = it.height * self.scale
-        self.setRect(-w/2, -h/2, w, h)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        # Freccia verso il basso
+    def _paint_decoration(self, painter: QPainter):
         pen = QPen(QColor("#0f172a"), 2)
         painter.setPen(pen)
         r = self.rect()
         cx, cy = r.center().x(), r.center().y()
-        painter.drawLine(int(cx), int(cy-8), int(cx), int(cy+8))
-        painter.drawLine(int(cx-4), int(cy+4), int(cx), int(cy+8))
-        painter.drawLine(int(cx+4), int(cy+4), int(cx), int(cy+8))
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
+        painter.drawLine(cx, cy - 8, cx, cy + 8)
+        painter.drawLine(cx - 4, cy + 4, cx, cy + 8)
+        painter.drawLine(cx + 4, cy + 4, cx, cy + 8)
 
 
-class MoverGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
-    """Mover: bersaglio su rotaia con traiettoria 2D."""
+class MoverGraphicsItem(RectGraphicsItem):
+    """Mover: rettangolo arancione con linea traiettoria."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(parent)
-        self.wrapper = wrapper
-        self.scale = scale
-        _base_item_flags(self)
-        self.update_from_model()
-        self.setBrush(QBrush(QColor("#f97316")))
-        self.setPen(QPen(QColor("#0f172a"), 2))
+        super().__init__(wrapper, scale, wrapper.item.color,
+                         pen_color="#0f172a", pen_width=2)
 
-    def update_from_model(self):
-        it = self.wrapper.item
-        w = it.width * self.scale
-        h = it.height * self.scale
-        self.setRect(-w/2, -h/2, w, h)
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self.wrapper.item.x = self.pos().x() / self.scale
-            self.wrapper.item.y = self.pos().y() / self.scale
-            self.wrapper.changed.emit()
-        return super().itemChange(change, value)
-
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
-        # Linea traiettoria
+    def _paint_decoration(self, painter: QPainter):
         dist = self.wrapper.item.properties.get("distance", 3.0) * self.scale
         pen = QPen(QColor("#f97316"), 1, Qt.PenStyle.DashLine)
         painter.setPen(pen)
@@ -572,19 +474,16 @@ class MoverGraphicsItem(RotationHandleMixin, QGraphicsRectItem):
         angle = math.radians(self.rotation())
         dx = math.cos(angle) * dist / 2
         dy = math.sin(angle) * dist / 2
-        painter.drawLine(int(-dx), int(-dy), int(dx), int(dy))
-        if self.isSelected():
-            sel = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
-            painter.setPen(sel)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect().adjusted(-4, -4, 4, 4))
-        self._draw_rotation_handle(painter)
+        painter.drawLine(-dx, -dy, dx, dy)
 
 
-# ---------- UNDO COMMANDS ----------
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Undo Commands
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class AddItemCommand(QUndoCommand):
-    def __init__(self, scene: "StageScene", item: StageItem, description: str = "Aggiungi oggetto"):
+    def __init__(self, scene: "StageScene", item: StageItem,
+                 description: str = "Aggiungi oggetto"):
         super().__init__(description)
         self.scene = scene
         self.item = item
@@ -600,7 +499,8 @@ class AddItemCommand(QUndoCommand):
 
 
 class RemoveItemCommand(QUndoCommand):
-    def __init__(self, scene: "StageScene", item_id: int, description: str = "Rimuovi oggetto"):
+    def __init__(self, scene: "StageScene", item_id: int,
+                 description: str = "Rimuovi oggetto"):
         super().__init__(description)
         self.scene = scene
         self.item_id = item_id
@@ -619,9 +519,12 @@ class RemoveItemCommand(QUndoCommand):
             self.scene._do_add_graphics_item(self._backup)
 
 
-# ---------- SCENE ----------
+# ═══════════════════════════════════════════════════════════════════════════════
+#  StageScene
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class StageScene(QGraphicsScene):
+    """Scena editor 2D con griglia, undo/redo, e factory di item grafici."""
     itemAdded = Signal(StageItemWrapper)
     itemRemoved = Signal(int)
     itemUpdated = Signal(int)
@@ -640,35 +543,41 @@ class StageScene(QGraphicsScene):
     def _setup_grid(self):
         self.grid = GridItem(self.stage.width, self.stage.depth, self.scale)
         self.addItem(self.grid)
-        self.setSceneRect(0, 0, self.stage.width * self.scale, self.stage.depth * self.scale)
+        self.setSceneRect(
+            0, 0,
+            self.stage.width * self.scale,
+            self.stage.depth * self.scale,
+        )
 
     def _sync_from_model(self):
         for it in self.stage.items:
             self._do_add_graphics_item(it)
 
+    # ── Factory ──────────────────────────────────────────────────────────────
+
+    _GRAPHICS_ITEM_CLASSES: dict[ItemType, tuple[type, str | None]] = {
+        ItemType.WALL:          (WallGraphicsItem, None),
+        ItemType.PAPER_TARGET:  (TargetGraphicsItem, None),
+        ItemType.STEEL_TARGET:  (TargetGraphicsItem, None),
+        ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
+        ItemType.NO_SHOOT:      (NoShootGraphicsItem, None),
+        ItemType.BARRIER:       (BarrierGraphicsItem, None),
+        ItemType.DOOR:          (DoorGraphicsItem, None),
+        ItemType.SWINGER:       (SwingerGraphicsItem, None),
+        ItemType.DROP_TURNER:   (DropTurnerGraphicsItem, None),
+        ItemType.MOVER:         (MoverGraphicsItem, None),
+    }
+
     def _make_graphics_item(self, item: StageItem) -> QGraphicsItem:
+        cls, _ = self._GRAPHICS_ITEM_CLASSES.get(
+            item.item_type,
+            (WallGraphicsItem, None),
+        )
         wrapper = StageItemWrapper(item)
         wrapper.changed.connect(lambda: self.itemUpdated.emit(item.id))
-        if item.item_type == ItemType.WALL:
-            return WallGraphicsItem(wrapper, self.scale)
-        elif item.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET):
-            return TargetGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.FAULT_LINE:
-            return FaultLineGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.NO_SHOOT:
-            return NoShootGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.BARRIER:
-            return BarrierGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.DOOR:
-            return DoorGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.SWINGER:
-            return SwingerGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.DROP_TURNER:
-            return DropTurnerGraphicsItem(wrapper, self.scale)
-        elif item.item_type == ItemType.MOVER:
-            return MoverGraphicsItem(wrapper, self.scale)
-        else:
-            return WallGraphicsItem(wrapper, self.scale)
+        return cls(wrapper, self.scale)
+
+    # ── Manipolazione item ───────────────────────────────────────────────────
 
     def _do_add_graphics_item(self, item: StageItem):
         g = self._make_graphics_item(item)
@@ -695,15 +604,13 @@ class StageScene(QGraphicsScene):
         else:
             self.selectionChangedWrapper.emit(None)
 
-    # ---- PUBLIC API with undo ----
+    # ── Public API con undo ──────────────────────────────────────────────────
 
     def push_add_item(self, item: StageItem):
-        cmd = AddItemCommand(self, item)
-        self.undo_stack.push(cmd)
+        self.undo_stack.push(AddItemCommand(self, item))
 
     def push_remove_item(self, item_id: int):
-        cmd = RemoveItemCommand(self, item_id)
-        self.undo_stack.push(cmd)
+        self.undo_stack.push(RemoveItemCommand(self, item_id))
 
     def push_remove_selected(self):
         for g in list(self.selectedItems()):
@@ -712,7 +619,7 @@ class StageScene(QGraphicsScene):
                     self.push_remove_item(gid)
                     break
 
-    # ---- Factory helpers ----
+    # ── Factory helpers ──────────────────────────────────────────────────────
 
     def add_wall(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
         item = StageItem(0, ItemType.WALL, x, y, w, h, 0, "#475569", "Muro")

@@ -10,6 +10,14 @@ from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
 from core.models import Stage, StageItem, ItemType
 from core.ipsc_rules import IPSCRulesEngine
+from core.geometry import (
+    point_in_polygon,
+    polygon_center,
+    segments_intersect,
+    line_intersects_rect,
+    euclidean_distance,
+)
+from core.collision import item_obb, min_distance_between as obb_distance
 
 
 @dataclass
@@ -19,14 +27,16 @@ class GeneratorConfig:
     num_targets: int = 8
     num_steel: int = 2
     num_moving: int = 1  # swinger / drop_turner / mover
-    num_walls: int = 4
-    num_barriers: int = 2
+    num_walls: int = 1
+    num_barriers: int = 4
     include_fault_lines: bool = True
     include_no_shoots: bool = True
     difficulty: str = "medium"  # easy | medium | hard
     delimitation: str = "fault_lines"  # fault_lines | barriers | walls | mixed
     seed: Optional[int] = None
     max_attempts: int = 500
+    discipline: str = "ipsc_pistol"  # ipsc_pistol | mini_rifle | shotgun
+    letter_shape: str = "random"  # random (lettera casuale) | L | T | U | C | H | F | O | Z | S | X | Y | M | N | E
 
 
 @dataclass
@@ -34,6 +44,94 @@ class GeneratorResult:
     stage: Stage
     score: float
     attempts: int
+
+
+# ── Forme alfabetiche per l'area di tiro ──────────────────────────────
+# Ogni forma è definita come lista di vertici in coordinate normalizzate (0-1)
+# in senso antiorario. (0,0) = angolo basso-sinistra dello stage.
+# La forma viene scalata alle dimensioni dello stage e perturbata.
+
+LETTER_SHAPES: dict[str, List[Tuple[float, float]]] = {
+    "L": [
+        (0.00, 0.00), (1.00, 0.00), (1.00, 0.35),
+        (0.35, 0.35), (0.35, 1.00), (0.00, 1.00),
+    ],
+    "T": [
+        (0.00, 0.65), (0.35, 0.65), (0.35, 0.00),
+        (0.65, 0.00), (0.65, 0.65), (1.00, 0.65),
+        (1.00, 1.00), (0.00, 1.00),
+    ],
+    "U": [
+        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00),
+        (0.70, 1.00), (0.70, 0.25), (0.30, 0.25),
+        (0.30, 1.00), (0.00, 1.00),
+    ],
+    "C": [
+        (0.00, 0.00), (1.00, 0.00), (1.00, 0.20),
+        (0.20, 0.20), (0.20, 0.80), (1.00, 0.80),
+        (1.00, 1.00), (0.00, 1.00),
+    ],
+    "H": [
+        (0.00, 0.00), (0.30, 0.00), (0.30, 0.35),
+        (0.70, 0.35), (0.70, 0.00), (1.00, 0.00),
+        (1.00, 1.00), (0.70, 1.00), (0.70, 0.65),
+        (0.30, 0.65), (0.30, 1.00), (0.00, 1.00),
+    ],
+    "F": [
+        (0.25, 0.00), (1.00, 0.00), (1.00, 0.25),
+        (0.55, 0.25), (0.55, 0.50), (1.00, 0.50),
+        (1.00, 0.75), (0.55, 0.75), (0.55, 1.00),
+        (0.25, 1.00), (0.25, 0.00),
+    ],
+    "O": [
+        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+    ],
+    "Z": [
+        (0.00, 0.65), (0.65, 0.65), (0.00, 0.00),
+        (1.00, 0.00), (0.35, 0.65), (1.00, 0.65),
+        (1.00, 1.00), (0.00, 1.00),
+    ],
+    "S": [
+        (0.00, 0.00), (1.00, 0.00), (1.00, 0.20),
+        (0.25, 0.20), (0.25, 0.40), (1.00, 0.40),
+        (1.00, 0.60), (0.25, 0.60), (0.25, 0.80),
+        (1.00, 0.80), (1.00, 1.00), (0.00, 1.00),
+    ],
+    # ── Nuove forme ──────────────────────────────────────────────────────
+    "X": [
+        # Plus / croce: quattro bracci che si incontrano al centro
+        (0.35, 0.00), (0.65, 0.00), (0.65, 0.35),
+        (1.00, 0.35), (1.00, 0.65), (0.65, 0.65),
+        (0.65, 1.00), (0.35, 1.00), (0.35, 0.65),
+        (0.00, 0.65), (0.00, 0.35), (0.35, 0.35),
+    ],
+    "Y": [
+        # Stelo centrale in basso, biforcazione in alto a V
+        (0.40, 0.00), (0.60, 0.00), (0.60, 0.40),
+        (1.00, 0.70), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.70), (0.40, 0.40),
+    ],
+    "M": [
+        # Due gambe in basso, V centrale in alto
+        (0.00, 0.00), (0.25, 0.00), (0.25, 1.00),
+        (0.50, 0.50), (0.75, 1.00), (0.75, 0.00),
+        (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+    ],
+    "N": [
+        # Due barre verticali collegate da diagonale
+        (0.00, 0.00), (0.25, 0.00), (0.25, 0.70),
+        (0.75, 0.00), (1.00, 0.00), (1.00, 1.00),
+        (0.75, 1.00), (0.75, 0.30), (0.25, 1.00),
+        (0.00, 1.00),
+    ],
+    "E": [
+        # Tre ripiani orizzontali a destra, barra verticale a sinistra
+        (0.00, 0.00), (1.00, 0.00), (1.00, 0.25),
+        (0.30, 0.25), (0.30, 0.40), (1.00, 0.40),
+        (1.00, 0.60), (0.30, 0.60), (0.30, 0.75),
+        (1.00, 0.75), (1.00, 1.00), (0.00, 1.00),
+    ],
+}
 
 
 class StageGenerator:
@@ -47,59 +145,75 @@ class StageGenerator:
         self._interior_samples: List[Tuple[float, float]] = []  # punti interni per visibility check
 
     def generate(self) -> GeneratorResult:
-        stage = Stage(name="Stage Generato", width=self.config.stage_width,
-                      depth=self.config.stage_depth)
+        cfg = self.config
+        disc = cfg.discipline
+        if disc == "mini_rifle":
+            w = cfg.stage_width or 30.0
+            d = cfg.stage_depth or 20.0
+        elif disc == "shotgun":
+            w = cfg.stage_width or 15.0
+            d = cfg.stage_depth or 12.0
+        else:
+            w = cfg.stage_width
+            d = cfg.stage_depth
+
+        stage = Stage(name="Stage Generato", width=w, depth=d)
         engine = IPSCRulesEngine(stage)
+        engine.set_discipline(disc)
         items: List[StageItem] = []
         attempts = 0
 
-        # 1. Posiziona bersagli PRIMA (verso il fondale)
-        paper_count = self.config.num_targets - self.config.num_steel
-        for _ in range(paper_count):
-            it = self._place_target(stage, items, ItemType.PAPER_TARGET, engine)
-            if it:
-                items.append(it)
-            attempts += 1
-
-        for _ in range(self.config.num_steel):
-            it = self._place_target(stage, items, ItemType.STEEL_TARGET, engine)
-            if it:
-                items.append(it)
-            attempts += 1
-
-        # 2. Bersagli mobili
-        moving_types = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
-        for i in range(self.config.num_moving):
-            mtype = moving_types[i % len(moving_types)]
-            it = self._place_moving_target(stage, items, mtype, engine)
-            if it:
-                items.append(it)
-            attempts += 1
-
-        # 3. Genera perimetro AREA DI TIRO DAVANTI ai bersagli
-        #    Il perimetro non si estende oltre la posizione dei bersagli
-        items.extend(self._generate_perimeter_from_targets(stage, items))
-
-        # 4. Pre-calcola punti di osservazione interni
+        # 1. Genera perimetro AREA DI TIRO (lettera dell'alfabeto)
+        poly = self._generate_perimeter_polygon(stage)
+        self._perimeter_poly = poly
         self._interior_samples = self._sample_interior_points(20)
+        items.extend(self._generate_perimeter_items(stage, poly))
 
-        # 5. Genera muri/barriere FUORI dall'area di tiro (tra area e bersagli)
-        #    Solo se ostacolano l'acquisizione (nascondono bersagli in modo mirato)
+        # 2. Posiziona bersagli INTORNO all'area di tiro (fuori dal perimetro)
+        paper_count = cfg.num_targets - cfg.num_steel
+        for _ in range(paper_count):
+            it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
+            if it:
+                items.append(it)
+            attempts += 1
+
+        for _ in range(cfg.num_steel):
+            it = self._place_target_around(stage, items, ItemType.STEEL_TARGET, engine)
+            if it:
+                items.append(it)
+            attempts += 1
+
+        # 3. Bersagli mobili (anche loro intorno)
+        moving_types = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
+        for i in range(cfg.num_moving):
+            mtype = moving_types[i % len(moving_types)]
+            it = self._place_target_around(stage, items, mtype, engine, is_moving=True)
+            if it:
+                items.append(it)
+            attempts += 1
+
+        # 4. Muri/barriere FUORI dall'area di tiro
         items.extend(self._generate_walls(stage, items))
         items.extend(self._generate_barriers(stage, items))
 
-        # 6. No-shoots (opzionali)
-        if self.config.include_no_shoots:
-            ns_count = max(1, self.config.num_targets // 4)
+        # 5. Aggiunge muri restrittivi: impediscono che un bersaglio
+        #    sia ingaggiabile da TUTTE le posizioni dell'area di tiro.
+        #    Ogni bersaglio deve essere visibile da ALMENO 1 posizione
+        #    (garantito dopo), ma idealmente non da tutte.
+        items.extend(self._add_restrictive_walls(stage, items))
+
+        # 5. No-shoots
+        if cfg.include_no_shoots:
+            ns_count = max(1, cfg.num_targets // 4)
             for _ in range(ns_count):
                 it = self._place_no_shoot(stage, items, engine)
                 if it:
                     items.append(it)
                 attempts += 1
 
-        # 7. Fault lines tattiche (post-processing, vicino a bersagli)
-        if self.config.include_fault_lines:
-            items.extend(self._generate_fault_lines(stage, items))
+        # 6. Garantisce che TUTTI i bersagli siano visibili dall'area di tiro
+        #    Rimuove ostacoli che bloccano troppi bersagli finché 100% è visibile
+        items = self._ensure_target_visibility(stage, items)
 
         # Assegna tutti gli item allo stage
         for it in items:
@@ -109,36 +223,59 @@ class StageGenerator:
         return GeneratorResult(stage=stage, score=score, attempts=attempts)
 
     def _generate_walls(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
-        """Genera muri FUORI dal perimetro (tra area e bersagli).
-        Ogni muro deve oscurare almeno 1 bersaglio (serve a nascondere)."""
-        walls = []
-        count = self.config.num_walls
+        """Genera muri FUORI dal perimetro che oscurano bersagli."""
         avg_len = 3.0 if self.config.difficulty == "easy" else 5.0 if self.config.difficulty == "hard" else 4.0
+        return self._place_blocking_items(
+            stage, existing,
+            count=self.config.num_walls,
+            item_type=ItemType.WALL,
+            base_width=lambda: random.uniform(avg_len * 0.7, avg_len * 1.3),
+            base_height=0.2,
+            color="#475569",
+            label="Muro",
+        )
 
+    def _generate_barriers(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
+        """Genera barriere FUORI dal perimetro che oscurano bersagli."""
+        return self._place_blocking_items(
+            stage, existing,
+            count=self.config.num_barriers,
+            item_type=ItemType.BARRIER,
+            base_width=lambda: random.uniform(1.5, 3.0),
+            base_height=0.15,
+            color="#fbbf24",
+            label="Barriera",
+        )
+
+    def _place_blocking_items(self, stage: Stage, existing: List[StageItem],
+                               count: int, item_type: ItemType,
+                               base_width: callable, base_height: float,
+                               color: str, label: str) -> List[StageItem]:
+        """Piazza item (muri/barriere) tra area di tiro e bersagli.
+        Ogni item deve bloccare almeno 1 bersaglio senza nasconderne troppi.
+        """
+        items = []
         targets = [it for it in existing if it.item_type in (
             ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
             ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
         if not targets or not self._perimeter_poly or not self._interior_samples:
-            return walls
+            return items
 
         min_visible = max(1, math.ceil(len(targets) * 0.7))
         poly_max_y = max(p[1] for p in self._perimeter_poly)
         min_target_y = min(t.y for t in targets)
 
-        # Zona valida: fuori perimetro ma davanti ai bersagli
         zone_lo = poly_max_y + 0.5
         zone_hi = min_target_y - 0.5
         if zone_lo >= zone_hi:
-            return walls
+            return items
 
         for _ in range(count):
             placed = False
             for _ in range(100):
-                # Scegli un target e un punto di osservazione casuali
                 t = random.choice(targets)
                 ox, oy = random.choice(self._interior_samples)
 
-                # Calcola la frazione lungo la linea che cade nella zona valida
                 dy = t.y - oy
                 t_frac_lo = (zone_lo - oy) / dy if abs(dy) > 1e-6 else 0.5
                 t_frac_hi = (zone_hi - oy) / dy if abs(dy) > 1e-6 else 0.5
@@ -152,24 +289,23 @@ class StageGenerator:
                 y = oy + dy * t_frac
                 x = max(1.5, min(stage.width - 1.5, x))
 
-                # Deve essere FUORI dal perimetro
-                if self._point_in_polygon(x, y, self._perimeter_poly):
+                if point_in_polygon(x, y, self._perimeter_poly):
                     continue
 
-                # Rotazione perpendicolare alla linea di vista
                 angle_to_target = math.degrees(math.atan2(t.y - oy, t.x - ox))
                 rotation = angle_to_target + random.choice([-90, 90])
 
-                length = random.uniform(avg_len * 0.7, avg_len * 1.3)
-                w = StageItem(0, ItemType.WALL, x, y, length, 0.2, rotation, "#475569", "Muro")
+                item = StageItem(0, item_type, x, y,
+                                 base_width(), base_height,
+                                 rotation, color, label)
 
                 # Deve bloccare ALMENO 1 bersaglio
                 blocks_any = False
                 for t2 in targets:
                     for ox2, oy2 in self._interior_samples:
-                        if self._line_intersects_rect(
+                        if line_intersects_rect(
                             (ox2, oy2), (t2.x, t2.y),
-                            w.x, w.y, w.width, w.height, w.rotation
+                            item.x, item.y, item.width, item.height, item.rotation
                         ):
                             blocks_any = True
                             break
@@ -178,247 +314,198 @@ class StageGenerator:
                 if not blocks_any:
                     continue
 
+                # Non deve sovrapporsi ad altri ostacoli (muri, barriere, porte)
+                item_obb_geom = item_obb(item)
+                collides_with_obstacle = False
+                if item_obb_geom:
+                    for obs in existing + items:
+                        if obs.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR):
+                            obs_obb = item_obb(obs)
+                            if obs_obb and obb_distance(item_obb_geom, obs_obb) < 0.1:
+                                collides_with_obstacle = True
+                                break
+                if collides_with_obstacle:
+                    continue
+
                 # Non deve nascondere TROPPI bersagli
-                test_items = existing + walls + [w]
+                test_items = existing + items + [item]
                 test_blockers = self._get_blocking_walls(test_items)
                 visible_now = sum(1 for t2 in targets
                                   if self._is_target_visible(t2, test_blockers))
                 if visible_now >= min_visible:
-                    walls.append(w)
+                    items.append(item)
                     placed = True
                     break
             if not placed:
                 break
-        return walls
+        return items
 
-    def _generate_barriers(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
-        """Genera barriere FUORI dal perimetro (tra area e bersagli).
-        Posizionate sulla linea di vista tra campione e target."""
-        barriers = []
-        targets = [it for it in existing if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
-        if not targets or not self._perimeter_poly or not self._interior_samples:
-            return barriers
+    def _place_target_around(self, stage: Stage, existing: List[StageItem],
+                              ttype: ItemType, engine: IPSCRulesEngine,
+                              is_moving: bool = False) -> Optional[StageItem]:
+        """Posiziona un bersaglio INTORNO all'area di tiro.
+        
+        Regole:
+        - I bersagli sono posizionati FUORI dal perimetro dell'area di tiro
+        - SOLO tra area di tiro e parapalle di fondo/laterali
+        - MAI dentro l'area di tiro
+        - MAI verso l'ingresso (lati con normale uscente ny < -0.3)
+        - Bersagli metallici (steel): distanza fissa 8m dal perimetro
+        - Tutti i bersagli devono essere visibili dall'area di tiro
+        """
+        if not self._perimeter_poly or len(self._perimeter_poly) < 3:
+            return None
 
-        min_visible = max(1, math.ceil(len(targets) * 0.7))
-        poly_max_y = max(p[1] for p in self._perimeter_poly)
-        min_target_y = min(t.y for t in targets)
-
-        zone_lo = poly_max_y + 0.5
-        zone_hi = min_target_y - 0.5
-        if zone_lo >= zone_hi:
-            return barriers
-
-        for _ in range(self.config.num_barriers):
-            placed = False
-            for _ in range(100):
-                t = random.choice(targets)
-                ox, oy = random.choice(self._interior_samples)
-
-                dy = t.y - oy
-                t_frac_lo = (zone_lo - oy) / dy if abs(dy) > 1e-6 else 0.5
-                t_frac_hi = (zone_hi - oy) / dy if abs(dy) > 1e-6 else 0.5
-                t_frac_lo = max(0.2, min(t_frac_lo, t_frac_hi))
-                t_frac_hi = min(0.8, max(t_frac_lo, t_frac_hi))
-                if t_frac_lo >= t_frac_hi:
-                    continue
-                t_frac = random.uniform(t_frac_lo, t_frac_hi)
-
-                x = ox + (t.x - ox) * t_frac
-                y = oy + dy * t_frac
-                x = max(1.5, min(stage.width - 1.5, x))
-
-                if self._point_in_polygon(x, y, self._perimeter_poly):
-                    continue
-
-                angle_to_target = math.degrees(math.atan2(t.y - oy, t.x - ox))
-                rot = angle_to_target + random.choice([-90, 90])
-
-                bw = random.uniform(1.5, 3.0)
-                b = StageItem(0, ItemType.BARRIER, x, y, bw, 0.15, rot, "#fbbf24", "Barriera")
-
-                # Deve bloccare almeno 1 bersaglio
-                blocks_any = False
-                for t2 in targets:
-                    for ox2, oy2 in self._interior_samples:
-                        if self._line_intersects_rect(
-                            (ox2, oy2), (t2.x, t2.y),
-                            b.x, b.y, b.width, b.height, b.rotation
-                        ):
-                            blocks_any = True
-                            break
-                    if blocks_any:
-                        break
-                if not blocks_any:
-                    continue
-
-                test_items = existing + barriers + [b]
-                test_blockers = self._get_blocking_walls(test_items)
-                visible_now = sum(1 for t in targets
-                                  if self._is_target_visible(t, test_blockers))
-                if visible_now >= min_visible:
-                    barriers.append(b)
-                    placed = True
-                    break
-            if not placed:
-                break
-        return barriers
-
-    def _place_target(self, stage: Stage, existing: List[StageItem],
-                      ttype: ItemType, engine: IPSCRulesEngine) -> Optional[StageItem]:
-        """Posiziona bersaglio nel fondale (55-100% profondità)."""
         margin = engine.MIN_TARGET_TO_EDGE
-        back_start = stage.depth * 0.55
+        poly = self._perimeter_poly
+        n = len(poly)
+
+        # Parametri bersaglio
+        if ttype == ItemType.STEEL_TARGET:
+            w, h = 0.30, 0.30
+            color = "#3b82f6"
+            label = "Steel"
+            min_dist_from_edge = 8.0  # IPSC: distanza fissa 8m
+        elif is_moving:
+            colors = {
+                ItemType.SWINGER: ("#a855f7", "Swinger"),
+                ItemType.DROP_TURNER: ("#14b8a6", "Drop Turner"),
+                ItemType.MOVER: ("#f97316", "Mover"),
+            }
+            color, label = colors.get(ttype, ("#808080", ""))
+            w, h = 0.45, 0.45
+            min_dist_from_edge = 1.0
+        else:
+            w, h = 0.45, 0.45
+            color = "#ef4444"
+            label = "Paper"
+            min_dist_from_edge = 1.0
+
         for _ in range(self.config.max_attempts):
-            x = random.uniform(margin, stage.width - margin)
-            y = random.uniform(back_start, stage.depth - margin)
-            rot = random.uniform(-30, 30)
-            if ttype == ItemType.STEEL_TARGET:
-                w, h = 0.30, 0.30
-                color = "#3b82f6"
-                label = "Steel"
+            edge_idx = random.randrange(n)
+            x1, y1 = poly[edge_idx]
+            x2, y2 = poly[(edge_idx + 1) % n]
+            dx = x2 - x1
+            dy = y2 - y1
+            length = math.hypot(dx, dy)
+            if length < 0.3:
+                continue
+
+            # Posizione lungo il lato (interpolazione)
+            t = random.uniform(0.1, 0.9)
+            ex = x1 + dx * t
+            ey = y1 + dy * t
+
+            # Normale uscente (per poligono in senso antiorario)
+            nx = dy / length
+            ny = -dx / length
+
+            # Salta i lati che puntano VERSO L'INGRESSO (ny < -0.3 = componente
+            # negativa verso l'entrata). I bersagli devono stare SOLO tra
+            # l'area di tiro e il parapalle di fondo/laterali, MAI verso ingresso.
+            if ny < -0.3:
+                continue
+
+            # Distanza dal lato
+            dist = random.uniform(min_dist_from_edge, min_dist_from_edge + 3.0)
+            px = ex + nx * dist
+            py = ey + ny * dist
+
+            # Deve stare dentro lo stage
+            if not (margin <= px <= stage.width - margin and
+                    margin <= py <= stage.depth - margin):
+                continue
+
+            # Deve stare FUORI dal perimetro
+            if point_in_polygon(px, py, poly):
+                continue
+
+            # Orientamento VERSO IL PARAPALLE DI FONDO o LATERALE, MAI verso ingresso
+            # Calcola tre direzioni candidate: verso il centro del parapalle,
+            # verso il parapalle sinistro, verso il parapalle destro.
+            # Sceglie quella con la maggior componente down-range (y positiva).
+            backstop_cx = stage.width / 2
+            backstop_cy = stage.depth
+            left_cx = 0.0
+            left_cy = stage.depth / 2
+            right_cx = stage.width
+            right_cy = stage.depth / 2
+
+            candidates = [
+                (backstop_cx, backstop_cy),
+                (left_cx, left_cy),
+                (right_cx, right_cy),
+            ]
+            best_angle = None
+            best_downrange = -float('inf')
+            for tcx, tcy in candidates:
+                a = math.degrees(math.atan2(tcy - py, tcx - px))
+                # La componente down-range è positiva se il bersaglio
+                # punta verso y crescenti (verso il fondo dello stage)
+                dy_component = math.cos(math.radians(a - 90))
+                if dy_component > best_downrange:
+                    best_downrange = dy_component
+                    best_angle = a
+
+            rot = best_angle + random.uniform(-10, 10)
+
+            if is_moving:
+                mov_props = {
+                    ItemType.SWINGER: {"amplitude": random.uniform(30, 60),
+                                       "speed": random.uniform(0.5, 2.0)},
+                    ItemType.DROP_TURNER: {"trigger": "hit",
+                                            "fall_time": random.uniform(0.3, 1.0)},
+                    ItemType.MOVER: {"distance": random.uniform(2.0, 5.0),
+                                     "speed": random.uniform(0.5, 2.0)},
+                }
+                props = mov_props.get(ttype, {})
             else:
-                w, h = 0.45, 0.45
-                color = "#ef4444"
-                label = "Paper"
-            it = StageItem(0, ttype, x, y, w, h, rot, color, label)
-            if engine.is_valid_position(it, existing):
-                return it
-        return None
+                props = {}
 
-    def _place_moving_target(self, stage: Stage, existing: List[StageItem],
-                             mtype: ItemType, engine: IPSCRulesEngine) -> Optional[StageItem]:
-        margin = engine.MIN_TARGET_TO_EDGE
-        back_start = stage.depth * 0.55
-        for _ in range(self.config.max_attempts):
-            x = random.uniform(margin, stage.width - margin)
-            y = random.uniform(back_start, stage.depth - margin)
-            rot = random.uniform(-30, 30)
-            if mtype == ItemType.SWINGER:
-                w, h = 0.45, 0.45
-                color = "#a855f7"
-                label = "Swinger"
-                props = {"amplitude": random.uniform(30, 60), "speed": random.uniform(0.5, 2.0)}
-            elif mtype == ItemType.DROP_TURNER:
-                w, h = 0.45, 0.45
-                color = "#14b8a6"
-                label = "Drop Turner"
-                props = {"trigger": "hit", "fall_time": random.uniform(0.3, 1.0)}
-            else:  # MOVER
-                w, h = 0.45, 0.45
-                color = "#f97316"
-                label = "Mover"
-                props = {"distance": random.uniform(2.0, 5.0), "speed": random.uniform(0.5, 2.0)}
-            it = StageItem(0, mtype, x, y, w, h, rot, color, label, properties=props)
+            it = StageItem(0, ttype, px, py, w, h, rot, color, label,
+                           properties=props)
             if engine.is_valid_position(it, existing):
                 return it
         return None
 
     def _place_no_shoot(self, stage: Stage, existing: List[StageItem],
                         engine: IPSCRulesEngine) -> Optional[StageItem]:
-        """Posiziona un no-shoot vicino a un bersaglio esistente."""
-        targets = [it for it in existing if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]
-        if not targets:
+        """Posiziona un no-shoot ATTACCATO DAVANTI a un bersaglio cartaceo.
+        
+        I no-shoot hanno senso solo se attaccati davanti a bersagli
+        cartacei (paper target), per penalizzare tiri imprecisi.
+        Sono posizionati sulla linea che dal centro dell'area di tiro
+        va verso il paper target, a 0.3-0.8m da quest'ultimo (attaccati).
+        """
+        papers = [it for it in existing if it.item_type == ItemType.PAPER_TARGET]
+        if not papers or not self._perimeter_poly:
             return None
+        poly = self._perimeter_poly
+        cx = sum(p[0] for p in poly) / len(poly)
+        cy = sum(p[1] for p in poly) / len(poly)
+
         for _ in range(self.config.max_attempts):
-            target = random.choice(targets)
-            angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(1.2, 2.5)
-            x = target.x + math.cos(angle) * dist
-            y = target.y + math.sin(angle) * dist
+            paper = random.choice(papers)
+            dx = paper.x - cx
+            dy = paper.y - cy
+            dist = math.hypot(dx, dy)
+            if dist < 0.5:
+                continue
+            nx = dx / dist
+            ny = dy / dist
+            # Attaccato davanti al paper (0.3-0.8m)
+            ns_dist = random.uniform(0.3, 0.8)
+            x = paper.x - nx * ns_dist
+            y = paper.y - ny * ns_dist
+            if point_in_polygon(x, y, poly):
+                continue
             it = StageItem(0, ItemType.NO_SHOOT, x, y, 0.45, 0.45, 0, "#f87171", "No-Shoot")
             if engine.is_valid_position(it, existing):
                 return it
         return None
 
     # ─── Utilità geometriche ───
-
-    @staticmethod
-    def _point_in_polygon(px: float, py: float,
-                          poly: List[Tuple[float, float]]) -> bool:
-        """Ray casting: True se (px,py) è dentro il poligono convesso."""
-        inside = False
-        n = len(poly)
-        for i in range(n):
-            x1, y1 = poly[i]
-            x2, y2 = poly[(i + 1) % n]
-            if ((y1 > py) != (y2 > py)) and \
-               (px < (x2 - x1) * (py - y1) / (y2 - y1 + 1e-9) + x1):
-                inside = not inside
-        return inside
-
-    @staticmethod
-    def _polygon_center(poly: List[Tuple[float, float]]) -> Tuple[float, float]:
-        cx = sum(p[0] for p in poly) / len(poly)
-        cy = sum(p[1] for p in poly) / len(poly)
-        return cx, cy
-
-    @staticmethod
-    def _point_in_rotated_rect(px: float, py: float,
-                                cx: float, cy: float,
-                                w: float, h: float,
-                                angle_deg: float) -> bool:
-        """True se (px,py) è dentro il rettangolo ruotato."""
-        angle = math.radians(angle_deg)
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-        dx = px - cx
-        dy = py - cy
-        local_x = dx * cos_a + dy * sin_a
-        local_y = -dx * sin_a + dy * cos_a
-        return abs(local_x) <= w / 2 + 1e-6 and abs(local_y) <= h / 2 + 1e-6
-
-    @staticmethod
-    def _segments_intersect(a: Tuple[float, float],
-                             b: Tuple[float, float],
-                             c: Tuple[float, float],
-                             d: Tuple[float, float]) -> bool:
-        """True se il segmento a-b interseca c-d (esclusi estremi coincidenti)."""
-        def orient(p, q, r):
-            return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-        o1 = orient(a, b, c)
-        o2 = orient(a, b, d)
-        o3 = orient(c, d, a)
-        o4 = orient(c, d, b)
-        # Caso collineare: controlla se si sovrappongono
-        if abs(o1) < 1e-9 and abs(o2) < 1e-9 and abs(o3) < 1e-9 and abs(o4) < 1e-9:
-            # Proietta su asse x per sovrapposizione
-            def between(v, s1, s2):
-                return min(s1, s2) - 1e-6 <= v <= max(s1, s2) + 1e-6
-            return (between(a[0], c[0], d[0]) or between(b[0], c[0], d[0]) or
-                    between(c[0], a[0], b[0]) or between(d[0], a[0], b[0]))
-        return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
-
-    @staticmethod
-    def _line_intersects_rect(p1: Tuple[float, float],
-                               p2: Tuple[float, float],
-                               cx: float, cy: float,
-                               w: float, h: float,
-                               angle_deg: float) -> bool:
-        """True se il segmento p1-p2 interseca il rettangolo ruotato."""
-        # Se un estremo è dentro il rettangolo → interseca
-        if StageGenerator._point_in_rotated_rect(p1[0], p1[1], cx, cy, w, h, angle_deg):
-            return True
-        if StageGenerator._point_in_rotated_rect(p2[0], p2[1], cx, cy, w, h, angle_deg):
-            return True
-        # Controlla intersezione con ogni lato del rettangolo
-        angle = math.radians(angle_deg)
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-        hw, hh = w / 2, h / 2
-        # 4 angoli del rettangolo
-        corners = []
-        for dx, dy in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]:
-            x = cx + dx * cos_a - dy * sin_a
-            y = cy + dx * sin_a + dy * cos_a
-            corners.append((x, y))
-        n = len(corners)
-        for i in range(n):
-            if StageGenerator._segments_intersect(p1, p2, corners[i], corners[(i + 1) % n]):
-                return True
-        return False
+    # Le funzioni sono state migrate in core/geometry.py
 
     def _sample_interior_points(self, count: int = 20) -> List[Tuple[float, float]]:
         """Campiona punti casuali dentro il perimetro poligonale."""
@@ -435,9 +522,9 @@ class StageGenerator:
                 break
             x = random.uniform(min_x, max_x)
             y = random.uniform(min_y, max_y)
-            if self._point_in_polygon(x, y, self._perimeter_poly):
+            if point_in_polygon(x, y, self._perimeter_poly):
                 points.append((x, y))
-        return points[:count] if points else [(self._polygon_center(self._perimeter_poly))]
+        return points[:count] if points else [(polygon_center(self._perimeter_poly))]
 
     def _get_blocking_walls(self, items: List[StageItem]) -> List[StageItem]:
         """Ritorna gli item che bloccano la visuale (muri, porte, barriere perimetrali in stile walls)."""
@@ -454,7 +541,7 @@ class StageGenerator:
         for obs_x, obs_y in self._interior_samples:
             visible = True
             for wall in blockers:
-                if self._line_intersects_rect(
+                if line_intersects_rect(
                     (obs_x, obs_y), target_pos,
                     wall.x, wall.y, wall.width, wall.height, wall.rotation
                 ):
@@ -465,139 +552,106 @@ class StageGenerator:
         return False
 
     def _generate_perimeter_polygon(self, stage: Stage,
-                                     back_y: Optional[float] = None) -> List[Tuple[float, float]]:
-        """Genera i vertici di un poligono chiuso che delimita l'area di tiro.
-        back_y limita la profondità: il poligono non si estende oltre."""
+                                     back_y: Optional[float] = None,
+                                     rotation: Optional[float] = None) -> List[Tuple[float, float]]:
+        """Genera il poligono dell'area di tiro a forma di lettera dell'alfabeto.
+        
+        La lettera viene scalata alle dimensioni dello stage, ruotata
+        casualmente di 0/90/180/270 gradi, e leggermente perturbata.
+        Il perimetro è completamente chiuso, accessibile dalla parte
+        opposta al parapalle (fronte up-range). I bersagli vengono
+        posizionati INTORNO, mai dietro.
+        """
         margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
         w = stage.width
-        d_eff = back_y if back_y is not None else stage.depth
-        lo, hi = margin + 0.5, margin + 0.5
+        # Riserva almeno MIN_BACKSTOP_DEPTH metri tra area di tiro e parapalle
+        backstop_margin = IPSCRulesEngine.MIN_BACKSTOP_DEPTH
+        d_eff = back_y if back_y is not None else stage.depth - backstop_margin
 
-        # 1. Quattro angoli base (d_eff = profondità massima = back_y)
-        fl = (lo + random.uniform(0, 1.0), lo + random.uniform(0, 1.0))
-        fr = (w - hi - random.uniform(0, 1.0), lo + random.uniform(0, 1.0))
-        br = (w - hi - random.uniform(0, 1.0), d_eff - hi - random.uniform(0, 1.0))
-        bl = (lo + random.uniform(0, 1.0), d_eff - hi - random.uniform(0, 1.0))
+        def _poly_is_simple(poly: List[Tuple[float, float]]) -> bool:
+            n = len(poly)
+            for i in range(n):
+                a, b = poly[i], poly[(i + 1) % n]
+                for j in range(i + 2, n):
+                    if (j + 1) % n == i:
+                        continue
+                    c, d = poly[j], poly[(j + 1) % n]
+                    if segments_intersect(a, b, c, d):
+                        if (i + 1) % n == j or (j + 1) % n == i:
+                            continue
+                        return False
+            return True
 
-        base = [fl, fr, br, bl]
+        def _clamp(poly: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+            result = []
+            for px, py in poly:
+                nx = max(margin + 0.1, min(w - margin - 0.1, px))
+                ny = max(margin + 0.1, min(d_eff - margin - 0.1, py))
+                result.append((round(nx, 2), round(ny, 2)))
+            return result
 
-        # 2. Trasformazioni: skew, indent, chamfer
-        transforms = []
-        if random.random() < 0.6:
-            transforms.append('skew')
-        if random.random() < 0.5:
-            transforms.append('indent')
-        if random.random() < 0.35:
-            transforms.append('chamfer')
+        def _rotate_poly(poly: List[Tuple[float, float]], angle_deg: float,
+                          cx: float, cy: float) -> List[Tuple[float, float]]:
+            angle = math.radians(angle_deg)
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            result = []
+            for px, py in poly:
+                dx = px - cx
+                dy = py - cy
+                nx = cx + dx * cos_a - dy * sin_a
+                ny = cy + dx * sin_a + dy * cos_a
+                result.append((round(nx, 2), round(ny, 2)))
+            return result
 
-        if 'skew' in transforms:
-            side = random.randint(0, 3)
-            shift = random.uniform(1.0, 3.0) * random.choice([-1, 1])
-            if side == 0:
-                base[0] = (base[0][0] + shift, base[0][1])
-                base[1] = (base[1][0] + shift, base[1][1])
-            elif side == 1:
-                base[1] = (base[1][0], base[1][1] + shift)
-                base[2] = (base[2][0], base[2][1] + shift)
-            elif side == 2:
-                base[2] = (base[2][0] + shift, base[2][1])
-                base[3] = (base[3][0] + shift, base[3][1])
-            else:
-                base[0] = (base[0][0], base[0][1] + shift)
-                base[3] = (base[3][0], base[3][1] + shift)
+        def _perturb(poly: List[Tuple[float, float]], amount: float = 0.3) -> List[Tuple[float, float]]:
+            result = []
+            for px, py in poly:
+                nx = px + random.uniform(-amount, amount)
+                ny = py + random.uniform(-amount, amount)
+                result.append((round(nx, 2), round(ny, 2)))
+            return result
 
-        if 'indent' in transforms:
-            side = random.randint(0, 3)
-            if side == 0:  # frontale → rientra verso fondale
-                cut_x = random.uniform(w * 0.25, w * 0.6)
-                cut_depth = random.uniform(1.5, d_eff * 0.35)
-                idx = 1
-                base.insert(idx, (base[idx][0], base[idx][1] + cut_depth))
-                base.insert(idx, (cut_x, base[0][1]))
-            elif side == 1:  # destra → rientra verso sinistra
-                cut_y = random.uniform(d_eff * 0.2, d_eff * 0.6)
-                cut_depth = random.uniform(1.5, w * 0.3)
-                idx = 3
-                base.insert(idx, (base[idx][0] - cut_depth, base[idx][1]))
-                base.insert(idx, (base[2][0], cut_y))
-            elif side == 2:  # fondale → rientra verso fronte
-                cut_x = random.uniform(w * 0.25, w * 0.6)
-                cut_depth = random.uniform(1.5, d_eff * 0.35)
-                idx = len(base) - 1
-                base.insert(idx, (base[idx][0], base[idx][1] - cut_depth))
-                base.insert(idx, (cut_x, base[-1][1]))
-            else:  # sinistra → rientra verso destra
-                cut_y = random.uniform(d_eff * 0.2, d_eff * 0.6)
-                cut_depth = random.uniform(1.5, w * 0.3)
-                idx = 1
-                base.insert(idx, (base[0][0] + cut_depth, cut_y))
-                base.insert(idx, (base[0][0], cut_y))
+        # Sceglie la lettera
+        shape_type = self.config.letter_shape
+        if shape_type in LETTER_SHAPES:
+            letter = shape_type
+        else:
+            letter = random.choice(list(LETTER_SHAPES.keys()))
+        norm_verts = LETTER_SHAPES[letter]
+        inset = margin + 1.0
+        scale_x = w - 2 * inset
+        scale_y = d_eff - 2 * inset
 
-        if 'chamfer' in transforms:
-            corner = random.randint(0, 3)
-            p = base[corner]
-            p_prev = base[(corner - 1) % len(base)]
-            p_next = base[(corner + 1) % len(base)]
-            inset = random.uniform(0.5, 1.5)
-            dx1 = p_next[0] - p[0]
-            dy1 = p_next[1] - p[1]
-            len1 = math.hypot(dx1, dy1) or 1
-            dx2 = p_prev[0] - p[0]
-            dy2 = p_prev[1] - p[1]
-            len2 = math.hypot(dx2, dy2) or 1
-            p1 = (p[0] + dx1 / len1 * inset, p[1] + dy1 / len1 * inset)
-            p2 = (p[0] + dx2 / len2 * inset, p[1] + dy2 / len2 * inset)
-            base[corner] = p1
-            base.insert(corner + 1, p2)
-
-        # 3. Perturba e clamp
         poly = []
-        for px, py in base:
-            nx = px + random.uniform(-0.4, 0.4)
-            ny = py + random.uniform(-0.4, 0.4)
-            nx = max(margin, min(w - margin, nx))
-            ny = max(margin, min(d_eff - margin, ny))
-            poly.append((round(nx, 2), round(ny, 2)))
+        for nx, ny in norm_verts:
+            x = inset + nx * scale_x
+            y = inset + ny * scale_y
+            poly.append((x, y))
 
-        # 4. Rimuovi duplicati ravvicinati
-        cleaned = [poly[0]]
-        for p in poly[1:]:
-            if math.hypot(p[0] - cleaned[-1][0], p[1] - cleaned[-1][1]) > 0.6:
-                cleaned.append(p)
-        if len(cleaned) > 2 and math.hypot(cleaned[-1][0] - cleaned[0][0], cleaned[-1][1] - cleaned[0][1]) < 0.4:
-            cleaned.pop()
-        if len(cleaned) < 3:
-            cleaned = base[:4]
-        return cleaned
+        # Rotazione casuale
+        if rotation is None:
+            rotation = random.choice([0, 90, 180, 270])
+        if rotation != 0:
+            cx, cy = w / 2, d_eff / 2
+            poly = _rotate_poly(poly, rotation, cx, cy)
+            poly = _clamp(poly)
 
-    def _generate_perimeter_from_targets(self, stage: Stage,
-                                          existing: List[StageItem]) -> List[StageItem]:
-        """Genera il perimetro dell'area di tiro DAVANTI ai bersagli."""
-        targets = [it for it in existing if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
-        if not targets:
-            self._perimeter_poly = [
-                (1.0, 1.0), (stage.width - 1.0, 1.0),
-                (stage.width - 1.0, stage.depth - 1.0), (1.0, stage.depth - 1.0)
-            ]
-            return self._materialize_perimeter(stage, self._perimeter_poly, stage.depth)
+        for attempt in range(5):
+            test_poly = _perturb(poly, amount=0.3)
+            clamped = _clamp(test_poly)
+            if len(clamped) >= 3 and _poly_is_simple(clamped):
+                return clamped
 
-        # Bersaglio più avanzato (min Y) = bordo posteriore del perimetro
-        min_target_y = min(t.y for t in targets)
-        margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
-        back_y = min_target_y - random.uniform(0.5, 1.5)
-        back_y = max(margin + 1.0, back_y)
+        return _clamp(poly)
 
-        poly = self._generate_perimeter_polygon(stage, back_y)
-        self._perimeter_poly = poly
-
-        return self._materialize_perimeter(stage, poly, back_y)
-
-    def _materialize_perimeter(self, stage: Stage,
-                                poly: List[Tuple[float, float]],
-                                back_y: float) -> List[StageItem]:
-        """Converte un poligono in item Stage (fault lines/barriere/walls)."""
+    def _generate_perimeter_items(self, stage: Stage,
+                                   poly: List[Tuple[float, float]]) -> List[StageItem]:
+        """Converte il poligono del perimetro in item Stage (fault lines/barriere/walls).
+        
+        Lascia un'apertura di ~2m sul fronte (lato up-range / y min) per
+        l'ingresso del tiratore.
+        """
         items = []
         style = self.config.delimitation
         n = len(poly)
@@ -619,7 +673,7 @@ class StageGenerator:
             angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
 
             if style == "mixed":
-                if abs(cy - back_y / 2) > abs(cx - stage.width / 2):
+                if abs(cy - stage.depth / 2) > abs(cx - stage.width / 2):
                     itype, thick, color, label = ItemType.BARRIER, 0.15, "#fbbf24", "Barriera"
                 else:
                     itype, thick, color, label = ItemType.FAULT_LINE, 0.0, "#dc2626", "Fault Line"
@@ -633,15 +687,19 @@ class StageGenerator:
 
     def _ensure_target_visibility(self, stage: Stage,
                                     items: List[StageItem]) -> List[StageItem]:
-        """Rimuove muri/barriere finché ≥70% dei bersagli è visibile.
-        Prova a rimuovere ogni bloccante e sceglie quello che libera piú target."""
+        """Rimuove ostacoli finché TUTTI (100%) i bersagli sono visibili.
+        
+        Ogni bersaglio deve essere visibile da almeno un punto all'interno
+        dell'area di tiro. Se un ostacolo blocca più bersagli di quanti
+        ne liberi, viene rimosso.
+        """
         targets = [it for it in items if it.item_type in (
             ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
             ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
         if not targets or not self._interior_samples:
             return items
 
-        min_visible = max(1, math.ceil(len(targets) * 0.7))
+        min_visible = len(targets)  # 100% visibilità richiesta
 
         for _ in range(100):
             blockers = self._get_blocking_walls(items)
@@ -675,7 +733,7 @@ class StageGenerator:
                 for t in invisible:
                     for ox, oy in self._interior_samples:
                         for w in blockers:
-                            if self._line_intersects_rect(
+                            if line_intersects_rect(
                                 (ox, oy), (t.x, t.y),
                                 w.x, w.y, w.width, w.height, w.rotation
                             ):
@@ -689,6 +747,121 @@ class StageGenerator:
 
         return items
 
+    def _add_restrictive_walls(self, stage: Stage,
+                                existing: List[StageItem]) -> List[StageItem]:
+        """Aggiunge piccoli muri per impedire che bersagli siano
+        ingaggiabili da TUTTE le posizioni dell'area di tiro.
+
+        Se un bersaglio è visibile da >60% dei punti interni, viene
+        aggiunto un muretto tra il bersaglio e alcuni punti di
+        osservazione, forzando il tiratore a muoversi.
+        """
+        if not self._interior_samples or not self._perimeter_poly:
+            return []
+
+        targets = [it for it in existing if it.item_type in (
+            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
+        if not targets:
+            return []
+
+        blockers = self._get_blocking_walls(existing)
+        new_walls = []
+        max_walls = max(1, len(targets) // 3)
+
+        for target in targets:
+            if len(new_walls) >= max_walls:
+                break
+
+            # Conta da quanti punti interni è visibile
+            all_blockers = blockers + new_walls
+            visible_count = 0
+            visible_points = []
+            for ox, oy in self._interior_samples:
+                visible = True
+                for w in all_blockers:
+                    if line_intersects_rect(
+                        (ox, oy), (target.x, target.y),
+                        w.x, w.y, w.width, w.height, w.rotation
+                    ):
+                        visible = False
+                        break
+                if visible:
+                    visible_count += 1
+                    visible_points.append((ox, oy))
+
+            # Se visibile da troppi punti (>60%), blocca alcuni punti
+            if len(self._interior_samples) == 0:
+                continue
+            visibility_pct = visible_count / len(self._interior_samples)
+            if visibility_pct < 0.6:
+                continue  # già abbastanza restrittivo
+
+            # Sceglie un punto di osservazione da BLOCcare
+            # (non tutti — il bersaglio deve restare ingaggiabile)
+            num_to_block = max(1, visible_count // 3)
+            random.shuffle(visible_points)
+            points_to_block = visible_points[:num_to_block]
+
+            for obs_x, obs_y in points_to_block:
+                if len(new_walls) >= max_walls:
+                    break
+
+                # Posiziona un piccolo muro sulla linea tra il punto
+                # di osservazione e il bersaglio
+                dx = target.x - obs_x
+                dy = target.y - obs_y
+                dist = math.hypot(dx, dy)
+                if dist < 2.0:
+                    continue
+                nx = dx / dist
+                ny = dy / dist
+
+                # Muro a circa metà strada
+                wall_dist = dist * random.uniform(0.3, 0.6)
+                wx = obs_x + nx * wall_dist
+                wy = obs_y + ny * wall_dist
+
+                # Deve stare fuori dall'area di tiro
+                if point_in_polygon(wx, wy, self._perimeter_poly):
+                    continue
+
+                # Deve stare dentro lo stage
+                margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
+                if not (margin <= wx <= stage.width - margin and
+                        margin <= wy <= stage.depth - margin):
+                    continue
+
+                # Muretto perpendicolare alla linea di vista
+                wall_angle = math.degrees(math.atan2(ny, nx)) + 90
+                wall_len = random.uniform(1.0, 2.0)
+
+                new_wall = StageItem(
+                    0, ItemType.WALL, wx, wy,
+                    wall_len, 0.2, wall_angle,
+                    "#475569", "Muro ristr.")
+
+                # Verifica che il bersaglio resti visibile da ALMENO 1 punto
+                test_blockers = all_blockers + [new_wall]
+                still_visible = False
+                for ox, oy in self._interior_samples:
+                    vis = True
+                    for w in test_blockers:
+                        if line_intersects_rect(
+                            (ox, oy), (target.x, target.y),
+                            w.x, w.y, w.width, w.height, w.rotation
+                        ):
+                            vis = False
+                            break
+                    if vis:
+                        still_visible = True
+                        break
+
+                if still_visible:
+                    new_walls.append(new_wall)
+
+        return new_walls
+
     def _generate_fault_lines(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
         """Genera fault lines strategiche davanti ai bersagli."""
         fault_lines = []
@@ -700,7 +873,7 @@ class StageGenerator:
             fx = target.x + math.cos(angle) * dist
             fy = target.y + math.sin(angle) * dist
             # Deve stare dentro il perimetro
-            if self._perimeter_poly and not self._point_in_polygon(fx, fy, self._perimeter_poly):
+            if self._perimeter_poly and not point_in_polygon(fx, fy, self._perimeter_poly):
                 continue
             length = random.uniform(2.0, 4.0)
             rot = target.rotation + random.uniform(-15, 15)
@@ -736,7 +909,7 @@ class StageGenerator:
             count = 0
             for i, a in enumerate(targets):
                 for b in targets[i + 1:]:
-                    total_dist += IPSCRulesEngine._distance(a, b)
+                    total_dist += euclidean_distance(a.x, a.y, b.x, b.y)
                     count += 1
             if count > 0:
                 avg_dist = total_dist / count
