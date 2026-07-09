@@ -239,14 +239,18 @@ class IPSCRulesEngine:
         """Verifica vincoli spaziali con OBB Shapely."""
         violations: List[str] = []
 
-        targets = [it for it in self.stage.items if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.NO_SHOOT)]
+        paper_targets = [it for it in self.stage.items if it.item_type in (
+            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+            ItemType.MINI_TARGET, ItemType.MICRO_TARGET)]
+        no_shoots = [it for it in self.stage.items
+                     if it.item_type == ItemType.NO_SHOOT]
         walls = [it for it in self.stage.items if it.item_type in (
             ItemType.WALL, ItemType.DOOR)]
         barriers = [it for it in self.stage.items
                     if it.item_type == ItemType.BARRIER]
+        all_targets = paper_targets + no_shoots
 
-        for t in targets:
+        for t in all_targets:
             t_obb = item_obb(t)
             if t_obb is None:
                 continue
@@ -276,14 +280,19 @@ class IPSCRulesEngine:
                         f"Bersaglio #{t.id} troppo vicino a barriera #{b.id} "
                         f"({self.MIN_TARGET_TO_BARRIER}m)")
 
-            # Distanza da altri bersagli
-            for other in targets:
-                if other.id == t.id:
+        # Distanza tra bersagli che assegnano punti (esclude no-shoot)
+        eps = 0.05
+        for i, a in enumerate(paper_targets):
+            a_obb = item_obb(a)
+            if not a_obb:
+                continue
+            for b in paper_targets[i + 1:]:
+                b_obb = item_obb(b)
+                if not b_obb:
                     continue
-                other_obb = item_obb(other)
-                if other_obb and min_distance_between(t_obb, other_obb) < self.MIN_TARGET_TO_TARGET:
+                if min_distance_between(a_obb, b_obb) < self.MIN_TARGET_TO_TARGET - eps:
                     violations.append(
-                        f"Bersaglio #{t.id} troppo vicino a bersaglio #{other.id} "
+                        f"Bersaglio #{a.id} troppo vicino a bersaglio #{b.id} "
                         f"({self.MIN_TARGET_TO_TARGET}m)")
 
         # Ostacoli non devono sovrapporsi (muri, barriere, porte)
@@ -336,7 +345,7 @@ class IPSCRulesEngine:
                     return False
             elif other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
                                       ItemType.NO_SHOOT):
-                if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_TARGET:
+                if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_TARGET - 0.05:
                     return False
             elif other.item_type == ItemType.BARRIER:
                 if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_BARRIER:

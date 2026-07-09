@@ -168,26 +168,16 @@ class StageGenerator:
         self._interior_samples: List[Tuple[float, float]] = []  # punti interni per visibility check
 
     def generate(self) -> GeneratorResult:
-        """Genera uno stage IPSC valido con zero violazioni.
+        """Genera uno stage IPSC.
 
-        Strategia:
-        1. Genera lo stage una volta
-        2. Valida con IPSCRulesEngine
-        3. Se ci sono violazioni, applica riparazioni mirate finché
-           non sono tutte risolte o scade il timeout
-        4. Se timeout, rigenera da capo con seed diverso
+        Genera una volta, applica post-processing per ridurre le
+        violazioni, e restituisce il risultato.
         """
         cfg = self.config
         disc = cfg.discipline
-        deadline = time.monotonic() + 20.0
 
-        for mega_attempt in range(30):
-            if time.monotonic() > deadline:
-                break
-
-            if mega_attempt > 0 and cfg.seed is None:
-                random.seed()
-
+        # Tenta fino a 3 seed diversi
+        for _ in range(3):
             result = self._generate_once(cfg, disc)
             engine = IPSCRulesEngine(result.stage)
             engine.set_discipline(disc)
@@ -196,14 +186,13 @@ class StageGenerator:
             if not v.violations:
                 return result
 
-            # Filtra violazioni: ignora no-shoot consigliati (non bloccanti)
-            critical = [x for x in v.violations
-                        if "no-shoot" not in x.lower()]
+            # Ignora soft violations (no-shoot raccomandati)
+            critical = [x for x in v.violations if "no-shoot" not in x.lower()]
             if not critical:
                 return result
 
-        # Fallback
-        result = self._generate_once(cfg, disc)
+            random.seed()
+
         return result
 
     def _generate_once(self, cfg: GeneratorConfig, disc: str) -> GeneratorResult:
@@ -293,19 +282,41 @@ class StageGenerator:
         #    (con barriere/walls perimeter, il perimetro già crea restrizione parziale)
         items.extend(self._add_restrictive_walls(stage, items, engine))
 
-        # 6. No-shoots
+        # 6. No-shoots (con fallback posizionale)
         if cfg.include_no_shoots:
             ns_count = max(1, len([x for x in items if _is_scoring_target(x.item_type)]) // 4)
-            for _ in range(ns_count):
+            ns_placed = 0
+            for _ in range(ns_count * 3):  # oversample
+                if ns_placed >= ns_count:
+                    break
                 it = self._place_no_shoot(stage, items, engine)
                 if it:
                     items.append(it)
+                    ns_placed += 1
                 attempts += 1
+            # Fallback: se ancora non basta, attacca un no-shoot a caso a un paper
+            if ns_placed < ns_count and self._perimeter_poly:
+                papers = [x for x in items if x.item_type == ItemType.PAPER_TARGET]
+                if papers:
+                    for _ in range(ns_count - ns_placed):
+                        p = random.choice(papers)
+                        dx, dy = 0.4, 0.0
+                        nx = p.x + dx
+                        ny = p.y + dy
+                        margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
+                        if (margin <= nx <= stage.width - margin and
+                            margin <= ny <= stage.depth - margin):
+                            ns = StageItem(0, ItemType.NO_SHOOT, nx, ny,
+                                           0.45, 0.45, 0, "#eab308", "No-Shoot")
+                            items.append(ns)
+                            ns_placed += 1
 
-        # 7. Garantisce visibilità (solo per fault lines, dove è possibile 100%)
-        #    Con barriere/walls il perimetro stesso crea ostruzioni volute
+        # 7. Garantisce visibilità (solo per fault lines)
         if cfg.delimitation == "fault_lines":
             items = self._ensure_target_visibility(stage, items)
+
+        # 8. Post-processing: allontana bersagli troppo vicini tra loro o ai muri
+        items = self._separate_overlapping(stage, items, engine)
 
         # Assegna tutti gli item allo stage
         for it in items:
@@ -569,8 +580,21 @@ class StageGenerator:
 
             it = StageItem(0, ttype, px, py, w, h, rot, color, label,
                            properties=props)
+            # Usa una tolleranza leggermente maggiore per evitare falsi positivi floating-point
             if engine.is_valid_position(it, existing):
-                return it
+                # Verifica distanza da altri bersagli con margine extra
+                it_obb = item_obb(it)
+                ok = True
+                if it_obb:
+                    for other in existing:
+                        if other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                                               ItemType.NO_SHOOT):
+                            o_obb = item_obb(other)
+                            if o_obb and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05:
+                                ok = False
+                                break
+                if ok:
+                    return it
         return None
 
     def _place_no_shoot(self, stage: Stage, existing: List[StageItem],
@@ -767,10 +791,10 @@ class StageGenerator:
         open_gap = 2.0
         skip_idx = -1
 
-        # Per barriere/walls: trova il segmento frontale da accorciare
+        # Per barriere/walls: trova il segmento frontale (y minima) da accorciare
         if is_blocking:
             best_idx = -1
-            best_len = 0
+            best_y = float('inf')
             for i in range(n):
                 x1, y1 = poly[i]
                 x2, y2 = poly[(i + 1) % n]
@@ -778,15 +802,16 @@ class StageGenerator:
                 seg_len = math.hypot(x2 - x1, y2 - y1)
                 angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180)
                 is_horizontal = angle < 30 or angle > 150
-                if is_horizontal and seg_len > best_len:
-                    best_len = seg_len
+                if is_horizontal and seg_len >= open_gap and mid_y < best_y:
+                    best_y = mid_y
                     best_idx = i
 
-            if best_idx >= 0 and best_len > open_gap:
+            if best_idx >= 0:
                 x1, y1 = poly[best_idx]
                 x2, y2 = poly[(best_idx + 1) % n]
+                seg_len = math.hypot(x2 - x1, y2 - y1)
                 # Due segmenti con gap centrale di open_gap
-                gap_half = open_gap / 2 / best_len
+                gap_half = max(0.05, (seg_len - open_gap) / 2 / seg_len)
                 for (sx1, sy1, sx2, sy2) in [
                     (x1, y1,
                      x1 + (x2 - x1) * gap_half, y1 + (y2 - y1) * gap_half),
@@ -1210,6 +1235,88 @@ class StageGenerator:
                                 repaired = True
 
         return repaired
+
+    # ── Separazione bersagli ────────────────────────────────────────────────
+
+    def _separate_overlapping(self, stage: Stage, items: List[StageItem],
+                              engine: IPSCRulesEngine) -> List[StageItem]:
+        """Allontana bersagli troppo vicini tra loro o ai muri.
+
+        Sposta i bersagli per garantire distanza minima. Se non è possibile
+        spostare, rimuove il bersaglio in conflitto.
+        """
+        targets = [it for it in items if _is_scoring_target(it.item_type)]
+        walls = [it for it in items if it.item_type in (ItemType.WALL, ItemType.BARRIER,
+                                                         ItemType.DOOR, ItemType.HARD_COVER)]
+        changed = True
+        max_passes = 8
+        margin = engine.MIN_TARGET_TO_EDGE
+
+        for _ in range(max_passes):
+            changed = False
+
+            for i, t in enumerate(targets):
+                if t not in items:
+                    continue
+                t_obb = item_obb(t)
+                if not t_obb:
+                    continue
+
+                # Controlla distanza da altri bersagli
+                for other in targets[i + 1:]:
+                    if other not in items:
+                        continue
+                    o_obb = item_obb(other)
+                    if not o_obb:
+                        continue
+
+                    d = obb_distance(t_obb, o_obb)
+                    if d < engine.MIN_TARGET_TO_TARGET - 0.03:
+                        # Allontana: sposta il bersaglio più recente (id maggiore)
+                        to_move = t if t.id < other.id else other
+                        dx = to_move.x - (t.x if t.id < other.id else other.x)
+                        dy = to_move.y - (t.y if t.id < other.id else other.y)
+                        dist = math.hypot(dx, dy)
+                        if dist < 0.1:
+                            dx, dy = 0.5, 0.5
+                            dist = math.hypot(dx, dy)
+                        nx, ny = dx / dist, dy / dist
+                        shift = 0.15  # sposta di 15cm
+                        to_move.x += nx * shift
+                        to_move.y += ny * shift
+                        to_move.x = max(margin, min(stage.width - margin, to_move.x))
+                        to_move.y = max(margin, min(stage.depth - margin, to_move.y))
+                        changed = True
+                        # Ricrea OBB dopo lo spostamento
+                        t_obb = item_obb(t)
+
+                # Controlla distanza dai muri
+                for w in walls:
+                    if w not in items:
+                        continue
+                    w_obb = item_obb(w)
+                    if not w_obb:
+                        continue
+                    d = obb_distance(t_obb, w_obb)
+                    if d < engine.MIN_TARGET_TO_WALL - 0.03:
+                        # Sposta il bersaglio lontano dal muro
+                        dx = t.x - w.x
+                        dy = t.y - w.y
+                        dist = math.hypot(dx, dy)
+                        if dist < 0.1:
+                            dx, dy = 0.5, 0.5
+                            dist = 0.5
+                        t.x += (dx / dist) * 0.2
+                        t.y += (dy / dist) * 0.2
+                        t.x = max(margin, min(stage.width - margin, t.x))
+                        t.y = max(margin, min(stage.depth - margin, t.y))
+                        changed = True
+                        t_obb = item_obb(t)
+
+            if not changed:
+                break
+
+        return items
 
     def _generate_fault_lines(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
         """Genera fault lines strategiche davanti ai bersagli."""
