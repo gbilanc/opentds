@@ -18,6 +18,7 @@ def stage_to_dict(stage: Stage) -> dict:
         "name": stage.name,
         "width": stage.width,
         "depth": stage.depth,
+        "properties": stage.properties.copy() if stage.properties else {},
         "items": [
             {
                 "id": it.id,
@@ -79,6 +80,7 @@ def dict_to_stage(data: dict) -> Stage:
         depth=data.get("depth", 15.0),
         course_type=course_type,
         division=division,
+        properties=data.get("properties", {}),
     )
     max_id = 0
     for it_data in data.get("items", []):

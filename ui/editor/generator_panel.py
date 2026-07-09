@@ -82,12 +82,26 @@ class GeneratorPanel(QWidget):
         self._total_spin = QSpinBox()
         self._total_spin.setRange(2, 30)
         self._total_spin.setValue(8)
-        tgt_layout.addRow("Bersagli totali:", self._total_spin)
+        self._total_spin.setToolTip("Bersagli cartacei (PAPER_TARGET)")
+        tgt_layout.addRow("Paper targets:", self._total_spin)
 
-        self._steel_spin = QSpinBox()
-        self._steel_spin.setRange(0, 10)
-        self._steel_spin.setValue(2)
-        tgt_layout.addRow("Di cui Steel:", self._steel_spin)
+        self._popper_spin = QSpinBox()
+        self._popper_spin.setRange(0, 10)
+        self._popper_spin.setValue(1)
+        self._popper_spin.setToolTip("Popper calibrati (POPPER, App. C1-C2)")
+        tgt_layout.addRow("Popper:", self._popper_spin)
+
+        self._plate_spin = QSpinBox()
+        self._plate_spin.setRange(0, 10)
+        self._plate_spin.setValue(1)
+        self._plate_spin.setToolTip("Piatti metallici (METAL_PLATE, App. C3)")
+        tgt_layout.addRow("Metal plates:", self._plate_spin)
+
+        self._mini_spin = QSpinBox()
+        self._mini_spin.setRange(0, 5)
+        self._mini_spin.setValue(0)
+        self._mini_spin.setToolTip("Mini target cartacei (MINI_TARGET, App. B3)")
+        tgt_layout.addRow("Mini target:", self._mini_spin)
 
         self._moving_spin = QSpinBox()
         self._moving_spin.setRange(0, 5)
@@ -97,6 +111,11 @@ class GeneratorPanel(QWidget):
         self._no_shoot_check = QCheckBox("Includi No-Shoot")
         self._no_shoot_check.setChecked(True)
         tgt_layout.addRow(self._no_shoot_check)
+
+        self._activator_check = QCheckBox("Attivatori (popper→bersagli)")
+        self._activator_check.setChecked(True)
+        self._activator_check.setToolTip("Collega popper/plate a bersagli che attivano")
+        tgt_layout.addRow(self._activator_check)
 
         layout.addWidget(tgt_group)
 
@@ -209,16 +228,21 @@ class GeneratorPanel(QWidget):
         course_map = {"Non specificato": "", "Short Course": "short",
                        "Medium Course": "medium", "Long Course": "long"}
         seed = self._seed_spin.value() if self._seed_spin.value() > 0 else None
+        # Usa num_steel=0 e passa poppers/plates/mini esplicitamente
         return GeneratorConfig(
             stage_width=self._width_spin.value(),
             stage_depth=self._depth_spin.value(),
             num_targets=self._total_spin.value(),
-            num_steel=self._steel_spin.value(),
+            num_steel=0,
+            num_poppers=self._popper_spin.value(),
+            num_plates=self._plate_spin.value(),
+            num_mini=self._mini_spin.value(),
             num_moving=self._moving_spin.value(),
             num_walls=self._walls_spin.value(),
             num_barriers=self._barriers_spin.value(),
             include_fault_lines=self._fault_check.isChecked(),
             include_no_shoots=self._no_shoot_check.isChecked(),
+            include_activators=self._activator_check.isChecked(),
             difficulty=diff_map[self._diff_combo.currentIndex()],
             seed=seed,
             letter_shape=shape_map[self._shape_combo.currentText()],

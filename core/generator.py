@@ -47,12 +47,16 @@ class GeneratorConfig:
     stage_width: float = 20.0
     stage_depth: float = 15.0
     num_targets: int = 8
-    num_steel: int = 2
-    num_moving: int = 1  # swinger / drop_turner / mover
+    num_steel: int = 2          # backward compat: ripartito tra poppers e plates
+    num_poppers: int = 0        # 0 = auto-da-num_steel (60%)
+    num_plates: int = 0         # 0 = auto-da-num_steel (40%)
+    num_moving: int = 1         # swinger / drop_turner / mover
+    num_mini: int = 0           # mini target cartacei (App. B3)
     num_walls: int = 1
     num_barriers: int = 4
     include_fault_lines: bool = True
     include_no_shoots: bool = True
+    include_activators: bool = True  # poppers/plates che attivano bersagli
     difficulty: str = "medium"  # easy | medium | hard
     delimitation: str = "fault_lines"  # fault_lines | barriers | walls | mixed
     seed: Optional[int] = None
@@ -60,6 +64,7 @@ class GeneratorConfig:
     discipline: str = "ipsc_pistol"  # ipsc_pistol | mini_rifle | shotgun
     letter_shape: str = "random"  # random (lettera casuale) | L | T | U | C | H | F | O | Z | S | X | Y | M | N | E
     course_type: str = ""  # "short" | "medium" | "long" | "" = non classificato
+    auto_distribution: bool = True  # se True, calcola bersagli da course_type
 
 
 @dataclass
@@ -227,34 +232,61 @@ class StageGenerator:
         self._interior_samples = self._sample_interior_points(20)
         items.extend(self._generate_perimeter_items(stage, poly))
 
-        # 2. Posiziona bersagli INTORNO all'area di tiro (fuori dal perimetro)
-        #    Richiede almeno MIN_TARGETS (8) bersagli totali
-        min_targets = IPSCRulesEngine.MIN_TARGETS
-        paper_target = max(cfg.num_targets - cfg.num_steel, min_targets - cfg.num_steel)
-        paper_target = max(paper_target, 0)
+        # ── Risolvi conteggi bersagli da course_type ──
+        resolved = self._resolve_target_counts(cfg)
+        num_paper = resolved["paper"]
+        num_poppers = resolved["poppers"]
+        num_plates = resolved["plates"]
+        num_mini = resolved["mini"]
+        num_moving = resolved["moving"]
+        include_activators = cfg.include_activators and (num_poppers > 0 or num_plates > 0)
 
+        # 2. Posiziona bersagli INTORNO all'area di tiro (fuori dal perimetro)
+        min_targets = IPSCRulesEngine.MIN_TARGETS
+
+        # 2a. Paper targets + mini targets (mescolati per varietà)
+        combined_paper = num_paper + num_mini
         paper_placed = 0
-        for _ in range(paper_target * 2):  # oversample per garantire il minimo
-            if paper_placed >= paper_target:
+        for _ in range(combined_paper * 3):
+            if paper_placed >= combined_paper:
                 break
-            it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
+            # Alterna mini e paper
+            if paper_placed < num_mini:
+                ttype = ItemType.MINI_TARGET if paper_placed % 2 == 0 else ItemType.PAPER_TARGET
+            else:
+                ttype = ItemType.PAPER_TARGET
+            it = self._place_target_around(stage, items, ttype, engine)
             if it:
                 items.append(it)
                 paper_placed += 1
             attempts += 1
 
-        steel_placed = 0
-        for _ in range(cfg.num_steel * 2):
-            if steel_placed >= cfg.num_steel:
+        # 2b. Poppers calibrati (App. C1-C2)
+        poppers_placed = 0
+        for _ in range(num_poppers * 3):
+            if poppers_placed >= num_poppers:
                 break
-            it = self._place_target_around(stage, items, ItemType.STEEL_TARGET, engine)
+            it = self._place_target_around(stage, items, ItemType.POPPER, engine)
             if it:
+                # Proprietà popper calibrato
+                it.properties["calibrated"] = True
+                it.properties["calibration_pf"] = 125
                 items.append(it)
-                steel_placed += 1
+                poppers_placed += 1
             attempts += 1
 
-        # Se non abbiamo abbastanza bersagli, aggiungi altri paper
-        # (con limite ragionevole per non stallare)
+        # 2c. Metal plates non calibrati (App. C3)
+        plates_placed = 0
+        for _ in range(num_plates * 3):
+            if plates_placed >= num_plates:
+                break
+            it = self._place_target_around(stage, items, ItemType.METAL_PLATE, engine)
+            if it:
+                items.append(it)
+                plates_placed += 1
+            attempts += 1
+
+        # 2d. Se non abbiamo abbastanza bersagli, aggiungi paper
         fill_attempts = 0
         while len([x for x in items if _is_scoring_target(x.item_type)]) < min_targets:
             it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
@@ -265,10 +297,25 @@ class StageGenerator:
             if fill_attempts > 50:
                 break
 
+        # 2e. Pre-assegna ID a tutti gli item (prima degli attivatori)
+        all_ids = {it.id for it in items if it.id > 0}
+        next_id = max(all_ids) + 1 if all_ids else 1
+        for it in items:
+            if it.id == 0:
+                it.id = next_id
+                next_id += 1
+
+        # 2f. Attivatori: collega poppers/plates a paper target vicini
+        if include_activators:
+            activator_items = [it for it in items
+                               if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)]
+            if activator_items:
+                self._create_activator_relationships(stage, items, activator_items)
+
         # 3. Bersagli mobili
-        moving_types = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
-        for i in range(cfg.num_moving):
-            mtype = moving_types[i % len(moving_types)]
+        moving_types_list = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
+        for i in range(num_moving):
+            mtype = moving_types_list[i % len(moving_types_list)]
             it = self._place_target_around(stage, items, mtype, engine, is_moving=True)
             if it:
                 items.append(it)
@@ -278,15 +325,14 @@ class StageGenerator:
         items.extend(self._generate_walls(stage, items))
         items.extend(self._generate_barriers(stage, items))
 
-        # 5. Aggiunge muri/barriere restrittivi per garantire max 9 colpi/posizione
-        #    (con barriere/walls perimeter, il perimetro già crea restrizione parziale)
+        # 5. Aggiunge muri/barriere restrittivi per max 9 colpi/posizione
         items.extend(self._add_restrictive_walls(stage, items, engine))
 
         # 6. No-shoots (con fallback posizionale)
         if cfg.include_no_shoots:
             ns_count = max(1, len([x for x in items if _is_scoring_target(x.item_type)]) // 4)
             ns_placed = 0
-            for _ in range(ns_count * 3):  # oversample
+            for _ in range(ns_count * 3):
                 if ns_placed >= ns_count:
                     break
                 it = self._place_no_shoot(stage, items, engine)
@@ -294,9 +340,9 @@ class StageGenerator:
                     items.append(it)
                     ns_placed += 1
                 attempts += 1
-            # Fallback: se ancora non basta, attacca un no-shoot a caso a un paper
             if ns_placed < ns_count and self._perimeter_poly:
-                papers = [x for x in items if x.item_type == ItemType.PAPER_TARGET]
+                papers = [x for x in items
+                          if x.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)]
                 if papers:
                     for _ in range(ns_count - ns_placed):
                         p = random.choice(papers)
@@ -315,12 +361,20 @@ class StageGenerator:
         if cfg.delimitation == "fault_lines":
             items = self._ensure_target_visibility(stage, items)
 
-        # 8. Post-processing: allontana bersagli troppo vicini tra loro o ai muri
+        # 8. Post-processing
         items = self._separate_overlapping(stage, items, engine)
 
-        # Assegna tutti gli item allo stage
+        # Assegna ID finali a tutti gli item (anche quelli aggiunti dopo muri/no-shoot)
+        next_id_final = max((it.id for it in items if it.id > 0), default=0) + 1
         for it in items:
-            stage.add_item(it)
+            if it.id == 0:
+                it.id = next_id_final
+                next_id_final += 1
+        stage.items = items
+        stage._next_id = max((it.id for it in items), default=0) + 1
+
+        # 9. Popola metadati briefing
+        self._populate_stage_metadata(stage, cfg, num_poppers, num_plates, num_moving)
 
         score = self._score_stage(stage, items)
         return GeneratorResult(stage=stage, score=score, attempts=attempts)
@@ -473,12 +527,25 @@ class StageGenerator:
 
         # Parametri bersaglio
         if ttype == ItemType.STEEL_TARGET:
+            # Backward compat: generico
             w, h = 0.30, 0.30
-            color = "#d1d5db"  # IPSC: bianco (grigio chiaro per visibilità)
+            color = "#d1d5db"
             label = "Steel"
-            min_dist_from_edge = 8.0  # IPSC: distanza fissa 8m
+            min_dist_from_edge = 8.0
+        elif ttype == ItemType.POPPER:
+            # Popper calibrato IPSC (App. C1-C2): bianco, ~30cm
+            w, h = 0.30, 0.30
+            color = "#d1d5db"
+            label = "Popper"
+            min_dist_from_edge = 8.0
+        elif ttype == ItemType.METAL_PLATE:
+            # Piatto metallico IPSC (App. C3): bianco, ~20cm
+            w, h = 0.20, 0.20
+            color = "#e5e7eb"
+            label = "Plate"
+            min_dist_from_edge = 8.0
         elif is_moving:
-            # IPSC: bersagli mobili su supporto cartaceo → marrone
+            # Bersagli mobili su supporto cartaceo → marrone
             colors = {
                 ItemType.SWINGER: ("#A0522D", "Swinger"),
                 ItemType.DROP_TURNER: ("#8B6914", "Drop Turner"),
@@ -487,9 +554,22 @@ class StageGenerator:
             color, label = colors.get(ttype, ("#808080", ""))
             w, h = 0.45, 0.45
             min_dist_from_edge = 1.0
+        elif ttype == ItemType.MINI_TARGET:
+            # Mini target IPSC (App. B3): marrone, 75% scala
+            w, h = 0.34, 0.34
+            color = "#A0522D"
+            label = "Mini"
+            min_dist_from_edge = 1.0
+        elif ttype == ItemType.MICRO_TARGET:
+            # Micro target: ancora più piccolo
+            w, h = 0.23, 0.23
+            color = "#8B4513"
+            label = "Micro"
+            min_dist_from_edge = 1.0
         else:
+            # Paper target standard IPSC
             w, h = 0.45, 0.45
-            color = "#8B4513"  # IPSC: marrone zona punti
+            color = "#8B4513"
             label = "Paper"
             min_dist_from_edge = 1.0
 
@@ -1318,11 +1398,224 @@ class StageGenerator:
 
         return items
 
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Nuovi metodi: conteggi, attivatori, metadati
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _resolve_target_counts(self, cfg: GeneratorConfig) -> dict:
+        """Calcola i conteggi bersagli in base al course_type e ai parametri.
+
+        Se auto_distribution \u00e8 True e course_type \u00e8 impostato, usa le
+        distribuzioni tipiche dai PDF reali (Short=5+1+1, Medium=11+1+2, Long=15+2+2).
+        Altrimenti usa i valori letterali della configurazione.
+        """
+        if not cfg.auto_distribution or not cfg.course_type:
+            # Calcola poppers/plates da num_steel se non specificati
+            if cfg.num_poppers > 0 or cfg.num_plates > 0:
+                poppers = cfg.num_poppers
+                plates = cfg.num_plates
+            else:
+                poppers = max(1, round(cfg.num_steel * 0.6)) if cfg.num_steel > 0 else 1
+                plates = max(0, cfg.num_steel - poppers) if cfg.num_steel > 0 else 1
+            # Se num_steel==0 ma user ha specificato poppers/plates
+            if cfg.num_steel == 0 and cfg.num_poppers == 0 and cfg.num_plates == 0:
+                poppers = 0
+                plates = 0
+            return {
+                "paper": cfg.num_targets,
+                "poppers": poppers,
+                "plates": plates,
+                "mini": cfg.num_mini,
+                "moving": cfg.num_moving,
+            }
+
+        # Auto-distribution per course type (basata su PDF reali)
+        ct = cfg.course_type
+        if ct == "short":
+            base = {"paper": 5, "poppers": 1, "plates": 1, "mini": 0, "moving": 0}
+        elif ct == "medium":
+            base = {"paper": 11, "poppers": 1, "plates": 2, "mini": 1, "moving": 1}
+        elif ct == "long":
+            base = {"paper": 15, "poppers": 2, "plates": 2, "mini": 1, "moving": 2}
+        else:
+            base = {"paper": 8, "poppers": 1, "plates": 1, "mini": 0, "moving": 1}
+
+        # Sovrascrivi con valori espliciti dell'utente
+        if cfg.num_targets > 0:
+            base["paper"] = cfg.num_targets
+        has_explicit_steel = cfg.num_poppers > 0 or cfg.num_plates > 0
+        if cfg.num_poppers > 0:
+            base["poppers"] = cfg.num_poppers
+        elif cfg.num_steel > 0 and not has_explicit_steel:
+            base["poppers"] = max(1, round(cfg.num_steel * 0.6))
+        if cfg.num_plates > 0:
+            base["plates"] = cfg.num_plates
+        elif cfg.num_steel > 0 and not has_explicit_steel:
+            base["plates"] = max(0, cfg.num_steel - base["poppers"])
+        if cfg.num_mini > 0:
+            base["mini"] = cfg.num_mini
+        if cfg.num_moving > 0:
+            base["moving"] = cfg.num_moving
+
+        return base
+
+    def _create_activator_relationships(
+        self, stage: Stage, items: List[StageItem],
+        activators: List[StageItem]
+    ) -> None:
+        """Collega poppers/plates a paper target vicini come attivatori.
+
+        Per ogni attivatore, trova 1-3 paper target nello stesso settore
+        (distanza < 6m, angolo \u2264 45\u00b0) e li marca come "activated_by"
+        l'attivatore. L'attivatore riceve "activates" con la lista degli ID.
+        Genera descrizioni testuali per il briefing alla IPSC:
+            'P1 attiva T3 e T4 che resteranno visibili al termine del movimento'
+        """
+        if not activators or not self._perimeter_poly:
+            return
+
+        # Centro area di tiro
+        cx = sum(p[0] for p in self._perimeter_poly) / len(self._perimeter_poly)
+        cy = sum(p[1] for p in self._perimeter_poly) / len(self._perimeter_poly)
+
+        # Tutti i paper target (non ancora attivati da altri)
+        papers = [it for it in items
+                  if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
+                  and "activated_by" not in it.properties]
+
+        if not papers:
+            return
+
+        # Ordina attivatori per distanza dal centro (pi\u00f9 vicini prima)
+        activators.sort(key=lambda a: euclidean_distance(a.x, a.y, cx, cy))
+
+        used_papers = set()
+        descs = []
+
+        for act_idx, activator in enumerate(activators):
+            if len(used_papers) >= len(papers):
+                break
+
+            # Trova paper target nello stesso settore (stessa direzione dal centro)
+            act_angle = math.atan2(activator.y - cy, activator.x - cx)
+            nearby = []
+            for p in papers:
+                if p.id in used_papers:
+                    continue
+                p_angle = math.atan2(p.y - cy, p.x - cx)
+                angle_diff = abs(act_angle - p_angle)
+                if angle_diff > math.pi:
+                    angle_diff = 2 * math.pi - angle_diff
+                dist = euclidean_distance(activator.x, activator.y, p.x, p.y)
+                if angle_diff < math.radians(45) and dist < 6.0:
+                    nearby.append(p)
+
+            if not nearby:
+                continue
+
+            # Prendi al massimo 3 paper
+            selected = nearby[:min(3, len(nearby))]
+            sel_ids = [s.id for s in selected]
+
+            # Marca attivatore
+            activator.properties["activates"] = sel_ids
+            activator.properties["is_activator"] = True
+            # Rinomina attivatore con label IPSC (P1, MP1, ...)
+            # I label di default sono "Popper" o "Plate" — sostituisci sempre
+            label_prefix = "P" if activator.item_type == ItemType.POPPER else "MP"
+            activator.label = f"{label_prefix}{act_idx + 1}"
+
+            # Marca bersagli attivati
+            for s in selected:
+                s.properties["activated_by"] = [activator.id]
+                s.properties["activation_visible"] = True
+                used_papers.add(s.id)
+
+            # Descrizione testuale per briefing (stile IPSC)
+            label = activator.label or f"{activator.item_type.name}#{activator.id}"
+            target_strs = []
+            for sid in sel_ids:
+                s_item = next((x for x in items if x.id == sid), None)
+                if s_item:
+                    # Assegna label al target se non ne ha uno specifico
+                    if not s_item.label or s_item.label in ("Paper", "Mini", "Popper", "Plate"):
+                        s_item.label = f"T{sid}"
+                    target_strs.append(s_item.label)
+                else:
+                    target_strs.append(f"T{sid}")
+            congiunzione = " e " if len(target_strs) > 1 else ""
+            vis = "resteranno visibili" if len(target_strs) > 1 else "resterà visibile"
+            desc = f"{label} attiva {congiunzione.join(target_strs)} che {vis} al termine del movimento"
+            descs.append(desc)
+
+        if descs:
+            stage.properties["activator_descs"] = descs
+            stage.properties["procedure"] = (
+                "Al segnale di partenza ingaggiare tutti i bersagli. "
+                + " ".join(descs) + "."
+            )
+
+    def _populate_stage_metadata(
+        self, stage: Stage, cfg: GeneratorConfig,
+        num_poppers: int, num_plates: int, num_moving: int
+    ) -> None:
+        """Popola i metadati di briefing nello stage."""
+        # Non sovrascrivere se gi\u00e0 popolati (es. da caricamento file)
+        if stage.properties.get("start_signal"):
+            return
+
+        stage.properties["start_signal"] = "Acustico"
+
+        # Posizione di partenza in base alla difficolt\u00e0
+        if cfg.difficulty == "hard":
+            stage.properties["start_position"] = "Talloni che toccano i segni come mostrato"
+        elif cfg.difficulty == "easy":
+            stage.properties["start_position"] = "Ovunque nella shooting area"
+        else:
+            stage.properties["start_position"] = "In piedi nella shooting area"
+
+        # Condizione pronto arma
+        stage.properties["ready_condition_handgun"] = (
+            "In piedi come da regolamento IPSC Handgun punto 8.2.2 (Appendice E2), come mostrato"
+        )
+        stage.properties["ready_condition_pcc"] = (
+            "In piedi come da regolamento IPSC PCC punto 8.2.2 (Appendice E1), come mostrato"
+        )
+        if cfg.difficulty == "hard":
+            stage.properties["handgun_condition"] = "Arma scarica in fondina"
+            stage.properties["pcc_condition"] = "Scarico Option 3"
+        else:
+            stage.properties["handgun_condition"] = "Arma in fondina caricatore inserito colpo non camerato"
+            stage.properties["pcc_condition"] = "Carico Option 1"
+
+        # Procedura (se non gi\u00e0 generata dagli attivatori)
+        if "procedure" not in stage.properties:
+            stage.properties["procedure"] = "Al segnale di partenza ingaggiare tutti i bersagli."
+
+        # Calcolo punti massimi (default: 5 per paper, 5 per popper/plate)
+        paper_count = sum(1 for it in stage.items
+                          if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET))
+        steel_count = sum(1 for it in stage.items
+                          if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE))
+        # IPSC: ogni paper vale max 5 punti (10 per double), ogni popper 5, ogni plate 5
+        # Per semplicit\u00e0: 5 per paper (2 colpi) + 5 per steel (1 colpo)
+        stage.properties["max_points"] = paper_count * 10 + steel_count * 5
+
+        # Metadati aggiuntivi
+        stage.properties["angoli_sicurezza"] = "90\u00b0 laterali e parapalle in verticale"
+        stage.properties["hard_cover"] = "Le strutture sono hard cover"
+        stage.properties["note"] = (
+            "Il punteggio verr\u00e0 conteggiato durante l'esecuzione dell'esercizio. "
+            "Il tiratore potr\u00e0 delegare un altro tiratore alla verifica del punteggio."
+        )
+
     def _generate_fault_lines(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
         """Genera fault lines strategiche davanti ai bersagli."""
         fault_lines = []
         targets = [it for it in existing if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]
+            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+            ItemType.POPPER, ItemType.METAL_PLATE,
+            ItemType.MINI_TARGET, ItemType.MICRO_TARGET)]
         for target in targets:
             angle = math.radians(target.rotation)
             dist = random.uniform(3.0, 5.0)
@@ -1344,15 +1637,18 @@ class StageGenerator:
         """Valuta la qualità dello stage (più alto = migliore)."""
         score = 0.0
         targets = [it for it in items if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]
+            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+            ItemType.POPPER, ItemType.METAL_PLATE,
+            ItemType.MINI_TARGET, ItemType.MICRO_TARGET)]
         walls = [it for it in items if it.item_type in (
             ItemType.WALL, ItemType.BARRIER)]
 
         # Più bersagli = più colpi possibili
         score += len(targets) * 10
 
-        # Steel varietà
-        steel = [it for it in targets if it.item_type == ItemType.STEEL_TARGET]
+        # Steel varietà (poppers + plates)
+        steel = [it for it in targets if it.item_type in (
+            ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)]
         score += len(steel) * 5
 
         # Bersagli mobili = difficoltà extra

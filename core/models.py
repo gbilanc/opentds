@@ -53,14 +53,26 @@ class StageItem:
     color: str = "#808080"
     label: str = ""
     properties: Dict[str, Any] = field(default_factory=dict)
-    # properties per bersagli mobili:
-    #   swinger: { "amplitude": 45, "speed": 1.0, "axis": "y" }
-    #   drop_turner: { "trigger": "hit", "fall_time": 0.5 }
-    #   mover: { "distance": 3.0, "speed": 1.5, "direction": 0 }
-    #   popper: { "calibrated": true, "calibration_pf": 125 }
-    #   metal_plate: { "diameter": 0.2 }
-    #   mini_target: { "scale": 0.75 }
-    #   cover: { "height": 2.0, "impenetrable": true }
+    # ── properties per bersagli mobili ────────────────────────────
+    #   swinger:      { "amplitude": 45, "speed": 1.0, "axis": "y" }
+    #   drop_turner:  { "trigger": "hit", "fall_time": 0.5 }
+    #   mover:        { "distance": 3.0, "speed": 1.5, "direction": 0 }
+    #
+    # ── properties per metallici ──────────────────────────────────
+    #   popper:       { "calibrated": true, "calibration_pf": 125 }
+    #   metal_plate:  { "diameter": 0.2 }
+    #
+    # ── properties per attivatori (popper/plate → bersagli) ────────
+    #   attivatore:   { "activates": [id1, id2, ...] }
+    #   bersaglio:    { "activated_by": [id_attivatore],
+    #                    "activation_visible": true }
+    #
+    # ── properties per mini target ────────────────────────────────
+    #   mini_target:  { "scale": 0.75 }
+    #   micro_target: { "scale": 0.50 }
+    #
+    # ── properties per coperture ──────────────────────────────────
+    #   cover:        { "height": 2.0, "impenetrable": true }
 
 
 @dataclass
@@ -82,7 +94,17 @@ class ShootingPosition:
 
 @dataclass
 class Stage:
-    """Contenitore dello stage."""
+    """Contenitore dello stage.
+    
+    `properties` contiene metadati di briefing (non posizionali):
+        start_signal: str          — "Acustico"
+        start_position: str        — "Ovunque nella shooting area"
+        ready_condition_handgun: str
+        ready_condition_pcc: str
+        procedure: str             — testo della procedura
+        max_points: int            — massimo punteggio possibile
+        activator_descs: list[str] — descrizioni attivazioni per briefing
+    """
     name: str = "Nuovo Stage"
     width: float = 20.0   # metri
     depth: float = 15.0   # metri
@@ -90,6 +112,7 @@ class Stage:
     division: Optional[Division] = None        # Divisione di riferimento
     items: List[StageItem] = field(default_factory=list)
     shooting_positions: List[ShootingPosition] = field(default_factory=list)
+    properties: Dict[str, Any] = field(default_factory=dict)
     _next_id: int = 1
 
     def add_item(self, item: StageItem) -> StageItem:

@@ -62,6 +62,11 @@ TYPE_LABELS: dict[ItemType, str] = {
 }
 
 
+# Colori per i nuovi tipi (se non presenti in TYPE_COLORS)
+TYPE_COLORS[ItemType.MINI_TARGET] = "#A0522D"
+TYPE_COLORS[ItemType.MICRO_TARGET] = "#8B4513"
+
+
 # ── Helper per briefing ───────────────────────────────────────────────────────
 
 
@@ -97,6 +102,8 @@ def _format_ready_condition(stage: Stage) -> str:
 
 def _format_start_position(stage: Stage) -> str:
     """Descrive la posizione di partenza."""
+    if stage.properties.get("start_position"):
+        return stage.properties["start_position"]
     for sp in stage.shooting_positions:
         if sp.is_start:
             return f"({sp.x:.1f}, {sp.y:.1f}) — {sp.label or 'Start'}"
@@ -105,6 +112,8 @@ def _format_start_position(stage: Stage) -> str:
 
 def _format_procedure(stage: Stage) -> str:
     """Genera la procedura del briefing."""
+    if stage.properties.get("procedure"):
+        return stage.properties["procedure"]
     parts = ["Al segnale di avvio, ingaggiare tutti i bersagli."]
     if stage.course_type:
         parts.append(f"Corso: {stage.course_type.value.title()}.")
@@ -314,13 +323,17 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
     briefing_items = [
         ("Bersagli", _format_target_list(stage)),
         ("Colpi conteggiabili", str(_count_total_rounds(stage))),
+        ("Punti massimi", str(stage.properties.get("max_points", "—"))),
         ("Condizione di pronto", _format_ready_condition(stage)),
         ("Posizione di partenza", _format_start_position(stage)),
         ("Procedura", _format_procedure(stage)),
         ("Tipo corso", stage.course_type.value if stage.course_type else "Non specificato"),
         ("Divisione", stage.division.value if stage.division else "Tutte"),
-        ("Angoli di sicurezza", "90° (default)"),
+        ("Segnale di partenza", stage.properties.get("start_signal", "Acustico")),
+        ("Angoli di sicurezza", stage.properties.get("angoli_sicurezza", "90°")),
+        ("Coperture", stage.properties.get("hard_cover", "Hard cover")),
         ("Distanza minima metallici", "7 m"),
+        ("Note", stage.properties.get("note", "")),
     ]
 
     painter.setFont(QFont("Segoe UI", 9))
@@ -459,6 +472,54 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
             if y > page_h - margin - 30:
                 _new_page()
                 _draw_header(painter, f"Posizioni di tiro (cont.)", margin, page_w)
+                y = margin + 50
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Pagina 4 — Attivatori (se presenti)
+    # ═══════════════════════════════════════════════════════════════════════
+    activators = [it for it in stage.items
+                  if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)
+                  and it.properties.get("activates")]
+    if activators:
+        _new_page()
+        _draw_header(painter, f"Attivatori — {stage.name}", margin, page_w)
+        y = margin + 50
+
+        for a in activators:
+            targets_ids = a.properties["activates"]
+            target_labels = []
+            for tid in targets_ids:
+                t = next((it for it in stage.items if it.id == tid), None)
+                target_labels.append(t.label if t else f"T{tid}")
+
+            # Box per ogni attivatore
+            box_h = 60
+            painter.save()
+            painter.setBrush(QBrush(QColor("#fef2f2")))
+            painter.setPen(QPen(QColor("#fecaca"), 1))
+            painter.drawRoundedRect(margin, y - 8, usable_w, box_h, 4, 4)
+            painter.restore()
+
+            painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            painter.setPen(QColor("#dc2626"))
+            painter.drawText(margin + 12, y + 4, f"{a.label} — {a.item_type.name}")
+            y += 22
+
+            painter.setFont(QFont("Segoe UI", 9))
+            painter.setPen(QColor("#475569"))
+            painter.drawText(margin + 24, y, f"Attiva: {", ".join(target_labels)}")
+            y += 16
+            painter.drawText(margin + 24, y, f"Posizione: ({a.x:.2f}, {a.y:.2f})")
+            y += 16
+            if a.properties.get("calibrated"):
+                pf = a.properties.get("calibration_pf", 125)
+                painter.drawText(margin + 24, y, f"Calibrato: PF {pf}")
+                y += 16
+
+            y += 16
+            if y > page_h - margin - 30:
+                _new_page()
+                _draw_header(painter, f"Attivatori (cont.)", margin, page_w)
                 y = margin + 50
 
     painter.end()

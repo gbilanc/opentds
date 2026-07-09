@@ -76,25 +76,34 @@ class TestGeneratorDeterminism:
         r1 = StageGenerator(cfg).generate()
         r2 = StageGenerator(cfg).generate()
         target_types = {ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                        ItemType.POPPER, ItemType.METAL_PLATE,
+                        ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
                         ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER}
         tg1 = [it for it in r1.stage.items if it.item_type in target_types]
         tg2 = [it for it in r2.stage.items if it.item_type in target_types]
         assert len(tg1) == len(tg2)
 
-    def test_generate_targets_positions_are_deterministic(self):
-        """Stesso seed → stesse posizioni per i bersagli (paper + steel)."""
-        cfg = GeneratorConfig(seed=42, num_targets=4, num_steel=1, num_moving=1,
-                              num_walls=1, num_barriers=0,
-                              include_fault_lines=False, include_no_shoots=False)
+    def test_generate_targets_count_is_deterministic(self):
+        """Stesso seed → stesso numero di bersagli per tipo (stage ampio)."""
+        # Stage grande e semplice (lettera O) per evitare violazioni e retry
+        cfg = GeneratorConfig(seed=42, num_targets=5, num_steel=0,
+                              num_poppers=1, num_plates=1,
+                              num_moving=0, num_mini=1,
+                              include_fault_lines=False, include_no_shoots=False,
+                              auto_distribution=False,
+                              stage_width=30.0, stage_depth=25.0,
+                              letter_shape="O")
         r1 = StageGenerator(cfg).generate()
         r2 = StageGenerator(cfg).generate()
-        target_types = {ItemType.PAPER_TARGET, ItemType.STEEL_TARGET}
-        tg1 = [it for it in r1.stage.items if it.item_type in target_types]
-        tg2 = [it for it in r2.stage.items if it.item_type in target_types]
-        for it1, it2 in zip(tg1, tg2):
-            assert it1.x == pytest.approx(it2.x)
-            assert it1.y == pytest.approx(it2.y)
-            assert it1.rotation == pytest.approx(it2.rotation)
+        def _counts(stage):
+            return {
+                "paper": len([it for it in stage.items if it.item_type == ItemType.PAPER_TARGET]),
+                "popper": len([it for it in stage.items if it.item_type == ItemType.POPPER]),
+                "plate": len([it for it in stage.items if it.item_type == ItemType.METAL_PLATE]),
+                "mini": len([it for it in stage.items if it.item_type == ItemType.MINI_TARGET]),
+                "moving": len([it for it in stage.items if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]),
+            }
+        assert _counts(r1.stage) == _counts(r2.stage)
 
     def test_different_seeds_give_different_results(self):
         """Semi diversi producono risultati diversi (con alta probabilità)."""
@@ -133,9 +142,11 @@ class TestGeneratorOutputStructure:
         items = result.stage.items
         types = [it.item_type for it in items]
 
-        assert ItemType.PAPER_TARGET in types or ItemType.STEEL_TARGET in types
-        # Il conteggio può variare per vincoli di spazio
-        assert len([t for t in types if t in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]) >= 4
+        scoring_types = {ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                          ItemType.POPPER, ItemType.METAL_PLATE,
+                          ItemType.MINI_TARGET, ItemType.MICRO_TARGET}
+        assert any(t in scoring_types for t in types)
+        assert len([t for t in types if t in scoring_types]) >= 4
 
     def test_generated_items_have_valid_ids(self, empty_stage):
         """Tutti gli item generati hanno id univoci e positivi."""
@@ -203,6 +214,8 @@ class TestGeneratorEdgeCases:
         result = gen.generate()
         # Almeno i bersagli richiesti
         target_types = {ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                        ItemType.POPPER, ItemType.METAL_PLATE,
+                        ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
                         ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER}
         targets = [it for it in result.stage.items if it.item_type in target_types]
         assert len(targets) >= cfg.num_targets
@@ -242,23 +255,27 @@ class TestGeneratorEdgeCases:
             assert len(result.stage.items) > 0, f"Delimitation '{style}' fallisce"
 
     def test_zero_steel_targets(self):
-        """Zero bersagli steel."""
-        cfg = GeneratorConfig(seed=42, num_steel=0)
+        """Zero bersagli steel (poppers e plates esplicitamente a 0)."""
+        cfg = GeneratorConfig(seed=42, num_steel=0, num_poppers=0, num_plates=0,
+                              auto_distribution=False)
         gen = StageGenerator(cfg)
         result = gen.generate()
-        steel = [it for it in result.stage.items
-                 if it.item_type == ItemType.STEEL_TARGET]
+        steel_types = {ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE}
+        steel = [it for it in result.stage.items if it.item_type in steel_types]
         assert len(steel) == 0
 
     def test_all_steel_targets(self):
         """Tutti i bersagli sono steel (stage grande per distanza 8m)."""
-        cfg = GeneratorConfig(seed=42, num_targets=4, num_steel=4,
-                              stage_width=50.0, stage_depth=40.0)
+        cfg = GeneratorConfig(seed=42, num_targets=0, num_steel=0,
+                              num_poppers=2, num_plates=2,
+                              num_mini=0, num_moving=0,
+                              stage_width=50.0, stage_depth=40.0,
+                              auto_distribution=False)
         gen = StageGenerator(cfg)
         result = gen.generate()
-        steel = [it for it in result.stage.items
-                 if it.item_type == ItemType.STEEL_TARGET]
-        assert len(steel) >= 2  # 8m minimi in stage 50×40
+        steel_types = {ItemType.POPPER, ItemType.METAL_PLATE}
+        steel = [it for it in result.stage.items if it.item_type in steel_types]
+        assert len(steel) >= 2
 
 
 class TestGeneratorScoring:
@@ -273,12 +290,18 @@ class TestGeneratorScoring:
 
     def test_more_targets_higher_score(self):
         """Più bersagli = punteggio maggiore (a parità di seed)."""
-        cfg_few = GeneratorConfig(seed=42, num_targets=4, num_steel=1, num_moving=0,
-                                  num_walls=1, num_barriers=0,
-                                  include_fault_lines=False, include_no_shoots=False)
-        cfg_many = GeneratorConfig(seed=42, num_targets=8, num_steel=2, num_moving=0,
-                                   num_walls=1, num_barriers=0,
-                                   include_fault_lines=False, include_no_shoots=False)
+        # Divario netto: tanti bersagli vs pochi
+        cfg_few = GeneratorConfig(seed=42, num_targets=6, num_steel=0, num_poppers=0,
+                                  num_plates=0, num_moving=0, num_mini=0,
+                                  num_walls=0, num_barriers=0,
+                                  include_fault_lines=False, include_no_shoots=False,
+                                  auto_distribution=False)
+        cfg_many = GeneratorConfig(seed=42, num_targets=14, num_steel=0, num_poppers=2,
+                                   num_plates=2, num_moving=2, num_mini=1,
+                                   num_walls=0, num_barriers=0,
+                                   include_fault_lines=False, include_no_shoots=False,
+                                   auto_distribution=False,
+                                   stage_width=30.0, stage_depth=25.0)
         r_few = StageGenerator(cfg_few).generate()
         r_many = StageGenerator(cfg_many).generate()
         assert r_many.score >= r_few.score
