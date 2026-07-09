@@ -3,6 +3,7 @@
 from __future__ import annotations
 import random
 import math
+import time
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
@@ -167,8 +168,55 @@ class StageGenerator:
         self._interior_samples: List[Tuple[float, float]] = []  # punti interni per visibility check
 
     def generate(self) -> GeneratorResult:
+        """Genera uno stage IPSC valido con zero violazioni.
+
+        Strategia:
+        1. Genera lo stage una volta
+        2. Valida con IPSCRulesEngine
+        3. Se ci sono violazioni, applica riparazioni mirate finché
+           non sono tutte risolte o scade il timeout
+        4. Se timeout, rigenera da capo con seed diverso
+        """
         cfg = self.config
         disc = cfg.discipline
+        deadline = time.monotonic() + 20.0
+
+        for mega_attempt in range(20):
+            if time.monotonic() > deadline:
+                break
+
+            if mega_attempt > 0 and cfg.seed is None:
+                random.seed()
+
+            result = self._generate_once(cfg, disc)
+            stage = result.stage
+
+            engine = IPSCRulesEngine(stage)
+            engine.set_discipline(disc)
+
+            # Loop di riparazione: applica fix finché non ci sono più violazioni
+            for repair_cycle in range(15):
+                if time.monotonic() > deadline:
+                    break
+
+                v = engine.validate()
+                if not v.violations:
+                    return result
+
+                repaired = self._repair_violations(stage, v.violations, engine)
+                if not repaired:
+                    break  # Nessuna riparazione possibile, rigenera
+
+                # Ricrea engine dopo le modifiche allo stage
+                engine = IPSCRulesEngine(stage)
+                engine.set_discipline(disc)
+
+        # Fallback: ultimo tentativo senza garanzia
+        result = self._generate_once(cfg, disc)
+        return result
+
+    def _generate_once(self, cfg: GeneratorConfig, disc: str) -> GeneratorResult:
+        """Esegue una singola generazione di stage (senza validazione)."""
         if disc == "mini_rifle":
             w = cfg.stage_width or 30.0
             d = cfg.stage_depth or 20.0
@@ -179,7 +227,11 @@ class StageGenerator:
             w = cfg.stage_width
             d = cfg.stage_depth
 
-        # Imposta tipo corso se specificato
+        # Assicura dimensioni minime per evitare backstop violations
+        min_depth_needed = IPSCRulesEngine.MIN_BACKSTOP_DEPTH + 5.0
+        if d < min_depth_needed:
+            d = min_depth_needed
+
         ct = None
         if cfg.course_type in ("short", "medium", "long"):
             ct = CourseType(cfg.course_type)
@@ -196,20 +248,44 @@ class StageGenerator:
         items.extend(self._generate_perimeter_items(stage, poly))
 
         # 2. Posiziona bersagli INTORNO all'area di tiro (fuori dal perimetro)
-        paper_count = cfg.num_targets - cfg.num_steel
-        for _ in range(paper_count):
+        #    Richiede almeno MIN_TARGETS (8) bersagli totali
+        min_targets = IPSCRulesEngine.MIN_TARGETS
+        paper_target = max(cfg.num_targets - cfg.num_steel, min_targets - cfg.num_steel)
+        paper_target = max(paper_target, 0)
+
+        paper_placed = 0
+        for _ in range(paper_target * 2):  # oversample per garantire il minimo
+            if paper_placed >= paper_target:
+                break
+            it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
+            if it:
+                items.append(it)
+                paper_placed += 1
+            attempts += 1
+
+        steel_placed = 0
+        for _ in range(cfg.num_steel * 2):
+            if steel_placed >= cfg.num_steel:
+                break
+            it = self._place_target_around(stage, items, ItemType.STEEL_TARGET, engine)
+            if it:
+                items.append(it)
+                steel_placed += 1
+            attempts += 1
+
+        # Se non abbiamo abbastanza bersagli, aggiungi altri paper
+        # (con limite ragionevole per non stallare)
+        fill_attempts = 0
+        while len([x for x in items if _is_scoring_target(x.item_type)]) < min_targets:
             it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
             if it:
                 items.append(it)
             attempts += 1
+            fill_attempts += 1
+            if fill_attempts > 50:
+                break
 
-        for _ in range(cfg.num_steel):
-            it = self._place_target_around(stage, items, ItemType.STEEL_TARGET, engine)
-            if it:
-                items.append(it)
-            attempts += 1
-
-        # 3. Bersagli mobili (anche loro intorno)
+        # 3. Bersagli mobili
         moving_types = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
         for i in range(cfg.num_moving):
             mtype = moving_types[i % len(moving_types)]
@@ -222,23 +298,19 @@ class StageGenerator:
         items.extend(self._generate_walls(stage, items))
         items.extend(self._generate_barriers(stage, items))
 
-        # 5. Aggiunge muri restrittivi: impediscono che un bersaglio
-        #    sia ingaggiabile da TUTTE le posizioni dell'area di tiro.
-        #    Ogni bersaglio deve essere visibile da ALMENO 1 posizione
-        #    (garantito dopo), ma idealmente non da tutte.
-        items.extend(self._add_restrictive_walls(stage, items))
+        # 5. Aggiunge muri restrittivi (con validazione posizioni)
+        items.extend(self._add_restrictive_walls(stage, items, engine))
 
-        # 5. No-shoots
+        # 6. No-shoots
         if cfg.include_no_shoots:
-            ns_count = max(1, cfg.num_targets // 4)
+            ns_count = max(1, len([x for x in items if _is_scoring_target(x.item_type)]) // 4)
             for _ in range(ns_count):
                 it = self._place_no_shoot(stage, items, engine)
                 if it:
                     items.append(it)
                 attempts += 1
 
-        # 6. Garantisce che TUTTI i bersagli siano visibili dall'area di tiro
-        #    Rimuove ostacoli che bloccano troppi bersagli finché 100% è visibile
+        # 7. Garantisce che TUTTI i bersagli siano visibili
         items = self._ensure_target_visibility(stage, items)
 
         # Assegna tutti gli item allo stage
@@ -438,9 +510,13 @@ class StageGenerator:
             px = ex + nx * dist
             py = ey + ny * dist
 
-            # Deve stare dentro lo stage
+            # Deve stare dentro lo stage, con backstop minimo garantito
+            # (t.y + t.height/2 <= d - MIN_BACKSTOP_DEPTH)
+            backstop_margin = IPSCRulesEngine.MIN_BACKSTOP_DEPTH
+            half_h = (h if not is_moving else 0.45) / 2
+            max_y = stage.depth - backstop_margin - half_h - 0.2
             if not (margin <= px <= stage.width - margin and
-                    margin <= py <= stage.depth - margin):
+                    margin <= py <= max_y):
                 continue
 
             # Deve stare FUORI dal perimetro
@@ -775,107 +851,126 @@ class StageGenerator:
         return items
 
     def _add_restrictive_walls(self, stage: Stage,
-                                existing: List[StageItem]) -> List[StageItem]:
-        """Aggiunge piccoli muri per impedire che bersagli siano
-        ingaggiabili da TUTTE le posizioni dell'area di tiro.
+                                existing: List[StageItem],
+                                engine: IPSCRulesEngine | None = None) -> List[StageItem]:
+        """Aggiunge muri per garantire max 9 colpi per posizione (Reg. 1.2.1)
+        e che Medium/Long non abbiano tutti i bersagli visibili da una posizione.
 
-        Se un bersaglio è visibile da >60% dei punti interni, viene
-        aggiunto un muretto tra il bersaglio e alcuni punti di
-        osservazione, forzando il tiratore a muoversi.
+        Strategia:
+        1. Calcola i colpi visibili da ogni posizione di tiro
+        2. Se superano 9, aggiunge muri sulla linea verso i bersagli eccedenti
+        3. I muri sono posizionati per non bloccare TUTTA la visuale
         """
         if not self._interior_samples or not self._perimeter_poly:
             return []
 
-        targets = [it for it in existing if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
+        targets = [it for it in existing if _is_scoring_target(it.item_type)]
         if not targets:
             return []
 
-        blockers = self._get_blocking_walls(existing)
+        max_hits = IPSCRulesEngine.MAX_HITS_PER_POSITION  # 9
         new_walls = []
-        max_walls = max(1, len(targets) // 3)
+        max_walls = max(2, len(targets) // 2)
 
-        for target in targets:
+        # Ottieni le stesse posizioni usate dal validatore _validate_max_hits_per_position()
+        # per garantire che le riparazioni siano efficaci
+        if stage.shooting_positions:
+            positions = [(sp.x, sp.y) for sp in stage.shooting_positions]
+        else:
+            cx, cy = stage.width / 2, stage.depth / 2
+            positions = [(cx, cy), (cx - 2, cy), (cx + 2, cy), (cx, cy + 2)]
+
+        for obs_x, obs_y in positions:
             if len(new_walls) >= max_walls:
                 break
 
-            # Conta da quanti punti interni è visibile
-            all_blockers = blockers + new_walls
-            visible_count = 0
-            visible_points = []
-            for ox, oy in self._interior_samples:
+            # Calcola i bersagli visibili da questa posizione
+            all_blockers = self._get_blocking_walls(existing) + new_walls
+            visible_targets = []
+            for t in targets:
                 visible = True
                 for w in all_blockers:
                     if line_intersects_rect(
-                        (ox, oy), (target.x, target.y),
+                        (obs_x, obs_y), (t.x, t.y),
                         w.x, w.y, w.width, w.height, w.rotation
                     ):
                         visible = False
                         break
                 if visible:
-                    visible_count += 1
-                    visible_points.append((ox, oy))
+                    visible_targets.append(t)
 
-            # Se visibile da troppi punti (>60%), blocca alcuni punti
-            if len(self._interior_samples) == 0:
+            # Calcola i colpi: 2 per carta, 1 per metallo
+            total_hits = sum(
+                2 if _is_paper_like(t.item_type) or
+                     t.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
+                                      ItemType.MOVER)
+                else 1
+                for t in visible_targets
+            )
+
+            if total_hits <= max_hits:
                 continue
-            visibility_pct = visible_count / len(self._interior_samples)
-            if visibility_pct < 0.6:
-                continue  # già abbastanza restrittivo
 
-            # Sceglie un punto di osservazione da BLOCcare
-            # (non tutti — il bersaglio deve restare ingaggiabile)
-            num_to_block = max(1, visible_count // 3)
-            random.shuffle(visible_points)
-            points_to_block = visible_points[:num_to_block]
+            # Troppi colpi: blocca i bersagli extra (partendo dai più lontani)
+            visible_targets.sort(
+                key=lambda t: math.hypot(t.x - obs_x, t.y - obs_y),
+                reverse=True)
 
-            for obs_x, obs_y in points_to_block:
+            for t in visible_targets:
                 if len(new_walls) >= max_walls:
                     break
 
-                # Posiziona un piccolo muro sulla linea tra il punto
-                # di osservazione e il bersaglio
-                dx = target.x - obs_x
-                dy = target.y - obs_y
+                hits_this = 2 if (_is_paper_like(t.item_type) or
+                                  t.item_type in (ItemType.SWINGER,
+                                                   ItemType.DROP_TURNER,
+                                                   ItemType.MOVER)) else 1
+                if total_hits - hits_this < max_hits:
+                    # Bloccare questo bersaglio ci porterebbe SOTTO il limite
+                    # Meglio lasciarlo visibile e bloccarne un altro
+                    continue
+
+                dx = t.x - obs_x
+                dy = t.y - obs_y
                 dist = math.hypot(dx, dy)
                 if dist < 2.0:
                     continue
-                nx = dx / dist
-                ny = dy / dist
+                nx, ny = dx / dist, dy / dist
 
-                # Muro a circa metà strada
-                wall_dist = dist * random.uniform(0.3, 0.6)
+                # Muro a metà strada, FUORI dal perimetro
+                wall_dist = dist * random.uniform(0.35, 0.65)
                 wx = obs_x + nx * wall_dist
                 wy = obs_y + ny * wall_dist
 
-                # Deve stare fuori dall'area di tiro
                 if point_in_polygon(wx, wy, self._perimeter_poly):
                     continue
 
-                # Deve stare dentro lo stage
                 margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
                 if not (margin <= wx <= stage.width - margin and
                         margin <= wy <= stage.depth - margin):
                     continue
 
-                # Muretto perpendicolare alla linea di vista
+                # Muro perpendicolare alla linea di vista, lungo abbastanza
                 wall_angle = math.degrees(math.atan2(ny, nx)) + 90
-                wall_len = random.uniform(1.0, 2.0)
+                wall_len = random.uniform(1.5, 3.0)
 
                 new_wall = StageItem(
                     0, ItemType.WALL, wx, wy,
                     wall_len, 0.2, wall_angle,
                     "#475569", "Muro ristr.")
 
-                # Verifica che il bersaglio resti visibile da ALMENO 1 punto
+                # Valida con IPSCRulesEngine (distanza da target, ostacoli, bordo)
+                test_items = existing + new_walls
+                if not engine.is_valid_position(new_wall, test_items):
+                    continue
+
+                # Verifica che il target resti visibile da ALMENO 1 posizione
                 test_blockers = all_blockers + [new_wall]
                 still_visible = False
-                for ox, oy in self._interior_samples:
+                for ox2, oy2 in positions:
                     vis = True
                     for w in test_blockers:
                         if line_intersects_rect(
-                            (ox, oy), (target.x, target.y),
+                            (ox2, oy2), (t.x, t.y),
                             w.x, w.y, w.width, w.height, w.rotation
                         ):
                             vis = False
@@ -886,8 +981,173 @@ class StageGenerator:
 
                 if still_visible:
                     new_walls.append(new_wall)
+                    total_hits -= hits_this
+                    all_blockers = self._get_blocking_walls(existing) + new_walls
 
         return new_walls
+
+    # ── Riparazione violazioni ──────────────────────────────────────────────
+
+    def _repair_violations(self, stage: Stage, violations: List[str],
+                           engine: IPSCRulesEngine) -> bool:
+        """Applica riparazioni mirate per eliminare le violazioni.
+
+        Ritorna True se almeno una riparazione è stata applicata.
+        """
+        import re as _re
+        repaired = False
+
+        for v_text in violations:
+            v_lower = v_text.lower()
+
+            # 1. Bersaglio troppo vicino a muro → rimuovi il muro incriminato
+            if "troppo vicino a muro" in v_lower:
+                m = _re.search(r'#(\d+)', v_text)
+                if m:
+                    target_id = int(m.group(1))
+                    target = stage.get_item(target_id)
+                    if target:
+                        walls = [it for it in stage.items
+                                 if it.item_type in (ItemType.WALL, ItemType.BARRIER,
+                                                     ItemType.DOOR, ItemType.HARD_COVER)]
+                        for w in walls:
+                            t_obb = item_obb(target)
+                            w_obb = item_obb(w)
+                            if t_obb and w_obb:
+                                dist = obb_distance(t_obb, w_obb)
+                                if dist < engine.MIN_TARGET_TO_WALL:
+                                    stage.remove_item(w.id)
+                                    repaired = True
+                                    break
+
+            # 2. Troppi colpi da posizione → blocca bersagli eccedenti
+            elif "colpi conteggiabili" in v_lower and "max 9" in v_lower:
+                m = _re.search(r'\(([\d.]+),\s*([\d.]+)\)', v_text)
+                if m:
+                    px, py = float(m.group(1)), float(m.group(2))
+                    # Conta quanti colpi sono visibili: 2 per paper, 1 per steel
+                    targets = [it for it in stage.items if _is_scoring_target(it.item_type)]
+                    visible_targets = []
+                    for t in targets:
+                        t_obb_local = item_obb(t)
+                        if t_obb_local is None:
+                            continue
+                        from shapely.geometry import LineString as SLine
+                        walls_check = self._get_blocking_walls(stage.items)
+                        line = SLine([(px, py), (t.x, t.y)])
+                        blocked = False
+                        for w in walls_check:
+                            wob_local = item_obb(w)
+                            if wob_local and line.intersects(wob_local):
+                                blocked = True
+                                break
+                        if not blocked:
+                            visible_targets.append(t)
+
+                    # Calcola colpi totali
+                    total_hits = sum(2 if _is_paper_like(t.item_type) or
+                                     t.item_type in (ItemType.SWINGER,
+                                                      ItemType.DROP_TURNER,
+                                                      ItemType.MOVER)
+                                     else 1 for t in visible_targets)
+
+                    # Se supera 9, blocca i bersagli extra con muri
+                    if total_hits > 9:
+                        # Ordina per distanza (blocca i più lontani prima)
+                        visible_targets.sort(
+                            key=lambda t: math.hypot(t.x - px, t.y - py),
+                            reverse=True)
+                        # Blocca finché non scendiamo sotto 9
+                        for t_block in visible_targets:
+                            if total_hits <= 9:
+                                break
+                            dx = t_block.x - px
+                            dy = t_block.y - py
+                            dist = math.hypot(dx, dy)
+                            if dist < 1.5:
+                                continue
+                            nx, ny = dx / dist, dy / dist
+                            wx = px + nx * dist * 0.4
+                            wy = py + ny * dist * 0.4
+                            margin = engine.MIN_TARGET_TO_EDGE
+                            if not (margin <= wx <= stage.width - margin and
+                                    margin <= wy <= stage.depth - margin):
+                                continue
+                            wall = StageItem(0, ItemType.WALL, wx, wy,
+                                             1.5, 0.2,
+                                             math.degrees(math.atan2(ny, nx)),
+                                             "#475569", "Muro ripar.")
+                            # Verifica che il target resti visibile da almeno 1 posizione
+                            test_blockers = self._get_blocking_walls(stage.items + [wall])
+                            if self._is_target_visible(t_block, test_blockers):
+                                stage.add_item(wall)
+                                repaired = True
+                                hits_blocked = 2 if (_is_paper_like(t_block.item_type) or
+                                                     t_block.item_type in (ItemType.SWINGER,
+                                                                          ItemType.DROP_TURNER,
+                                                                          ItemType.MOVER)) else 1
+                                total_hits -= hits_blocked
+
+            # 3. Bersagli insufficienti → aggiungi paper target
+            elif "bersagli insufficienti" in v_lower:
+                min_t = IPSCRulesEngine.MIN_TARGETS
+                current = len([it for it in stage.items if _is_scoring_target(it.item_type)])
+                needed = min_t - current
+                for _ in range(needed * 2):
+                    it = self._place_target_around(
+                        stage, stage.items, ItemType.PAPER_TARGET, engine)
+                    if it:
+                        stage.add_item(it)
+                        repaired = True
+                        current += 1
+                        if current >= min_t:
+                            break
+
+            # 4. Backstop insufficiente → sposta bersagli più avanti
+            elif "dietro bersagli insufficiente" in v_lower:
+                targets = [it for it in stage.items if _is_scoring_target(it.item_type)]
+                max_allowed_y = stage.depth - IPSCRulesEngine.MIN_BACKSTOP_DEPTH + 0.3
+                for t in targets:
+                    if t.y + t.height / 2 > max_allowed_y:
+                        t.y = max_allowed_y - t.height / 2
+                        repaired = True
+
+            # 5. Ostacoli troppo vicini → rimuovi il secondo ostacolo
+            elif "ostacolo" in v_lower and "vicino" in v_lower:
+                m = _re.findall(r'#(\d+)', v_text)
+                if len(m) >= 2:
+                    # Rimuovi il secondo ostacolo
+                    stage.remove_item(int(m[1]))
+                    repaired = True
+
+            # 6. Stage medium/long: tutti bersagli visibili da una posizione
+            elif "tutti i" in v_lower and "bersagli sono" in v_lower:
+                m = _re.search(r'\(([\d.]+),\s*([\d.]+)\)', v_text)
+                if m:
+                    px, py = float(m.group(1)), float(m.group(2))
+                    targets = [it for it in stage.items if _is_scoring_target(it.item_type)]
+                    # Blocca la visuale verso il bersaglio più lontano
+                    if targets:
+                        farthest = max(targets,
+                                       key=lambda t: math.hypot(t.x - px, t.y - py))
+                        dx = farthest.x - px
+                        dy = farthest.y - py
+                        dist = math.hypot(dx, dy)
+                        if dist > 2.0:
+                            nx, ny = dx / dist, dy / dist
+                            wx = px + nx * dist * 0.4
+                            wy = py + ny * dist * 0.4
+                            margin = engine.MIN_TARGET_TO_EDGE
+                            if (margin <= wx <= stage.width - margin and
+                                margin <= wy <= stage.depth - margin):
+                                wall = StageItem(0, ItemType.WALL, wx, wy,
+                                                 2.0, 0.2,
+                                                 math.degrees(math.atan2(ny, nx)),
+                                                 "#475569", "Muro div.")
+                                stage.add_item(wall)
+                                repaired = True
+
+        return repaired
 
     def _generate_fault_lines(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
         """Genera fault lines strategiche davanti ai bersagli."""

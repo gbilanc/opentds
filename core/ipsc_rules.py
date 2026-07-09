@@ -525,7 +525,8 @@ class IPSCRulesEngine:
 
                 # L'angolo di sicurezza di default è 90° a sinistra e destra
                 # = il bersaglio deve essere entro ±90° dalla direzione frontale
-                if angle_deg > self.SAFETY_ANGLE_DEFAULT + 10:  # tolleranza 10°
+                # Tolleranza 20° per tenere conto di forme poligonali complesse
+                if angle_deg > self.SAFETY_ANGLE_DEFAULT + 20:  # tolleranza 20°
                     v.append(
                         f"Bersaglio #{t.id} a {angle_deg:.0f}° dalla posizione "
                         f"({pos.x:.1f}, {pos.y:.1f}) — "

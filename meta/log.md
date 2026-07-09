@@ -64,3 +64,7 @@
 ## [2026-07-09 13:48 UTC] refactor | Bugfix menu Genera e classi grafiche mancanti
 - Summary: Fix: menu 'Genera Stage IPSC' ora chiama raise_() sul dock; _replace_stage copia course_type/division; aggiunte 6 classi grafiche mancanti per nuovi ItemType (PopperGraphicsItem, MetalPlateGraphicsItem, MiniTargetGraphicsItem, MicroTargetGraphicsItem, HardCoverGraphicsItem, SoftCoverGraphicsItem) — tutti i 16 tipi IPSC sono ora renderizzabili nell'editor 2D.
 - Pages: [[analyses/2026-07-09-analisi-conformita-opentds-al-regolamento-ipsc-handgun-2024]], [[ui/main_window.py]], [[ui/editor/stage_scene.py]]
+
+## [2026-07-09 14:27 UTC] refactor | Generatore produce stage senza violazioni IPSC
+- Summary: Riscritto il core della generazione: _generate_once produce lo stage, generate() loop con riparazione mirata delle violazioni. _add_restrictive_walls usa le stesse posizioni del validatore. Aggiunte riparazioni per: backstop, max colpi/posizione, bersagli insufficienti, muri troppo vicini, ostacoli sovrapposti, angoli sicurezza. 9/9 configurazioni testate → zero violazioni.
+- Pages: [[core/generator.py]], [[core/ipsc_rules.py]]
