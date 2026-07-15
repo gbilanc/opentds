@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # main.py
+import os
 import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
+
+# Silenzia warning Wayland textinput (noti in Qt 6 su Wayland, innocui)
+os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false")
 
 from ui.main_window import MainWindow
 
