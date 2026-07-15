@@ -285,3 +285,201 @@ class TestValidateComplete:
         r = engine.validate()
         assert not r.ok
         assert len(r.violations) > 0
+
+
+# ─── Reg. 2.1.8.4 — Angolo bersagli fissi ────────────────────────────────────
+
+class TestFixedTargetsAngle:
+    """Verifica Reg. 2.1.8.4: bersagli fissi non oltre 90°."""
+
+    def test_no_violation_when_target_faces_shooter(self):
+        """Bersaglio che punta verso l'area di tiro → OK."""
+        stage = Stage(width=20.0, depth=15.0)
+        # Paper target con rotazione verso il centro (x=10, y=7.5)
+        # Il centro è a (10, 7.5), il bersaglio a (5, 10)
+        # Direzione dal bersaglio al centro: atan2(7.5-10, 10-5) = atan2(-2.5, 5) ≈ -27°
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 10,
+                                 0.45, 0.45, rotation=-27, label="Paper"))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert len(v) == 0, f"Violazioni inaspettate: {v}"
+
+    def test_violation_when_target_faces_away(self):
+        """Bersaglio che punta in direzione opposta all'area di tiro → violazione."""
+        stage = Stage(width=20.0, depth=15.0)
+        # Paper target con rotazione opposta al centro
+        # Centro a (10, 7.5), bersaglio a (5, 10)
+        # Direzione opposta: -27 + 180 = 153°
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 10,
+                                 0.45, 0.45, rotation=153, label="Paper"))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert any("2.1.8.4" in x for x in v), f"Violazione 2.1.8.4 attesa: {v}"
+
+    def test_no_violation_for_moving_targets(self):
+        """Bersagli mobili/swinger NON sono fissi, nessuna violazione."""
+        stage = Stage(width=20.0, depth=15.0)
+        stage.add_item(StageItem(0, ItemType.SWINGER, 5, 10,
+                                 0.45, 0.45, rotation=180, label="Swinger"))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert len(v) == 0
+
+    def test_no_violation_for_activated_targets(self):
+        """Bersagli attivati NON sono fissi, nessuna violazione."""
+        stage = Stage(width=20.0, depth=15.0)
+        it = StageItem(0, ItemType.PAPER_TARGET, 5, 10,
+                       0.45, 0.45, rotation=180, label="Paper")
+        it.properties["activated_by"] = [1]
+        stage.add_item(it)
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert len(v) == 0
+
+
+# ─── Reg. 4.3.3.3 — Piatti metallici con carta/popper ───────────────────────
+
+class TestMetalPlatesNeedPaper:
+    """Verifica Reg. 4.3.3.3: almeno 1 carta/popper con plates."""
+
+    def test_no_plates_no_violation(self):
+        """Nessun piatto → nessuna violazione."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 5, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_plates_need_paper()
+        assert len(v) == 0
+
+    def test_plates_with_paper_no_violation(self):
+        """Piatti + bersaglio carta → OK."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.METAL_PLATE, 10, 10, 0.20, 0.20))
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 5, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_plates_need_paper()
+        assert len(v) == 0
+
+    def test_plates_with_popper_no_violation(self):
+        """Piatti + Popper → OK (Reg. 4.3.3.3 menziona popper)."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.METAL_PLATE, 10, 10, 0.20, 0.20))
+        stage.add_item(StageItem(0, ItemType.POPPER, 8, 8, 0.30, 0.30))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_plates_need_paper()
+        assert len(v) == 0
+
+    def test_plates_only_violation(self):
+        """Solo piatti metallici, nessun paper/popper → violazione."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.METAL_PLATE, 10, 10, 0.20, 0.20))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_plates_need_paper()
+        assert any("4.3.3.3" in x for x in v), f"Violazione 4.3.3.3 attesa: {v}"
+
+
+# ─── Reg. 4.2.4 — Hard cover non nasconde zona A ───────────────────────────
+
+class TestHardCoverHighZone:
+    """Verifica Reg. 4.2.4: hard cover non nasconde zona A."""
+
+    def test_no_hard_cover_no_violation(self):
+        """Nessun hard cover → OK."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 5, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_hard_cover_high_zone()
+        assert len(v) == 0
+
+    def test_hard_cover_away_from_target_no_violation(self):
+        """Hard cover lontano dal centro del bersaglio → OK."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.HARD_COVER, 3, 3, 1.0, 1.0))
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 10, 10, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_hard_cover_high_zone()
+        assert len(v) == 0
+
+    def test_hard_cover_on_target_center_violation(self):
+        """Hard cover che copre il centro del bersaglio → violazione."""
+        stage = Stage()
+        # Hard cover centrato sul paper target
+        stage.add_item(StageItem(0, ItemType.HARD_COVER, 5.0, 5.0, 1.0, 1.0))
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5.0, 5.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_hard_cover_high_zone()
+        assert any("4.2.4" in x for x in v), f"Violazione 4.2.4 attesa: {v}"
+
+
+# ─── Reg. 4.3.1.1 — Vietati bersagli metallici rotanti ──────────────────────
+
+class TestMetalRotatingProhibited:
+    """Verifica Reg. 4.3.1.1: nessun metallico con movimento/rotazione."""
+
+    def test_plain_metal_no_violation(self):
+        """Metallico senza proprietà di movimento → OK."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.POPPER, 10, 10, 0.30, 0.30))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_rotating_prohibited()
+        assert len(v) == 0
+
+    def test_rotating_metal_violation(self):
+        """Metallico con proprietà di movimento → violazione."""
+        stage = Stage()
+        it = StageItem(0, ItemType.STEEL_TARGET, 10, 10, 0.30, 0.30, label="Steel")
+        it.properties["amplitude"] = 45
+        it.properties["speed"] = 1.0
+        stage.add_item(it)
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_rotating_prohibited()
+        assert any("4.3.1.1" in x for x in v), f"Violazione 4.3.1.1 attesa: {v}"
+
+    def test_moving_target_is_not_metal_no_violation(self):
+        """Bersaglio mobile (SWINGER) non è metallico → OK."""
+        stage = Stage()
+        it = StageItem(0, ItemType.SWINGER, 10, 10, 0.45, 0.45, label="Swinger")
+        it.properties["amplitude"] = 45
+        stage.add_item(it)
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_metal_rotating_prohibited()
+        assert len(v) == 0
+
+
+# ─── App. C3 — Altezza montaggio piatti metallici ───────────────────────────
+
+class TestPlateMountingHeight:
+    """Verifica App. C3: piatti su hard cover/paletti ≥ 1m."""
+
+    def test_no_plates_no_violation(self):
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 5, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_plate_mounting_height()
+        assert len(v) == 0
+
+    def test_plate_with_mount_height_ok(self):
+        """Piatto con mount_height ≥ 1m → OK."""
+        stage = Stage()
+        it = StageItem(0, ItemType.METAL_PLATE, 10, 10, 0.20, 0.20)
+        it.properties["mount_height"] = 1.0
+        stage.add_item(it)
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_plate_mounting_height()
+        assert len(v) == 0
+
+    def test_plate_on_hard_cover_ok(self):
+        """Piatto sopra un hard cover → OK (App. C3: 'posti su Hard Cover')."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.HARD_COVER, 10.0, 10.0, 2.0, 2.0))
+        stage.add_item(StageItem(0, ItemType.METAL_PLATE, 10.0, 10.0, 0.20, 0.20))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_plate_mounting_height()
+        assert len(v) == 0
+
+    def test_plate_without_support_violation(self):
+        """Piatto senza mount_height né hard cover sotto → violazione."""
+        stage = Stage()
+        stage.add_item(StageItem(0, ItemType.METAL_PLATE, 10, 10, 0.20, 0.20))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_plate_mounting_height()
+        assert any("App. C3" in x for x in v), f"Violazione App. C3 attesa: {v}"

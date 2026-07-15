@@ -56,6 +56,15 @@ class IPSCRulesEngine:
     MIN_STEEL_DISTANCE = 7.0    # IPSC Reg. 2.1.3: distanza minima tiratore-bersaglio metallico
     SAFETY_ANGLE_DEFAULT = 90.0  # IPSC Reg. 2.1.2: angolo di sicurezza default
 
+    # Reg. 2.1.8.4 — angolo massimo bersagli fissi (non attivati) rispetto alla verticale
+    MAX_FIXED_TARGET_ANGLE = 90.0
+    # Reg. 2.2.2 — altezza massima ostacoli
+    MAX_OBSTACLE_HEIGHT = 2.0
+    # Reg. 2.2.3 — altezza minima barriere
+    MIN_BARRIER_HEIGHT = 1.8
+    # App. C3 — altezza minima montaggio piatti metallici
+    MIN_PLATE_MOUNT_HEIGHT = 1.0
+
     # Limiti IPSC
     MIN_TARGETS = 8
     MAX_STEEL_PCT = 0.4        # max 40% steel
@@ -162,6 +171,11 @@ class IPSCRulesEngine:
         violations.extend(self._validate_safety_angles())
         violations.extend(self._validate_course_type())
         violations.extend(self._validate_division())
+        violations.extend(self._validate_fixed_targets_angle())
+        violations.extend(self._validate_metal_plates_need_paper())
+        violations.extend(self._validate_hard_cover_high_zone())
+        violations.extend(self._validate_metal_rotating_prohibited())
+        violations.extend(self._validate_plate_mounting_height())
 
         return ConstraintResult(ok=len(violations) == 0, violations=violations)
 
@@ -700,6 +714,251 @@ class IPSCRulesEngine:
             "production": "4", "production_optics": "4a", "revolver": "5",
         }
         return mapping.get(div, "?")
+
+    # ── Reg. 2.1.8.4 — Angolo bersagli fissi ────────────────────────────
+
+    def _validate_fixed_targets_angle(self) -> List[str]:
+        """Verifica che i bersagli fissi (non attivati) non siano presentati
+        ad un angolo superiore a 90° verticali (Reg. 2.1.8.4).
+
+        Un bersaglio fisso (paper, mini, micro, popper, plate che NON è
+        attivato/animato) non deve essere ruotato in modo da presentarsi
+        edge-on (>90° dalla linea di mira) rispetto all'area di tiro.
+        """
+        v = []
+
+        # Identifica i bersagli fissi: NON mobili/swinger/drop/mover e
+        # NON attivati da altri bersagli
+        fixed_targets = [
+            it for it in self.stage.items
+            if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
+                                ItemType.MICRO_TARGET, ItemType.POPPER,
+                                ItemType.METAL_PLATE, ItemType.STEEL_TARGET)
+            and "activated_by" not in it.properties
+            and "is_activator" not in it.properties
+        ]
+        if not fixed_targets:
+            return v
+
+        # Centro dell'area di tiro (o shooting position se definita)
+        if self.stage.shooting_positions:
+            cx = sum(sp.x for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
+            cy = sum(sp.y for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
+        else:
+            cx = self.stage.width / 2
+            cy = self.stage.depth * 0.3
+
+        for t in fixed_targets:
+            # Vettore dal bersaglio all'area di tiro (dove guarda il tiratore)
+            dx = cx - t.x
+            dy = cy - t.y
+            dist = math.hypot(dx, dy)
+            if dist < 0.3:
+                continue
+
+            # Direzione verso l'area di tiro (normalizzata)
+            to_shooter_angle = math.degrees(math.atan2(dy, dx)) % 360
+
+            # Rotazione del bersaglio: per IPSC la rotation rappresenta
+            # l'orientamento della faccia del bersaglio (normale uscente)
+            target_facing = t.rotation % 360
+
+            # Differenza angolare tra dove punta il bersaglio e dove
+            # si trova l'area di tiro
+            diff = abs(target_facing - to_shooter_angle)
+            diff = min(diff, 360 - diff)
+
+            if diff > self.MAX_FIXED_TARGET_ANGLE:
+                v.append(
+                    f"Bersaglio fisso #{t.id} ({t.label}) presentato a "
+                    f"{diff:.0f}° rispetto all'area di tiro "
+                    f"(max {self.MAX_FIXED_TARGET_ANGLE}°, Reg. 2.1.8.4)")
+
+        return v
+
+    # ── Reg. 4.3.3.3 — Piatti metallici necessitano carta/popper ────────
+
+    def _validate_metal_plates_need_paper(self) -> List[str]:
+        """Verifica che quando ci sono piatti metallici, sia presente almeno
+        un bersaglio carta o popper che assegni punti (Reg. 4.3.3.3).
+
+        'I piatti metallici non devono essere impiegati come unico tipo di
+        bersaglio in nessun esercizio. Deve essere incluso in ciascun esercizio
+        almeno un bersaglio di carta o Popper che assegni punti'
+        """
+        v = []
+
+        has_metal_plates = any(
+            it.item_type == ItemType.METAL_PLATE
+            for it in self.stage.items
+        )
+        if not has_metal_plates:
+            return v
+
+        has_paper_or_popper = any(
+            it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
+                             ItemType.MICRO_TARGET, ItemType.POPPER)
+            for it in self.stage.items
+        )
+        if not has_paper_or_popper:
+            v.append(
+                "Sono presenti piatti metallici ma nessun bersaglio carta o "
+                "Popper che assegni punti (Reg. 4.3.3.3)")
+
+        return v
+
+    # ── Reg. 4.2.4 — Hard cover non nasconde zona A ─────────────────────
+
+    def _validate_hard_cover_high_zone(self) -> List[str]:
+        """Verifica che l'Hard Cover non nasconda totalmente la zona a
+        punteggio più alto (A) dei bersagli carta (Reg. 4.2.4).
+
+        Controllo geometrico semplificato: se un hard cover è posizionato
+        direttamente davanti a un paper target e ne copre il centro
+        (dove si trova la zona A), viene segnalato.
+        """
+        v = []
+
+        hard_covers = [
+            it for it in self.stage.items
+            if it.item_type == ItemType.HARD_COVER
+        ]
+        paper_targets = [
+            it for it in self.stage.items
+            if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
+                                ItemType.MICRO_TARGET)
+        ]
+        if not hard_covers or not paper_targets:
+            return v
+
+        for hc in hard_covers:
+            hc_obb = item_obb(hc)
+            if hc_obb is None:
+                continue
+            for pt in paper_targets:
+                # Il centro del paper target (zona A) è circa al suo centro
+                pt_center = Point(pt.x, pt.y)
+                # Se il centro del bersaglio è dentro l'hard cover o molto
+                # vicino, la zona A potrebbe essere coperta
+                if hc_obb.contains(pt_center):
+                    v.append(
+                        f"Hard Cover #{hc.id} copre il centro del bersaglio "
+                        f"#{pt.id} (possibile occultamento zona A, Reg. 4.2.4)")
+                else:
+                    # Verifica distanza: se hard cover è molto vicino al centro
+                    from shapely import distance as sh_dist
+                    d = sh_dist(hc_obb, pt_center)
+                    if d < 0.15:
+                        v.append(
+                            f"Hard Cover #{hc.id} a {d*100:.0f}cm dal centro "
+                            f"del bersaglio #{pt.id} "
+                            f"(possibile occultamento zona A, Reg. 4.2.4)")
+
+        return v
+
+    # ── Reg. 4.3.1.1 — Vietati bersagli metallici rotanti ───────────────
+
+    def _validate_metal_rotating_prohibited(self) -> List[str]:
+        """Verifica che non ci siano bersagli metallici (popper, plate,
+        steel) che possano ruotare o porsi di taglio quando colpiti
+        (Reg. 4.3.1.1).
+
+        'Sono espressamente proibiti i bersagli metallici che assegnano
+        punti o penalità che possano ruotare o porsi di taglio a seguito
+        di un colpo andato a segno.'
+
+        Il controllo rileva proprietà come "swinger", "rotating",
+        "drop_turner" su item di tipo metallico.
+        """
+        v = []
+
+        metal_items = [
+            it for it in self.stage.items
+            if it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER,
+                                ItemType.METAL_PLATE)
+        ]
+        for it in metal_items:
+            props = it.properties or {}
+            # Cerca proprietà che indicano movimento/rotazione
+            moving_props = [k for k in props if k in (
+                "amplitude", "speed", "trigger", "fall_time",
+                "distance", "direction", "rotating", "swing",
+            )]
+            if moving_props:
+                v.append(
+                    f"Bersaglio metallico #{it.id} ({it.label}) ha proprietà "
+                    f"di movimento ({', '.join(moving_props)}) che sono "
+                    f"vietate per i metallici (Reg. 4.3.1.1)")
+
+        # Inoltre, i tipi SWINGER, DROP_TURNER, MOVER non dovrebbero
+        # MAI essere di tipo metallico (sono inherently carta)
+        for it in self.stage.items:
+            if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
+                                ItemType.MOVER):
+                if "metal" in it.label.lower() or "steel" in it.label.lower():
+                    v.append(
+                        f"Bersaglio mobile #{it.id} ({it.label}) è marcato "
+                        f"come metallico ma i mobili devono essere cartacei "
+                        f"(Reg. 4.3.1.1)")
+
+        return v
+
+    # ── App. C3 — Altezza montaggio piatti metallici ────────────────────
+
+    def _validate_plate_mounting_height(self) -> List[str]:
+        """Verifica che i piatti metallici siano montati su Hard Cover o
+        paletti di almeno 1m di altezza (App. C3).
+
+        'Nelle gare di pistola i piatti metallici dovrebbero essere posti
+        su Hard Cover o paletti di almeno 1 m di altezza.'
+
+        Rileva se un METAL_PLATE non ha un HARD_COVER sottostante o
+        la proprietà mount_height < 1m.
+        """
+        v = []
+
+        plates = [
+            it for it in self.stage.items
+            if it.item_type == ItemType.METAL_PLATE
+        ]
+        if not plates:
+            return v
+
+        hard_covers = [
+            it for it in self.stage.items
+            if it.item_type == ItemType.HARD_COVER
+        ]
+
+        for pl in plates:
+            mount_height = pl.properties.get("mount_height", 0.0)
+
+            # Verifica 1: proprietà esplicita mount_height
+            if mount_height >= self.MIN_PLATE_MOUNT_HEIGHT:
+                continue
+
+            # Verifica 2: c'è un hard cover sotto il piatto?
+            has_support = False
+            pl_point = Point(pl.x, pl.y)
+            for hc in hard_covers:
+                hc_obb = item_obb(hc)
+                if hc_obb and hc_obb.contains(pl_point):
+                    has_support = True
+                    break
+                # Oppure hard cover a meno di 0.3m sotto
+                from shapely import distance as sh_dist
+                if hc_obb and sh_dist(hc_obb, pl_point) < 0.3:
+                    # Verifica che l'hard cover sia sotto (y minore)
+                    if hc.y + hc.height / 2 < pl.y:
+                        has_support = True
+                        break
+
+            if not has_support:
+                v.append(
+                    f"Piatto metallico #{pl.id} non montato su Hard Cover o "
+                    f"paletto ≥ {self.MIN_PLATE_MOUNT_HEIGHT}m "
+                    f"(mount_height={mount_height}m, App. C3)")
+
+        return v
 
     def count_targets(self) -> dict:
         """Conta i bersagli per tipo."""

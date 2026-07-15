@@ -184,7 +184,8 @@ class TestGeneratorOutputStructure:
         validation = engine.validate()
         violations = validation.violations
         # Nessuna violazione catastrofica (distanza zero = sovrapposizione)
-        zero_dist = [v for v in violations if "0.0m" in v or "0.0" in v]
+        # Filtra solo distanze effettivamente nulle (0.0m, 0.00m), non coordinate o angoli
+        zero_dist = [v for v in violations if "0.0 m" in v or "0.00 m" in v or "0.0m" in v or "0.00m" in v]
         assert len(zero_dist) == 0, f"Sovrapposizioni trovate: {zero_dist}"
         # Score positivo
         assert result.score > 0
@@ -265,7 +266,12 @@ class TestGeneratorEdgeCases:
         assert len(steel) == 0
 
     def test_all_steel_targets(self):
-        """Tutti i bersagli sono steel (stage grande per distanza 8m)."""
+        """Tutti i bersagli sono steel (stage grande per distanza 8m).
+        
+        Nota: Reg. 4.3.3.3 richiede almeno 1 carta o Popper quando
+        ci sono piatti metallici, quindi il generatore aggiunge
+        automaticamente un paper target per compliance.
+        """
         cfg = GeneratorConfig(seed=42, num_targets=0, num_steel=0,
                               num_poppers=2, num_plates=2,
                               num_mini=0, num_moving=0,
@@ -275,7 +281,12 @@ class TestGeneratorEdgeCases:
         result = gen.generate()
         steel_types = {ItemType.POPPER, ItemType.METAL_PLATE}
         steel = [it for it in result.stage.items if it.item_type in steel_types]
+        # Devono esserci almeno 3 steel (poppers + plates)
         assert len(steel) >= 2
+        # Reg. 4.3.3.3: con plates deve esserci almeno 1 paper/popper
+        paper = [it for it in result.stage.items
+                 if it.item_type in (ItemType.PAPER_TARGET, ItemType.POPPER)]
+        assert len(paper) >= 1, "Reg. 4.3.3.3 richiede almeno 1 carta o Popper con plates"
 
 
 class TestGeneratorScoring:

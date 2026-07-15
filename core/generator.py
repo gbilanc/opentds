@@ -182,7 +182,7 @@ class StageGenerator:
         disc = cfg.discipline
 
         # Tenta fino a 3 seed diversi
-        for _ in range(3):
+        for retry in range(3):
             result = self._generate_once(cfg, disc)
             engine = IPSCRulesEngine(result.stage)
             engine.set_discipline(disc)
@@ -196,7 +196,12 @@ class StageGenerator:
             if not critical:
                 return result
 
-            random.seed()
+            # Se abbiamo un seed iniziale, usa incremento deterministico
+            # invece di random.seed() (che usa entropia di sistema)
+            if cfg.seed is not None:
+                random.seed(cfg.seed + retry + 1)
+            else:
+                random.seed()
 
         return result
 
@@ -286,7 +291,22 @@ class StageGenerator:
                 plates_placed += 1
             attempts += 1
 
-        # 2d. Se non abbiamo abbastanza bersagli, aggiungi paper
+        # 2d. Reg. 4.3.3.3: se ci sono piatti metallici, serve almeno
+        #     un bersaglio carta o Popper che assegni punti
+        has_plates = any(it.item_type == ItemType.METAL_PLATE for it in items)
+        has_paper_or_popper = any(
+            it.item_type in (ItemType.PAPER_TARGET, ItemType.POPPER)
+            for it in items)
+        if has_plates and not has_paper_or_popper:
+            for _ in range(5):
+                it = self._place_target_around(
+                    stage, items, ItemType.PAPER_TARGET, engine)
+                if it:
+                    items.append(it)
+                    break
+                attempts += 1
+
+        # 2e. Se non abbiamo abbastanza bersagli, aggiungi paper
         fill_attempts = 0
         while len([x for x in items if _is_scoring_target(x.item_type)]) < min_targets:
             it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
@@ -538,6 +558,7 @@ class StageGenerator:
             color = "#d1d5db"
             label = "Popper"
             min_dist_from_edge = 8.0
+            # I popper NON devono avere proprietà di movimento (Reg. 4.3.1.1)
         elif ttype == ItemType.METAL_PLATE:
             # Piatto metallico IPSC (App. C3): bianco, ~20cm
             w, h = 0.20, 0.20
@@ -598,16 +619,40 @@ class StageGenerator:
             if ny < -0.3:
                 continue
 
-            # Distanza dal lato
-            dist = random.uniform(min_dist_from_edge, min_dist_from_edge + 3.0)
+            # Distanza dal lato: calcola lo spazio disponibile nella
+            # direzione della normale e adatta la distanza massima
+            backstop_margin = IPSCRulesEngine.MIN_BACKSTOP_DEPTH
+            half_h = (h if not is_moving else 0.45) / 2
+            max_y = stage.depth - backstop_margin - half_h - 0.2
+
+            # Calcola lo spazio massimo nella direzione della normale
+            # che mantiene il bersaglio dentro lo stage
+            if nx > 0:
+                max_dist_x = (stage.width - margin - ex) / max(nx, 0.001)
+            elif nx < 0:
+                max_dist_x = (ex - margin) / max(-nx, 0.001)
+            else:
+                max_dist_x = float('inf')
+
+            if ny > 0:
+                max_dist_y = (max_y - ey) / max(ny, 0.001)
+            elif ny < 0:
+                max_dist_y = (ey - margin) / max(-ny, 0.001)
+            else:
+                max_dist_y = float('inf')
+
+            max_dist = min(max_dist_x, max_dist_y)
+            if max_dist < min_dist_from_edge:
+                continue
+
+            dist = random.uniform(
+                min_dist_from_edge,
+                min(max_dist, min_dist_from_edge + 3.0)
+            )
             px = ex + nx * dist
             py = ey + ny * dist
 
             # Deve stare dentro lo stage, con backstop minimo garantito
-            # (t.y + t.height/2 <= d - MIN_BACKSTOP_DEPTH)
-            backstop_margin = IPSCRulesEngine.MIN_BACKSTOP_DEPTH
-            half_h = (h if not is_moving else 0.45) / 2
-            max_y = stage.depth - backstop_margin - half_h - 0.2
             if not (margin <= px <= stage.width - margin and
                     margin <= py <= max_y):
                 continue
@@ -616,34 +661,14 @@ class StageGenerator:
             if point_in_polygon(px, py, poly):
                 continue
 
-            # Orientamento VERSO IL PARAPALLE DI FONDO o LATERALE, MAI verso ingresso
-            # Calcola tre direzioni candidate: verso il centro del parapalle,
-            # verso il parapalle sinistro, verso il parapalle destro.
-            # Sceglie quella con la maggior componente down-range (y positiva).
-            backstop_cx = stage.width / 2
-            backstop_cy = stage.depth
-            left_cx = 0.0
-            left_cy = stage.depth / 2
-            right_cx = stage.width
-            right_cy = stage.depth / 2
-
-            candidates = [
-                (backstop_cx, backstop_cy),
-                (left_cx, left_cy),
-                (right_cx, right_cy),
-            ]
-            best_angle = None
-            best_downrange = -float('inf')
-            for tcx, tcy in candidates:
-                a = math.degrees(math.atan2(tcy - py, tcx - px))
-                # La componente down-range è positiva se il bersaglio
-                # punta verso y crescenti (verso il fondo dello stage)
-                dy_component = math.cos(math.radians(a - 90))
-                if dy_component > best_downrange:
-                    best_downrange = dy_component
-                    best_angle = a
-
-            rot = best_angle + random.uniform(-10, 10)
+            # Orientamento VERSO L'AREA DI TIRO (Reg. 2.1.8.4)
+            # I bersagli IPSC devono puntare verso il tiratore, quindi
+            # verso l'interno dell'area di tiro.
+            # Usa il centro del poligono dell'area di tiro come riferimento.
+            poly_cx = sum(p[0] for p in self._perimeter_poly) / len(self._perimeter_poly)
+            poly_cy = sum(p[1] for p in self._perimeter_poly) / len(self._perimeter_poly)
+            rot = math.degrees(math.atan2(poly_cy - py, poly_cx - px))
+            rot += random.uniform(-10, 10)  # leggera variazione per naturalezza
 
             if is_moving:
                 mov_props = {
@@ -657,6 +682,10 @@ class StageGenerator:
                 props = mov_props.get(ttype, {})
             else:
                 props = {}
+
+            # App. C3: i piatti metallici devono avere mount_height >= 1m
+            if ttype == ItemType.METAL_PLATE:
+                props["mount_height"] = 1.0
 
             it = StageItem(0, ttype, px, py, w, h, rot, color, label,
                            properties=props)
@@ -829,9 +858,37 @@ class StageGenerator:
         else:
             letter = random.choice(list(LETTER_SHAPES.keys()))
         norm_verts = LETTER_SHAPES[letter]
-        inset = margin + 1.0
+
+        # Calcola margine dinamico in base ai tipi di bersaglio:
+        # - bersagli steel (popper, plate) richiedono 8m dal perimetro
+        #   + 1m dal bordo stage = 9m
+        # - bersagli carta richiedono 1m dal perimetro + 1m dal bordo = 2m
+        # Usa il massimo tra le esigenze dei bersagli configurati
+        has_steel = (
+            self.config.num_steel > 0 or
+            self.config.num_poppers > 0 or
+            self.config.num_plates > 0 or
+            (self.config.auto_distribution and self.config.course_type)
+        )
+        if has_steel:
+            # Per steel: 8m (distanza minima) + 2m (range random) + 1m (bordo) = 11m
+            dynamic_inset = max(margin + 1.0, IPSCRulesEngine.MIN_STEEL_DISTANCE + 3.0)
+        else:
+            dynamic_inset = margin + 1.0
+        # Limita l'inset per non rendere l'area di tiro troppo piccola
+        min_poly_dim = 4.0  # almeno 4m in ogni dimensione
+        max_inset_w = (w - min_poly_dim) / 2
+        max_inset_d = (d_eff - min_poly_dim) / 2
+        inset = min(dynamic_inset, max_inset_w, max_inset_d)
         scale_x = w - 2 * inset
         scale_y = d_eff - 2 * inset
+        # Se lo stage è troppo piccolo per ospitare steel, scala tutto
+        # e posiziona i bersagli più vicini (con avviso)
+        if scale_x < min_poly_dim or scale_y < min_poly_dim:
+            # Fallback: usa margine minimo
+            inset = margin + 1.0
+            scale_x = w - 2 * inset
+            scale_y = d_eff - 2 * inset
 
         poly = []
         for nx, ny in norm_verts:
