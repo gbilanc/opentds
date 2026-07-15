@@ -35,8 +35,20 @@ def min_distance_between(a: Polygon, b: Polygon) -> float:
 
 
 def overlaps(a: Polygon, b: Polygon, min_gap: float = 0) -> bool:
-    """True se `a` e `b` distano meno di `min_gap`."""
-    return distance(a, b) < min_gap
+    """True se `a` e `b` si sovrappongono (interni che si intersecano),
+    non se si toccano solo ai bordi.
+
+    Se min_gap > 0, conta anche se distano meno di min_gap (purché
+    non siano semplicemente contigue/toccanti).
+    """
+    from shapely import touches as shapely_touches, intersects as shapely_intersects
+    # Se si intersecano e NON solo si toccano → sovrapposizione
+    if shapely_intersects(a, b) and not shapely_touches(a, b):
+        return True
+    # Se sono vicine ma non si toccano (gap < min_gap)
+    if min_gap > 0 and not shapely_touches(a, b):
+        return distance(a, b) < min_gap
+    return False
 
 
 def point_in_polygon_shapely(px: float, py: float,

@@ -12,15 +12,19 @@ from typing import Optional, Callable
 import math
 from PySide6.QtCore import Qt, Signal, QObject, QPointF, QRectF
 from PySide6.QtGui import (
-    QPen, QBrush, QColor, QPainter, QPainterPath,
+    QPen, QBrush, QColor, QPainter, QPainterPath, QPixmap,
     QUndoStack, QUndoCommand,
 )
 from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsRectItem, QGraphicsEllipseItem,
-    QGraphicsItem,
+    QGraphicsItem, QGraphicsPixmapItem,
 )
 
 from core.models import Stage, StageItem, ItemType
+from core.collision import make_obb, item_obb, overlaps as shapely_overlaps
+from shapely.geometry import box as shapely_box, Point as ShapelyPoint
+
+from ui.editor.target_images import TargetImageManager
 
 
 # Helper per classificazione tipi (condivisa con generator)
@@ -160,9 +164,171 @@ class StageItemMixin:
         self.setPos(it.x * self.scale, it.y * self.scale)
         self.setRotation(it.rotation)
 
+    # ---- Collisione ostacoli e blocchi percorso ----
+
+    _OBSTACLE_TYPES = {ItemType.WALL, ItemType.BARRIER, ItemType.DOOR}
+    # Tipi di bersaglio che non devono essere coperti da ostacoli
+    _TARGET_TYPES = {
+        ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+        ItemType.POPPER, ItemType.METAL_PLATE,
+        ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+        ItemType.NO_SHOOT, ItemType.SWINGER,
+        ItemType.DROP_TURNER, ItemType.MOVER,
+    }
+
+    def _would_collide_with_obstacles(self, new_pos: QPointF) -> bool:
+        """True se il nuovo posizionamento causa sovrapposizione con
+        un altro ostacolo (muro, barriera, porta) o copre un bersaglio."""
+        it = self.wrapper.item
+        if it.item_type not in self._OBSTACLE_TYPES:
+            return False
+
+        scene: "StageScene" = self.scene()
+        if scene is None:
+            return False
+
+        new_x = new_pos.x() / self.scale
+        new_y = new_pos.y() / self.scale
+        new_obb = make_obb(new_x, new_y,
+                           max(it.width, 0.05), max(it.height, 0.05),
+                           it.rotation)
+
+        MIN_GAP = 0.05  # 5 cm
+
+        # 1. Contro altri ostacoli (muri, barriere, porte)
+        for other_id, other_g in scene._items.items():
+            if other_id == it.id:
+                continue
+            other_it = getattr(other_g, 'wrapper', None)
+            if other_it is None:
+                continue
+            other_it = other_it.item
+            if other_it.item_type not in self._OBSTACLE_TYPES:
+                continue
+            other_obb = item_obb(other_it)
+            if other_obb is not None and shapely_overlaps(new_obb, other_obb, MIN_GAP):
+                return True
+
+        # 2. Contro bersagli (non devono essere coperti dall'ostacolo)
+        MIN_TARGET_GAP = 0.3  # 30 cm
+        for other_id, other_g in scene._items.items():
+            if other_id == it.id:
+                continue
+            other_it = getattr(other_g, 'wrapper', None)
+            if other_it is None:
+                continue
+            other_it = other_it.item
+            if other_it.item_type not in self._TARGET_TYPES:
+                continue
+            other_obb = item_obb(other_it)
+            if other_obb is not None and shapely_overlaps(new_obb, other_obb, MIN_TARGET_GAP):
+                return True
+
+        # 3. Contro i bordi dello stage (non devono sporgere oltre)
+        stage = scene.stage
+        stage_obb = shapely_box(0, 0, stage.width, stage.depth)
+        if not stage_obb.contains(new_obb):
+            return True
+
+        return False
+
+    def _would_block_shooter_path(self, new_pos: QPointF) -> bool:
+        """True se il posizionamento isolerebbe una posizione di tiro
+        dal resto dell'area (shooting position tagliata fuori)."""
+        it = self.wrapper.item
+        if it.item_type not in self._OBSTACLE_TYPES:
+            return False
+
+        scene: "StageScene" = self.scene()
+        if scene is None:
+            return False
+
+        # Solo se ci sono shooting positions definite
+        if not scene.stage.shooting_positions:
+            return False
+
+        from shapely import union_all, difference
+
+        new_x = new_pos.x() / self.scale
+        new_y = new_pos.y() / self.scale
+        new_obb = make_obb(new_x, new_y,
+                           max(it.width, 0.05), max(it.height, 0.05),
+                           it.rotation)
+
+        # Raccogli TUTTI gli ostacoli (incluso questo nella nuova posizione)
+        obstacles = [new_obb]
+        for other_id, other_g in scene._items.items():
+            if other_id == it.id:
+                continue
+            other_it = getattr(other_g, 'wrapper', None)
+            if other_it is None:
+                continue
+            other_it = other_it.item
+            if other_it.item_type not in self._OBSTACLE_TYPES:
+                continue
+            other_obb = item_obb(other_it)
+            if other_obb is not None:
+                obstacles.append(other_obb)
+
+        if not obstacles:
+            return False
+
+        # Unione ostacoli
+        obs_union = union_all(obstacles)
+
+        # Area stage meno ostacoli
+        stage = scene.stage
+        stage_area = shapely_box(0, 0, stage.width, stage.depth)
+        accessible = difference(stage_area, obs_union)
+
+        if accessible.is_empty:
+            return True  # Nessuna area accessibile!
+
+        # Se ci sono più regioni separate, verifica che ogni shooting position
+        # sia nella stessa regione (nessuna isolata)
+        if hasattr(accessible, 'geoms'):
+            regions = list(accessible.geoms)
+            if len(regions) > 1:
+                # Raccogli shooting positions
+                sp_points = [
+                    ShapelyPoint(sp.x, sp.y)
+                    for sp in scene.stage.shooting_positions
+                ]
+                if sp_points:
+                    # Trova in quale regione sta la prima shooting position
+                    first_sp = sp_points[0]
+                    main_region_idx = -1
+                    for i, reg in enumerate(regions):
+                        if reg.contains(first_sp):
+                            main_region_idx = i
+                            break
+
+                    if main_region_idx >= 0:
+                        # Verifica che TUTTE le shooting position siano
+                        # nella stessa regione principale
+                        for sp_pt in sp_points:
+                            if not regions[main_region_idx].contains(sp_pt):
+                                return True  # Shooting position isolata!
+
+        return False
+
+    # ---- Sincronia posizione / modello ----
+
+    def update_from_model(self):
+        """Aggiorna posizione e rotazione dal modello. Le sottoclassi
+        sovrascrivono per impostare anche la forma (rect/ellisse)."""
+        it = self.wrapper.item
+        self.setPos(it.x * self.scale, it.y * self.scale)
+        self.setRotation(it.rotation)
+
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
+            snapped = _snap_pos(value, self.scale)
+            if self._would_collide_with_obstacles(snapped):
+                return self.pos()  # Rifiuta la mossa
+            if self._would_block_shooter_path(snapped):
+                return self.pos()  # Rifiuta — blocca il passaggio tiratore
+            return snapped
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.wrapper.item.x = self.pos().x() / self.scale
             self.wrapper.item.y = self.pos().y() / self.scale
@@ -409,7 +575,12 @@ class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return _snap_pos(value, self.scale)
+            snapped = _snap_pos(value, self.scale)
+            if self._would_collide_with_obstacles(snapped):
+                return self.pos()
+            if self._would_block_shooter_path(snapped):
+                return self.pos()
+            return snapped
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.wrapper.item.x = self.pos().x() / self.scale
             self.wrapper.item.y = self.pos().y() / self.scale
@@ -513,7 +684,7 @@ class MoverGraphicsItem(RectGraphicsItem):
         painter.drawLine(-dx, -dy, dx, dy)
 
 
-# ── Nuovi tipi IPSC ─────────────────────────────────────────────────────────
+# ── Nuovi tipi IPSC (shape-based) ────────────────────────────────────────
 
 
 class PopperGraphicsItem(EllipseGraphicsItem):
@@ -524,7 +695,6 @@ class PopperGraphicsItem(EllipseGraphicsItem):
 
     def _paint_decoration(self, painter: QPainter):
         r = self.rect()
-        # Cerchio di calibrazione (App. C1)
         pen = QPen(QColor("#dc2626"), 1, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -547,11 +717,9 @@ class MiniTargetGraphicsItem(EllipseGraphicsItem):
 
     def _paint_decoration(self, painter: QPainter):
         r = self.rect()
-        # Linea zona A/C/D semplificata
         pen = QPen(QColor("#78350f"), 1, Qt.PenStyle.DotLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        # Cerchio interno per simulare zona A
         ir = min(r.width(), r.height()) * 0.4
         painter.drawEllipse(r.center(), ir, ir)
 
@@ -571,7 +739,6 @@ class HardCoverGraphicsItem(RectGraphicsItem):
 
     def _paint_decoration(self, painter: QPainter):
         r = self.rect()
-        # Pattern a X per indicare impenetrabilità
         pen = QPen(QColor("#94a3b8"), 2)
         painter.setPen(pen)
         painter.drawLine(r.topLeft(), r.bottomRight())
@@ -584,6 +751,161 @@ class SoftCoverGraphicsItem(RectGraphicsItem):
         super().__init__(wrapper, scale, wrapper.item.color,
                          pen_color="#475569", pen_width=1, brush_alpha=60,
                          pen_style=Qt.PenStyle.DashLine)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  PixmapGraphicsItem — item basato su immagini IPSC (dal Regolamento PDF)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PixmapGraphicsItem(StageItemMixin, QGraphicsPixmapItem):
+    """Classe base per bersagli disegnati con immagini PNG estratte dal Regolamento.
+
+    Usa TargetImageManager per caricare, tintare e scalare il pixmap
+    in base alle dimensioni reali del bersaglio.
+
+    Le sottoclassi possono sovrascrivere _paint_decoration() per
+    aggiungere overlay (X no-shoot, arco swinger, ecc.).
+    """
+
+    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
+        QGraphicsPixmapItem.__init__(self, parent)
+        self.stage_item_init(wrapper, scale)
+        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
+        self.update_from_model()
+
+    def update_from_model(self):
+        it = self.wrapper.item
+        w_px = int(it.width * self.scale)
+        h_px = int(it.height * self.scale)
+
+        if w_px > 0 and h_px > 0:
+            pixmap = TargetImageManager.instance().get_pixmap(
+                it.item_type, w_px, h_px
+            )
+            if pixmap is not None and not pixmap.isNull():
+                self.setPixmap(pixmap)
+                self.setOffset(-pixmap.width() / 2.0, -pixmap.height() / 2.0)
+            else:
+                self.setPixmap(QPixmap())
+        else:
+            self.setPixmap(QPixmap())
+
+        super().update_from_model()
+
+    def paint(self, painter, option, widget=None):
+        # Disegna il pixmap (ereditato da QGraphicsPixmapItem)
+        super().paint(painter, option, widget)
+        # Overlay
+        self._paint_decoration(painter)
+        self._draw_violation_highlight(painter)
+        self._draw_selection_highlight(painter)
+        self._draw_rotation_handle(painter)
+
+    def _paint_decoration(self, painter: QPainter):
+        """Override per decorazioni specifiche (X, arco, freccia, linea)."""
+        pass
+
+    # ---- Override per supportare highlight su bounding corretto ----
+
+    def _draw_selection_highlight(self, painter: QPainter):
+        if not self.isSelected():
+            return
+        pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        br = self.boundingRect().adjusted(-4, -4, 4, 4)
+        painter.drawRect(br)
+
+
+# ─── Implementazioni pixmap per tipi bersaglio ──────────────────────────────
+
+
+class PaperTargetPixmapItem(PixmapGraphicsItem):
+    """Bersaglio cartaceo IPSC: silhouette marrone dal Regolamento."""
+    pass
+
+
+class MiniTargetPixmapItem(PixmapGraphicsItem):
+    """Mini Target IPSC: silhouette ridotta marrone (App. B3)."""
+    pass
+
+
+class MicroTargetPixmapItem(PixmapGraphicsItem):
+    """Micro Target IPSC: silhouette micro marrone."""
+    pass
+
+
+class SteelTargetPixmapItem(PixmapGraphicsItem):
+    """Bersaglio metallico: popper grigio dal Regolamento."""
+    pass
+
+
+class PopperPixmapItem(PixmapGraphicsItem):
+    """Popper: bersaglio metallico calibrato grigio (App. C2)."""
+    pass
+
+
+class MetalPlatePixmapItem(PixmapGraphicsItem):
+    """Piatto metallico: diagramma non calibrato (App. C3)."""
+    pass
+
+
+class NoShootPixmapItem(PixmapGraphicsItem):
+    """No-Shoot: silhouette gialla IPSC con X rosso (Reg. 4.1.3)."""
+
+    def _paint_decoration(self, painter: QPainter):
+        r = self.boundingRect()
+        margin = r.width() * 0.15
+        x1 = r.left() + margin
+        y1 = r.top() + margin
+        x2 = r.right() - margin
+        y2 = r.bottom() - margin
+        pen = QPen(QColor("#dc2626"), 2)
+        painter.setPen(pen)
+        painter.drawLine(x1, y1, x2, y2)
+        painter.drawLine(x2, y1, x1, y2)
+
+
+class SwingerPixmapItem(PixmapGraphicsItem):
+    """Swinger: silhouette mobile con arco di oscillazione."""
+
+    def _paint_decoration(self, painter: QPainter):
+        amp = self.wrapper.item.properties.get("amplitude", 45)
+        pen = QPen(QColor("#a855f7"), 1, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        r = 40
+        start_angle = -amp - self.rotation()
+        span = amp * 2
+        painter.drawArc(-r, -r, r * 2, r * 2, int(start_angle * 16), int(span * 16))
+
+
+class DropTurnerPixmapItem(PixmapGraphicsItem):
+    """Drop Turner: silhouette mobile con freccia caduta."""
+
+    def _paint_decoration(self, painter: QPainter):
+        pen = QPen(QColor("#0f172a"), 2)
+        painter.setPen(pen)
+        br = self.boundingRect()
+        cx, cy = br.center().x(), br.center().y()
+        painter.drawLine(cx, cy - 8, cx, cy + 8)
+        painter.drawLine(cx - 4, cy + 4, cx, cy + 8)
+        painter.drawLine(cx + 4, cy + 4, cx, cy + 8)
+
+
+class MoverPixmapItem(PixmapGraphicsItem):
+    """Mover: silhouette mobile con linea traiettoria."""
+
+    def _paint_decoration(self, painter: QPainter):
+        dist = self.wrapper.item.properties.get("distance", 3.0) * self.scale
+        pen = QPen(QColor("#f97316"), 1, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        angle = math.radians(self.rotation())
+        dx = math.cos(angle) * dist / 2
+        dy = math.sin(angle) * dist / 2
+        painter.drawLine(-dx, -dy, dx, dy)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -668,21 +990,21 @@ class StageScene(QGraphicsScene):
 
     _GRAPHICS_ITEM_CLASSES: dict[ItemType, tuple[type, str | None]] = {
         ItemType.WALL:          (WallGraphicsItem, None),
-        ItemType.PAPER_TARGET:  (TargetGraphicsItem, None),
-        ItemType.STEEL_TARGET:  (TargetGraphicsItem, None),
-        ItemType.POPPER:        (PopperGraphicsItem, None),
-        ItemType.METAL_PLATE:   (MetalPlateGraphicsItem, None),
-        ItemType.MINI_TARGET:   (MiniTargetGraphicsItem, None),
-        ItemType.MICRO_TARGET:  (MicroTargetGraphicsItem, None),
+        ItemType.PAPER_TARGET:  (PaperTargetPixmapItem, None),
+        ItemType.STEEL_TARGET:  (SteelTargetPixmapItem, None),
+        ItemType.POPPER:        (PopperPixmapItem, None),
+        ItemType.METAL_PLATE:   (MetalPlatePixmapItem, None),
+        ItemType.MINI_TARGET:   (MiniTargetPixmapItem, None),
+        ItemType.MICRO_TARGET:  (MicroTargetPixmapItem, None),
         ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
-        ItemType.NO_SHOOT:      (NoShootGraphicsItem, None),
+        ItemType.NO_SHOOT:      (NoShootPixmapItem, None),
         ItemType.BARRIER:       (BarrierGraphicsItem, None),
         ItemType.DOOR:          (DoorGraphicsItem, None),
         ItemType.HARD_COVER:    (HardCoverGraphicsItem, None),
         ItemType.SOFT_COVER:    (SoftCoverGraphicsItem, None),
-        ItemType.SWINGER:       (SwingerGraphicsItem, None),
-        ItemType.DROP_TURNER:   (DropTurnerGraphicsItem, None),
-        ItemType.MOVER:         (MoverGraphicsItem, None),
+        ItemType.SWINGER:       (SwingerPixmapItem, None),
+        ItemType.DROP_TURNER:   (DropTurnerPixmapItem, None),
+        ItemType.MOVER:         (MoverPixmapItem, None),
     }
 
     def _make_graphics_item(self, item: StageItem) -> QGraphicsItem:

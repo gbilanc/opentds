@@ -29,3 +29,5 @@ Thumbs.db
 # Project specific
 *.bak
 *.orig
+.obsidian/
+*.scad
