@@ -379,29 +379,64 @@ class MainWindow(QMainWindow):
     @Slot(GeneratorConfig)
     def _on_generate_requested(self, config: GeneratorConfig):
         self._status.showMessage("Generazione stage in corso\u2026")
+        self._show_generating_dialog()
         worker = GeneratorWorker(config)
         worker.signals.finished.connect(self._on_generation_finished)
         worker.signals.error.connect(self._on_generation_error)
         self._current_worker = worker
         QThreadPool.globalInstance().start(worker)
 
+    def _show_generating_dialog(self):
+        """Mostra un dialog modale che indica la generazione in corso."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Generazione Stage")
+        dlg.setFixedSize(320, 100)
+        dlg.setModal(True)
+        dlg.setWindowFlags(
+            dlg.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint
+        )
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(12)
+        lbl = QLabel("Generazione stage IPSC in corso...")
+        lbl.setStyleSheet("font-size: 13px; color: #0f172a;")
+        layout.addWidget(lbl)
+        progress = QProgressBar()
+        progress.setRange(0, 0)  # indeterminato
+        progress.setFixedHeight(20)
+        layout.addWidget(progress)
+        self._gen_dialog = dlg
+        dlg.show()
+
+    def _hide_generating_dialog(self):
+        if hasattr(self, '_gen_dialog') and self._gen_dialog is not None:
+            self._gen_dialog.close()
+            self._gen_dialog = None
+
     @Slot()
     def _on_stop_requested(self):
         self._status.showMessage("Generazione interrotta")
+        self._hide_generating_dialog()
         self._gen_panel.on_generation_finished()
 
     @Slot(object)
     def _on_generation_finished(self, result: object):
         result: GeneratorResult = result
-        self._status.showMessage(
-            f"Stage generato! Score: {result.score} | Tentativi: {result.attempts} | Bersagli: {len(result.stage.items)}"
+        self._hide_generating_dialog()
+        msg = (
+            f"\u2705 Stage generato! "
+            f"Score: {result.score} | "
+            f"Tentativi: {result.attempts} | "
+            f"Bersagli: {len(result.stage.items)}"
         )
+        self._status.showMessage(msg)
         self._replace_stage(result.stage)
         self._gen_panel.on_generation_finished()
         self._current_worker = None
 
     @Slot(str)
     def _on_generation_error(self, message: str):
+        self._hide_generating_dialog()
         self._status.showMessage(f"Errore generazione: {message}")
         self._gen_panel.on_generation_error(message)
         self._current_worker = None
