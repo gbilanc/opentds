@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, List
 
-from PySide6.QtCore import QRectF, Qt, QSizeF
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import (
     QImage, QPainter, QColor, QFont, QPdfWriter, QPageSize,
     QPen, QBrush,

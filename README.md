@@ -26,7 +26,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 |---|---|
 | Linguaggio | Python 3.11+ |
 | UI / Editor 2D | PySide6 Qt Widgets (`QGraphicsView`) |
-| Viewer 3D | Qt Quick 3D via `QQuickWidget` |
+| Export 3D | OpenSCAD (`.scad` / PNG / STL / 3MF) |
 | Validazione | `shapely` + motore custom IPSC |
 | Packaging | PyInstaller |
 
@@ -37,7 +37,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 ### Requisiti
 
 - Python 3.11 o superiore (gestito da `uv`)
-- GPU con supporto OpenGL 3.3+ (per la vista 3D)
+- OpenSCAD (opzionale, per rendering 3D e STL)
 
 ### Setup
 
@@ -85,18 +85,15 @@ uv run ruff check .  # linting (opzionale)
 - Punteggio automatico di qualità dello stage
 - Esecuzione asincrona in thread separato
 
-### Simulazione 3D
-- Rendering hardware-accelerato Qt Quick 3D
-- **Modalità Orbitale**: drag per ruotare, rotella zoom, Shift+drag pan
-- **Modalità First-Person**: WASD movimento, Shift sprint, mouse look
-- Animazioni live per bersagli mobili
-
 ### Esportazione
 | Formato | Contenuto |
 |---|---|
 | **JSON** | Schema v1 completo, caricabile e modificabile |
 | **PNG** | Piantina 2D ad alta risoluzione (150 DPI) |
 | **PDF** | Piantina + lista bersagli + dettagli mobili |
+| **OpenSCAD (.scad)** | Modello 3D parametrico editabile |
+| **PNG (OpenSCAD)** | Rendering 3D via `openscad` CLI |
+| **STL / 3MF** | Stampa 3D dello stage |
 
 ---
 
@@ -112,7 +109,8 @@ opentds/
 │   └── generator.py           # StageGenerator + scoring
 ├── services/
 │   ├── serializer.py          # JSON schema v1
-│   └── exporter.py            # PNG + PDF multi-pagina
+│   ├── exporter.py            # PNG + PDF multi-pagina
+│   └── openscad_exporter.py   # OpenSCAD 3D export (.scad/PNG/STL)
 └── ui/
     ├── editor/
     │   ├── stage_scene.py     # QGraphicsScene + undo/redo
@@ -121,9 +119,7 @@ opentds/
     │   └── generator_panel.py # Configurazione generazione
     ├── workers/
     │   └── generator_worker.py
-    └── viewer3d/
-        ├── quick_3d_widget.py # Bridge Python → QML 3D
-        └── StageScene.qml     # Scena 3D + camera + animazioni
+    └── main_window.py         # Main window con menu e toolbar
 ```
 
 ---
@@ -150,30 +146,22 @@ opentds/
 | `Del` | Elimina selezionati |
 | Rotella mouse | Zoom 2D |
 
-### 3D
-| Modalità | Controlli |
-|---|---|
-| **Orbita** | Drag = ruota, rotella = zoom, Shift+drag = pan |
-| **First-Person** | WASD = muovi, Shift = sprint, Mouse = look |
-
----
-
 ## Bersagli supportati
 
-| Tipo | Codice colore IPSC | Note | Animazione 3D |
-|---|---|---|---|
-| Paper Target | Marrone (#8B4513) | Zona punti marrone (Reg. 4.1.2.1) | — |
-| Steel Target | Grigio chiaro (#d1d5db) | Superficie bianca (Reg. 4.1.2.2) | — |
-| Popper | Grigio chiaro (#d1d5db) | Metallico calibrato (App. C1-C2) | — |
-| Piatto metallico | Grigio chiaro (#d1d5db) | Non calibrato (App. C3) | — |
-| Mini Target | Marrone (#8B4513) | Formato ridotto (App. B3) | — |
-| Micro Target | Marrone (#8B4513) | Formato micro | — |
-| Swinger | Marrone scuro (#A0522D) | Bersaglio cartaceo mobile | Oscillazione rotazione Y |
-| Drop Turner | Marrone scuro (#8B6914) | Bersaglio cartaceo mobile | Caduta rotazione X |
-| Mover | Marrone chiaro (#CD853F) | Bersaglio cartaceo mobile | Traslazione lineare |
-| No-Shoot | Giallo (#eab308) | Colore diverso dai bersagli punti (Reg. 4.1.3) | — |
-| Hard Cover | Grigio scuro (#1e293b) | Copertura impenetrabile (Reg. 4.1.4.1) | — |
-| Soft Cover | Grigio (#94a3b8) | Copertura visiva (Reg. 4.1.4.2) | — |
+| Tipo | Codice colore IPSC | Note |
+|---|---|---|
+| Paper Target | Marrone (#8B4513) | Zona punti marrone (Reg. 4.1.2.1) |
+| Steel Target | Grigio chiaro (#d1d5db) | Superficie bianca (Reg. 4.1.2.2) |
+| Popper | Grigio chiaro (#d1d5db) | Metallico calibrato (App. C1-C2) |
+| Piatto metallico | Grigio chiaro (#d1d5db) | Non calibrato (App. C3) |
+| Mini Target | Marrone (#8B4513) | Formato ridotto (App. B3) |
+| Micro Target | Marrone (#8B4513) | Formato micro |
+| Swinger | Marrone scuro (#A0522D) | Bersaglio cartaceo mobile |
+| Drop Turner | Marrone scuro (#8B6914) | Bersaglio cartaceo mobile |
+| Mover | Marrone chiaro (#CD853F) | Bersaglio cartaceo mobile |
+| No-Shoot | Giallo (#eab308) | Colore diverso dai bersagli punti (Reg. 4.1.3) |
+| Hard Cover | Grigio scuro (#1e293b) | Copertura impenetrabile (Reg. 4.1.4.1) |
+| Soft Cover | Grigio (#94a3b8) | Copertura visiva (Reg. 4.1.4.2) |
 
 ---
 
@@ -188,7 +176,6 @@ opentds/
 - [x] Generazione briefing in PDF
 - [ ] Regole IPSC edizione 2025 complete
 - [ ] Supporto IPSC Mini Rifle e Shotgun
-- [ ] Texture 3D realistiche (legno, acciaio, terra)
 - [ ] Modalità editor di percorsi di tiro
 - [ ] Esportazione per tablet/table score
 - [ ] Packaging PyInstaller (Windows, macOS, Linux AppImage)
