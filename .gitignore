@@ -31,3 +31,5 @@ Thumbs.db
 *.orig
 .obsidian/
 *.scad
+stage.json
+*.stage.json
