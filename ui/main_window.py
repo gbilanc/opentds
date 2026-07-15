@@ -63,6 +63,7 @@ class MainWindow(QMainWindow):
 
         self._scene = StageScene(self._stage)
         self._view = StageView(self._scene)
+        self._view.fitInView(self._scene.sceneRect(), mode=Qt.AspectRatioMode.KeepAspectRatio)
         v2.addWidget(self._view)
 
         self._panel_2d = panel_2d
@@ -431,6 +432,8 @@ class MainWindow(QMainWindow):
         self._scene._items.clear()
         self._scene._setup_grid()
         self._scene._sync_from_model()
+        # Adatta la vista per mostrare tutto lo stage
+        self._view.fitInView(self._scene.sceneRect(), mode=Qt.AspectRatioMode.KeepAspectRatio)
         self._prop_dock.set_item(None)
         # Aggiorna Info
         self._refresh_info()
