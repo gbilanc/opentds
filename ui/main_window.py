@@ -212,12 +212,6 @@ class MainWindow(QMainWindow):
         del_action.triggered.connect(self._scene.push_remove_selected)
         edit_menu.addAction(del_action)
 
-        gen_menu = menubar.addMenu("&Genera")
-        gen_action = QAction("&Genera Stage IPSC\u2026", self)
-        gen_action.setShortcut(QKeySequence("Ctrl+G"))
-        gen_action.triggered.connect(self._show_generator)
-        gen_menu.addAction(gen_action)
-
     def _setup_status_bar(self):
         self._status = QStatusBar()
         self.setStatusBar(self._status)
@@ -445,11 +439,6 @@ class MainWindow(QMainWindow):
     def _refresh_info(self):
         """Aggiorna il pannello Info Stage."""
         self._info_panel.set_stage(self._stage)
-
-    def _show_generator(self):
-        """Mostra e attiva il dock di generazione."""
-        self._gen_dock.show()
-        self._gen_dock.raise_()
 
     def _replace_stage(self, new_stage: Stage):
         """Sostituisce lo stage nell'editor 2D, 3D e Info."""
