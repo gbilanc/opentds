@@ -1,24 +1,20 @@
 {
   "main": {
-    "id": "0a5b20cbaeb4e05b",
+    "id": "ac9ae532222e1971",
     "type": "split",
     "children": [
       {
-        "id": "0fe106bdfb8a763e",
+        "id": "9fc5cedfa216493a",
         "type": "tabs",
         "children": [
           {
-            "id": "4902e41a978acb83",
+            "id": "91d6d6368e406130",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "wiki/concepts/ipsc-stage-design.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "ipsc-stage-design"
+              "title": "Nuova scheda"
             }
           }
         ]
@@ -27,15 +23,15 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "1d6c4b47f87a8dbf",
+    "id": "8feee685680e3ae8",
     "type": "split",
     "children": [
       {
-        "id": "1936e65e178beb74",
+        "id": "37c8436a45ead7db",
         "type": "tabs",
         "children": [
           {
-            "id": "ade43a14cab9be25",
+            "id": "efea34e91a46fe8f",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
@@ -48,7 +44,7 @@
             }
           },
           {
-            "id": "c0c51c158e54fb4a",
+            "id": "7d6c0dbd574eff30",
             "type": "leaf",
             "state": {
               "type": "search",
@@ -65,7 +61,7 @@
             }
           },
           {
-            "id": "f16a6ec59c3eee18",
+            "id": "e4cc67347804d962",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
@@ -81,20 +77,19 @@
     "width": 300
   },
   "right": {
-    "id": "391db31bd2eff82a",
+    "id": "63f4d5b10d930af8",
     "type": "split",
     "children": [
       {
-        "id": "e20f5a3008565e0d",
+        "id": "1af7fcd79b7a2fc4",
         "type": "tabs",
         "children": [
           {
-            "id": "f56b9cbe6ae01d62",
+            "id": "2d6c52370f320416",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "wiki/concepts/ipsc-targets.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,25 +99,24 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Riferimenti a ipsc-targets"
+              "title": "Riferimenti"
             }
           },
           {
-            "id": "2293e98b0bca9d62",
+            "id": "1b61d8d5cac07e26",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "wiki/concepts/ipsc-targets.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Collegamenti in uscita da ipsc-targets"
+              "title": "Collegamenti in uscita"
             }
           },
           {
-            "id": "77439108e845a37e",
+            "id": "d1df02b121224b75",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -137,7 +131,7 @@
             }
           },
           {
-            "id": "52612529f7d8c933",
+            "id": "c44969d4d8404915",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -151,18 +145,17 @@
             }
           },
           {
-            "id": "5fcbf974f086e172",
+            "id": "1d4a09ad35f5f6cf",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
-                "file": "wiki/concepts/ipsc-targets.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Struttura di ipsc-targets"
+              "title": "Struttura"
             }
           }
         ]
@@ -183,13 +176,6 @@
       "bases:Crea nuova Base": false
     }
   },
-  "active": "4902e41a978acb83",
-  "lastOpenFiles": [
-    "wiki/sources/SRC-2026-07-09-001.md",
-    "wiki/concepts/ipsc-targets.md",
-    "wiki/concepts/ipsc-stage-design.md",
-    "wiki/concepts/ipsc-penalties.md",
-    "meta/index.md",
-    "wiki/concepts/ipsc-safety-rules.md"
-  ]
+  "active": "91d6d6368e406130",
+  "lastOpenFiles": []
 }
