@@ -594,15 +594,52 @@ class StageGenerator:
             label = "Paper"
             min_dist_from_edge = 1.0
 
+        # Classifica i lati del poligono per priorità di posizionamento:
+        # 1. FONDO (back): normale uscente con componente y positiva (ny > 0.3)
+        #    - bersagli posizionati verso il parapalle
+        # 2. LATERALI (sides): normale uscente con componente x prevalente (|nx| > 0.7)
+        # 3. INGRESSO (front): normale con ny < -0.3 — MAI usati
+        # I bersagli devono essere posizionati partendo dal fondo e preferibilmente
+        # ai lati dell'area di tiro.
+        back_edges = []
+        side_edges = []
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            seg_len = math.hypot(x2 - x1, y2 - y1)
+            if seg_len < 0.3:
+                continue
+            nx_seg = (y2 - y1) / seg_len
+            ny_seg = -(x2 - x1) / seg_len
+            if ny_seg > 0.3:
+                back_edges.append(i)
+            elif abs(nx_seg) > 0.7 and ny_seg >= -0.3:
+                side_edges.append(i)
+
+        # Crea lista prioritaria: fondo (70%) + laterali (30%)
+        # Se manca una categoria, usa l'altra
+        candidate_edges = back_edges * 7 + side_edges * 3
+        if not candidate_edges:
+            # Fallback: tutti i lati tranne quelli verso ingresso
+            for i in range(n):
+                x1, y1 = poly[i]
+                x2, y2 = poly[(i + 1) % n]
+                seg_len = math.hypot(x2 - x1, y2 - y1)
+                if seg_len < 0.3:
+                    continue
+                ny_seg = -(x2 - x1) / seg_len
+                if ny_seg >= -0.3:
+                    candidate_edges.append(i)
+            if not candidate_edges:
+                candidate_edges = list(range(n))
+
         for _ in range(self.config.max_attempts):
-            edge_idx = random.randrange(n)
+            edge_idx = random.choice(candidate_edges)
             x1, y1 = poly[edge_idx]
             x2, y2 = poly[(edge_idx + 1) % n]
             dx = x2 - x1
             dy = y2 - y1
             length = math.hypot(dx, dy)
-            if length < 0.3:
-                continue
 
             # Posizione lungo il lato (interpolazione)
             t = random.uniform(0.1, 0.9)
@@ -612,12 +649,6 @@ class StageGenerator:
             # Normale uscente (per poligono in senso antiorario)
             nx = dy / length
             ny = -dx / length
-
-            # Salta i lati che puntano VERSO L'INGRESSO (ny < -0.3 = componente
-            # negativa verso l'entrata). I bersagli devono stare SOLO tra
-            # l'area di tiro e il parapalle di fondo/laterali, MAI verso ingresso.
-            if ny < -0.3:
-                continue
 
             # Distanza dal lato: calcola lo spazio disponibile nella
             # direzione della normale e adatta la distanza massima
