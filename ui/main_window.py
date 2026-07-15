@@ -17,7 +17,6 @@ from ui.editor.stage_view import StageView
 from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
 from ui.editor.stage_info import StageInfoPanel
-from ui.viewer3d.quick_3d_widget import Quick3DWidget
 from ui.workers.generator_worker import GeneratorWorker
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
@@ -69,12 +68,6 @@ class MainWindow(QMainWindow):
         self._panel_2d = panel_2d
         self._ui_layout.addWidget(self._panel_2d)
 
-        # Viewer 3D (a destra, inizialmente nascosto)
-        self._viewer_3d = Quick3DWidget(self._stage)
-        self._viewer_3d.setMinimumWidth(400)
-        self._viewer_3d.setVisible(False)
-        self._ui_layout.addWidget(self._viewer_3d)
-
         # Info dock (sinistra)
         self._info_panel = StageInfoPanel()
         self._info_dock = QDockWidget("Info Stage", self)
@@ -125,15 +118,6 @@ class MainWindow(QMainWindow):
             lambda: self._scene.add_drop_turner(cx - 1.5, cy)))
         toolbar.addWidget(_btn("+ Mover", "Aggiungi mover",
             lambda: self._scene.add_mover(cx, cy + 2.5)))
-
-        toolbar.addSeparator()
-
-        # Toggle 3D viewer
-        self._btn_3d = QPushButton("🎮 3D")
-        self._btn_3d.setToolTip("Mostra/nascondi viewer 3D")
-        self._btn_3d.setCheckable(True)
-        self._btn_3d.toggled.connect(self._toggle_3d_view)
-        toolbar.addWidget(self._btn_3d)
 
         toolbar.addSeparator()
 
@@ -248,10 +232,7 @@ class MainWindow(QMainWindow):
         self._prop_dock.propertyChanged.connect(self._on_property_changed)
         self._gen_panel.generateRequested.connect(self._on_generate_requested)
         self._gen_panel.stopRequested.connect(self._on_stop_requested)
-        # Sincronizzazione 2D → 3D e Info
-        self._scene.itemAdded.connect(self._refresh_3d)
-        self._scene.itemUpdated.connect(self._refresh_3d)
-        self._scene.itemRemoved.connect(self._refresh_3d)
+        # Sincronizzazione → Info
         self._scene.itemAdded.connect(self._refresh_info)
         self._scene.itemUpdated.connect(self._refresh_info)
         self._scene.itemRemoved.connect(self._refresh_info)
@@ -424,23 +405,6 @@ class MainWindow(QMainWindow):
         self._gen_panel.on_generation_error(message)
         self._current_worker = None
 
-    @Slot(bool)
-    def _toggle_3d_view(self, visible: bool):
-        """Mostra/nasconde il viewer 3D nella UI."""
-        self._viewer_3d.setVisible(visible)
-        if visible:
-            self._viewer_3d.refresh()
-            self._viewer_3d.reset_camera()
-            self._status.showMessage("Vista 3D attivata — drag orbita | WASD pan | F11 fullscreen")
-        else:
-            self._status.showMessage("Vista 3D disattivata")
-
-    @Slot()
-    def _refresh_3d(self):
-        """Aggiorna la vista 3D dopo cambiamenti nell'editor 2D."""
-        if self._viewer_3d.isVisible():
-            self._viewer_3d.refresh()
-
     @Slot()
     def _refresh_info(self):
         """Aggiorna il pannello Info Stage."""
@@ -468,6 +432,5 @@ class MainWindow(QMainWindow):
         self._scene._setup_grid()
         self._scene._sync_from_model()
         self._prop_dock.set_item(None)
-        # Aggiorna viewer 3D e Info
-        self._viewer_3d.update_dimensions(self._stage.width, self._stage.depth)
+        # Aggiorna Info
         self._refresh_info()
