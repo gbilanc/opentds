@@ -5,9 +5,53 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Property, QUrl
 from PySide6.QtQuickWidgets import QQuickWidget
-from PySide6.QtQuick import QQuickView
 
 from core.models import Stage, StageItem, ItemType
+
+ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
+TEXTURES_DIR = ASSETS_DIR / "textures"
+
+
+def _tex(name: str) -> str:
+    """Restituisce il path assoluto a una texture."""
+    return (TEXTURES_DIR / name).resolve().as_uri()  # URI per QML
+
+
+def _material_type(it: StageItem) -> str:
+    """Determina il tipo di materiale PBR per l'oggetto."""
+    if it.item_type == ItemType.WALL:
+        return "wall"
+    elif it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                          ItemType.MINI_TARGET, ItemType.MICRO_TARGET):
+        return "target"
+    elif it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE):
+        return "steel"
+    elif it.item_type == ItemType.FAULT_LINE:
+        return "fault"
+    elif it.item_type == ItemType.NO_SHOOT:
+        return "noshoot"
+    elif it.item_type == ItemType.BARRIER:
+        return "barrier"
+    elif it.item_type == ItemType.DOOR:
+        return "door"
+    elif it.item_type == ItemType.HARD_COVER:
+        return "hard_cover"
+    elif it.item_type == ItemType.SOFT_COVER:
+        return "soft_cover"
+    elif it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
+        return "target"
+    return "generic"
+
+
+def _is_collidable(it: StageItem) -> bool:
+    """Determina se l'oggetto blocca il movimento in FP mode."""
+    return it.item_type in (
+        ItemType.WALL,
+        ItemType.BARRIER,
+        ItemType.DOOR,
+        ItemType.HARD_COVER,
+        ItemType.SOFT_COVER,
+    )
 
 
 class Stage3DModel(QObject):
@@ -31,148 +75,51 @@ class Stage3DModel(QObject):
         self.objectsChanged.emit()
 
     def _item_to_dict(self, it: StageItem) -> Dict[str, Any] | None:
-        if it.item_type == ItemType.WALL:
-            # Muro verticale: altezza fissa 2.0m, spessore 0.1m
-            return {
-                "type": "wall",
-                "x": it.x,
-                "y": 1.0,  # centro verticale
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": 2.0,
-                "scaleZ": 0.1,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                              ItemType.MINI_TARGET, ItemType.MICRO_TARGET):
-            return {
-                "type": "target",
-                "x": it.x,
-                "y": 0.9,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": it.height,
-                "scaleZ": 0.02,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE):
-            return {
-                "type": "steel",
-                "x": it.x,
-                "y": 0.5,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": it.width,
-                "scaleZ": 0.02,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type == ItemType.FAULT_LINE:
-            # Fault line rialzata (visibile come cordolo basso)
-            return {
-                "type": "fault",
-                "x": it.x,
-                "y": 0.03,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": 0.06,
-                "scaleZ": 0.08,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type in (ItemType.HARD_COVER, ItemType.SOFT_COVER):
-            # Copertura: usa la stessa geometria di WALL ma colore diverso
-            return {
-                "type": "wall",
-                "x": it.x,
-                "y": 1.0,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": 2.0,
-                "scaleZ": 0.1,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type == ItemType.NO_SHOOT:
-            return {
-                "type": "noshoot",
-                "x": it.x,
-                "y": 0.9,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": it.height,
-                "scaleZ": 0.02,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type == ItemType.BARRIER:
-            return {
-                "type": "barrier",
-                "x": it.x,
-                "y": 0.6,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": 1.2,
-                "scaleZ": 0.1,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type == ItemType.DOOR:
-            return {
-                "type": "door",
-                "x": it.x,
-                "y": 1.0,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": 2.0,
-                "scaleZ": 0.05,
-                "rotation": it.rotation,
-                "color": it.color,
-            }
-        elif it.item_type == ItemType.SWINGER:
-            return {
-                "type": "swinger",
-                "x": it.x,
-                "y": 1.2,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": it.height,
-                "scaleZ": 0.02,
-                "rotation": it.rotation,
-                "color": it.color,
-                "amplitude": it.properties.get("amplitude", 45),
-                "speed": it.properties.get("speed", 1.0),
-            }
+        base: dict[str, Any] = {
+            "x": it.x,
+            "z": it.y,
+            "rotation": it.rotation,
+            "color": it.color,
+            "mat": _material_type(it),
+            "collidable": _is_collidable(it),
+        }
+
+        type_geom: dict[str, Any] = {
+            ItemType.WALL:               {"y": 1.0, "sx": it.width, "sy": 2.0, "sz": 0.1},
+            ItemType.PAPER_TARGET:       {"y": 0.9, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.STEEL_TARGET:       {"y": 0.9, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.MINI_TARGET:        {"y": 0.9, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.MICRO_TARGET:       {"y": 0.9, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.POPPER:             {"y": 0.5, "sx": it.width, "sy": it.width, "sz": 0.02},
+            ItemType.METAL_PLATE:        {"y": 0.5, "sx": it.width, "sy": it.width, "sz": 0.02},
+            ItemType.FAULT_LINE:         {"y": 0.005, "sx": it.width, "sy": 0.01, "sz": 0.06},
+            ItemType.NO_SHOOT:           {"y": 0.9, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.BARRIER:            {"y": 0.6, "sx": it.width, "sy": 1.2, "sz": 0.1},
+            ItemType.DOOR:               {"y": 1.0, "sx": it.width, "sy": 2.0, "sz": 0.05},
+            ItemType.HARD_COVER:         {"y": 1.0, "sx": it.width, "sy": 2.0, "sz": 0.1},
+            ItemType.SOFT_COVER:         {"y": 1.0, "sx": it.width, "sy": 2.0, "sz": 0.08},
+            ItemType.SWINGER:            {"y": 1.2, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.DROP_TURNER:        {"y": 1.0, "sx": it.width, "sy": it.height, "sz": 0.02},
+            ItemType.MOVER:              {"y": 0.9, "sx": it.width, "sy": it.height, "sz": 0.02},
+        }
+
+        geom = type_geom.get(it.item_type)
+        if geom is None:
+            return None
+
+        base.update(geom)
+
+        # Proprietà specifiche
+        if it.item_type == ItemType.SWINGER:
+            base["amplitude"] = it.properties.get("amplitude", 45)
+            base["speed"] = it.properties.get("speed", 1.0)
         elif it.item_type == ItemType.DROP_TURNER:
-            return {
-                "type": "drop_turner",
-                "x": it.x,
-                "y": 1.0,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": it.height,
-                "scaleZ": 0.02,
-                "rotation": it.rotation,
-                "color": it.color,
-                "fall_time": it.properties.get("fall_time", 0.5),
-            }
+            base["fall_time"] = it.properties.get("fall_time", 0.5)
         elif it.item_type == ItemType.MOVER:
-            return {
-                "type": "mover",
-                "x": it.x,
-                "y": 0.9,
-                "z": it.y,
-                "scaleX": it.width,
-                "scaleY": it.height,
-                "scaleZ": 0.02,
-                "rotation": it.rotation,
-                "color": it.color,
-                "distance": it.properties.get("distance", 3.0),
-                "speed": it.properties.get("speed", 1.5),
-            }
-        return None
+            base["distance"] = it.properties.get("distance", 3.0)
+            base["speed"] = it.properties.get("speed", 1.5)
+
+        return base
 
     @Property(list, notify=objectsChanged)
     def objects(self) -> List[Dict[str, Any]]:
@@ -185,9 +132,27 @@ class Quick3DWidget(QQuickWidget):
         super().__init__(parent)
         self._stage = stage
         self._model = Stage3DModel(stage, self)
-        self.rootContext().setContextProperty("stage3dModel", self._model)
-        self.rootContext().setContextProperty("stageWidth", stage.width)
-        self.rootContext().setContextProperty("stageDepth", stage.depth)
+
+        # Esponi contesto
+        ctx = self.rootContext()
+        ctx.setContextProperty("stage3dModel", self._model)
+        ctx.setContextProperty("stageWidth", stage.width)
+        ctx.setContextProperty("stageDepth", stage.depth)
+
+        # Path texture per QML
+        tex_uris = {
+            "floor_concrete": _tex("floor_concrete.png"),
+            "wall_drywall": _tex("wall_drywall.png"),
+            "backstop_earth": _tex("backstop_earth.png"),
+            "target_ipsc": _tex("target_ipsc.png"),
+            "steel_metal": _tex("steel_metal.png"),
+            "wood_planks": _tex("wood_planks.png"),
+            "hard_cover": _tex("hard_cover.png"),
+            "soft_cover": _tex("soft_cover.png"),
+            "wood_porte": _tex("wood_porte.png"),
+        }
+        for k, v in tex_uris.items():
+            ctx.setContextProperty(f"tex_{k}", v)
 
         qml_file = Path(__file__).with_name("StageScene.qml")
         self.setSource(QUrl.fromLocalFile(str(qml_file)))
@@ -197,9 +162,10 @@ class Quick3DWidget(QQuickWidget):
         self._model.rebuild()
 
     def update_dimensions(self, width: float, depth: float):
-        """Aggiorna le dimensioni dello stage nel context 3D."""
-        self.rootContext().setContextProperty("stageWidth", width)
-        self.rootContext().setContextProperty("stageDepth", depth)
+        """Aggiorna le dimensioni dello stage nel contesto 3D."""
+        ctx = self.rootContext()
+        ctx.setContextProperty("stageWidth", width)
+        ctx.setContextProperty("stageDepth", depth)
         self._model.rebuild()
 
     def reset_camera(self):

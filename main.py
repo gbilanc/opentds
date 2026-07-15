@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 sys.path.insert(0, str(Path(__file__).parent))
 
 from ui.main_window import MainWindow
+from core.texture_generator import generate_all
 
 
 def setup_high_dpi():
@@ -22,6 +23,13 @@ def setup_high_dpi():
 def main():
     setup_high_dpi()
     app = QApplication(sys.argv)
+
+    # Genera texture procedurali se non presenti
+    tex_dir = Path(__file__).parent / "assets" / "textures"
+    if not tex_dir.exists() or not any(tex_dir.iterdir()):
+        print("Generazione texture procedurali...")
+        generate_all()
+
     app.setApplicationName("OpenTDS")
     app.setApplicationVersion("0.1.0")
     app.setOrganizationName("opentds-dev")
