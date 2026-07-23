@@ -454,10 +454,24 @@ class StageGenerator:
                                  base_width(), base_height,
                                  rotation, color, label)
 
-                # VERIFICA OBB: l'item non deve intersecare l'area di tiro
+                # OBB: non deve intersecare l'area di tiro
                 item_obb_geom = item_obb(item)
                 if item_obb_geom is not None and area_poly is not None:
                     if shapely_intersects(item_obb_geom, area_poly):
+                        continue
+
+                # OBB: non deve sovrapporsi ad altre barriere/muri esistenti
+                if item_obb_geom is not None:
+                    from shapely import intersects as sh_intersect
+                    overlaps_obstacle = False
+                    for e_it in existing + items:
+                        if e_it.item_type in (ItemType.WALL, ItemType.BARRIER,
+                                              ItemType.DOOR, ItemType.HARD_COVER):
+                            e_obb = item_obb(e_it)
+                            if e_obb is not None and sh_intersect(item_obb_geom, e_obb):
+                                overlaps_obstacle = True
+                                break
+                    if overlaps_obstacle:
                         continue
 
                 # Deve bloccare ALMENO 1 bersaglio
@@ -489,22 +503,51 @@ class StageGenerator:
                     placed = True
                     break
 
-            # Passata 2 (fallback): piazza in qualsiasi posizione valida
+            # Passata 2 (fallback): cerca posizione che blocchi ALMENO 1 bersaglio
             if not placed:
                 for _ in range(100):
-                    wx = random.uniform(margin + 1, stage.width - margin - 1)
-                    wy = random.uniform(margin + 1, stage.depth - margin - 1)
+                    if not targets or not self._interior_samples:
+                        break
+                    t = random.choice(targets)
+                    ox, oy = random.choice(self._interior_samples)
+                    dx = t.x - ox
+                    dy = t.y - oy
+                    dist = math.hypot(dx, dy)
+                    if dist < 2.0:
+                        continue
+                    nx, ny = dx / dist, dy / dist
+                    t_frac = random.uniform(0.3, 0.7)
+                    wx = ox + nx * dist * t_frac
+                    wy = oy + ny * dist * t_frac
+                    wx = max(1.5, min(stage.width - 1.5, wx))
+                    wy = max(1.5, min(stage.depth - 1.5, wy))
+                    angle_to_target = math.degrees(math.atan2(dy, dx))
+                    rotation = angle_to_target + random.choice([-90, 90])
 
                     item = StageItem(0, item_type, wx, wy,
                                      base_width(), base_height,
-                                     random.uniform(0, 360),
-                                     color, label)
+                                     rotation, color, label)
 
-                    # VERIFICA OBB: non deve intersecare area di tiro
+                    # OBB: non deve intersecare area di tiro
                     item_obb_geom = item_obb(item)
                     if item_obb_geom is not None and area_poly is not None:
                         if shapely_intersects(item_obb_geom, area_poly):
                             continue
+
+                    # Deve bloccare ALMENO 1 bersaglio (nessuna barriera inutile)
+                    blocks_any = False
+                    for t2 in targets:
+                        for o2x, o2y in self._interior_samples:
+                            if line_intersects_rect(
+                                (o2x, o2y), (t2.x, t2.y),
+                                item.x, item.y, item.width, item.height, item.rotation
+                            ):
+                                blocks_any = True
+                                break
+                        if blocks_any:
+                            break
+                    if not blocks_any:
+                        continue
 
                     local_engine = _Engine(stage)
                     if local_engine.is_valid_position(item, existing + items):
