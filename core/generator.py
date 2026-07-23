@@ -539,52 +539,21 @@ class StageGenerator:
 
         # Parametri bersaglio
         if ttype == ItemType.STEEL_TARGET:
-            # Backward compat: generico
-            w, h = 0.30, 0.30
-            color = "#d1d5db"
-            label = "Steel"
-            min_dist_from_edge = 8.0
+            w, h = 0.30, 0.30; color = "#d1d5db"; label = "Steel"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
         elif ttype == ItemType.POPPER:
-            # Popper calibrato IPSC (App. C1-C2): bianco, ~30cm
-            w, h = 0.30, 0.30
-            color = "#d1d5db"
-            label = "Popper"
-            min_dist_from_edge = 8.0
-            # I popper NON devono avere proprietà di movimento (Reg. 4.3.1.1)
+            w, h = 0.30, 0.30; color = "#d1d5db"; label = "Popper"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
         elif ttype == ItemType.METAL_PLATE:
-            # Piatto metallico IPSC (App. C3): bianco, ~20cm
-            w, h = 0.20, 0.20
-            color = "#e5e7eb"
-            label = "Plate"
-            min_dist_from_edge = 8.0
+            w, h = 0.20, 0.20; color = "#e5e7eb"; label = "Plate"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
         elif is_moving:
-            # Bersagli mobili su supporto cartaceo → marrone
-            colors = {
-                ItemType.SWINGER: ("#A0522D", "Swinger"),
-                ItemType.DROP_TURNER: ("#8B6914", "Drop Turner"),
-                ItemType.MOVER: ("#CD853F", "Mover"),
-            }
+            colors = {ItemType.SWINGER: ("#A0522D", "Swinger"), ItemType.DROP_TURNER: ("#8B6914", "Drop Turner"), ItemType.MOVER: ("#CD853F", "Mover")}
             color, label = colors.get(ttype, ("#808080", ""))
-            w, h = 0.45, 0.45
-            min_dist_from_edge = 1.0
+            w, h = 0.45, 0.45; min_dist_from_edge = 1.0
         elif ttype == ItemType.MINI_TARGET:
-            # Mini target IPSC (App. B3): marrone, 75% scala
-            w, h = 0.34, 0.34
-            color = "#A0522D"
-            label = "Mini"
-            min_dist_from_edge = 1.0
+            w, h = 0.34, 0.34; color = "#A0522D"; label = "Mini"; min_dist_from_edge = 1.0
         elif ttype == ItemType.MICRO_TARGET:
-            # Micro target: ancora più piccolo
-            w, h = 0.23, 0.23
-            color = "#8B4513"
-            label = "Micro"
-            min_dist_from_edge = 1.0
+            w, h = 0.23, 0.23; color = "#8B4513"; label = "Micro"; min_dist_from_edge = 1.0
         else:
-            # Paper target standard IPSC
-            w, h = 0.45, 0.45
-            color = "#8B4513"
-            label = "Paper"
-            min_dist_from_edge = 1.0
+            w, h = 0.45, 0.45; color = "#8B4513"; label = "Paper"; min_dist_from_edge = 1.0
 
         # Classifica i lati del poligono per posizionamento:
         # I bersagli devono essere posizionati ESCLUSIVAMENTE nel settore
@@ -652,8 +621,48 @@ class StageGenerator:
             if not candidate_edges:
                 candidate_edges = list(range(n))
 
+        # ═══ Campionamento guidato (F2.3) ═══
+        # Pre-calcola per ogni lato candidato lo spazio massimo disponibile
+        # nella direzione della normale. Filtra i lati con spazio insufficiente.
+        _backstop_margin = MIN_BACKSTOP_DEPTH
+        _half_h = (h if not is_moving else 0.45) / 2
+        max_y = stage.depth - _backstop_margin - _half_h - 0.2
+        guided_edges: list[tuple[int, float]] = []
+        for e_idx in candidate_edges:
+            x1, y1 = poly[e_idx]
+            x2, y2 = poly[(e_idx + 1) % n]
+            seg_len = math.hypot(x2 - x1, y2 - y1)
+            if seg_len < 0.3:
+                continue
+            nx = (y2 - y1) / seg_len
+            ny = -(x2 - x1) / seg_len
+            mx = (x1 + x2) / 2
+            my = (y1 + y2) / 2
+            if nx > 0:
+                md_x = (stage.width - margin - mx) / max(nx, 0.001)
+            elif nx < 0:
+                md_x = (mx - margin) / max(-nx, 0.001)
+            else:
+                md_x = float('inf')
+            if ny > 0:
+                md_y = (max_y - my) / max(ny, 0.001)
+            elif ny < 0:
+                md_y = (my - margin) / max(-ny, 0.001)
+            else:
+                md_y = float('inf')
+            max_dist_edge = min(md_x, md_y)
+            if max_dist_edge >= min_dist_from_edge:
+                guided_edges.append((e_idx, max_dist_edge))
+
+        use_guided = len(guided_edges) >= 2
+
         for _ in range(self.config.max_attempts):
-            edge_idx = random.choice(candidate_edges)
+            if use_guided:
+                edge_idx, max_dist = random.choice(guided_edges)
+            else:
+                edge_idx = random.choice(candidate_edges)
+                max_dist = max(max_y, stage.width)  # fallback: stima ottimistica
+
             x1, y1 = poly[edge_idx]
             x2, y2 = poly[(edge_idx + 1) % n]
             dx = x2 - x1
@@ -668,30 +677,6 @@ class StageGenerator:
             # Normale uscente (per poligono in senso antiorario)
             nx = dy / length
             ny = -dx / length
-
-            # Distanza dal lato: calcola lo spazio disponibile nella
-            # direzione della normale e adatta la distanza massima
-            backstop_margin = IPSCRulesEngine.MIN_BACKSTOP_DEPTH
-            half_h = (h if not is_moving else 0.45) / 2
-            max_y = stage.depth - backstop_margin - half_h - 0.2
-
-            # Calcola lo spazio massimo nella direzione della normale
-            # che mantiene il bersaglio dentro lo stage
-            if nx > 0:
-                max_dist_x = (stage.width - margin - ex) / max(nx, 0.001)
-            elif nx < 0:
-                max_dist_x = (ex - margin) / max(-nx, 0.001)
-            else:
-                max_dist_x = float('inf')
-
-            if ny > 0:
-                max_dist_y = (max_y - ey) / max(ny, 0.001)
-            elif ny < 0:
-                max_dist_y = (ey - margin) / max(-ny, 0.001)
-            else:
-                max_dist_y = float('inf')
-
-            max_dist = min(max_dist_x, max_dist_y)
             if max_dist < min_dist_from_edge:
                 continue
 
