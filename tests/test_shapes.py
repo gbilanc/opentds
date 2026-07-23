@@ -39,6 +39,15 @@ class TestLetterShapes:
         """14 forme alfabetiche definite."""
         assert len(LETTER_SHAPES) == 14
 
+    @pytest.mark.parametrize("letter", [
+        "L", "T", "U", "C", "H", "F", "O", "S", "X", "Y", "M", "N", "E",
+    ])
+    def test_each_shape_has_valid_polygon(self, letter):
+        """Ogni forma singola è un poligono valido (esclusa Z, complessa)."""
+        verts = LETTER_SHAPES[letter]
+        valid, errors = validate_polygon(verts, min_vertices=3)
+        assert valid, f"Lettera {letter} invalida: {errors}"
+
 
 class TestGeneratePerimeterPolygon:
     def test_generates_valid_polygon(self):
@@ -99,13 +108,18 @@ class TestPerimeterToItems:
         items = perimeter_to_items([], style="fault_lines")
         assert items == []
 
-    def test_barriers_style(self):
-        """Stile barriers produce item BARRIER."""
+    @pytest.mark.parametrize("style,expected_type", [
+        ("fault_lines", "FAULT_LINE"),
+        ("barriers", "BARRIER"),
+        ("walls", "WALL"),
+    ])
+    def test_all_styles_generate_items(self, style, expected_type):
+        """Ogni stile di delimitazione produce item del tipo corretto."""
         poly = [(2, 2), (18, 2), (18, 13), (2, 13)]
-        items = perimeter_to_items(poly, style="barriers")
+        items = perimeter_to_items(poly, style=style)
         assert len(items) >= 2
-        barrier_count = sum(1 for it in items if it.item_type.name == "BARRIER")
-        assert barrier_count >= 2
+        type_count = sum(1 for it in items if it.item_type.name == expected_type)
+        assert type_count >= 2, f"Stile {style}: pochi {expected_type} ({type_count})"
 
 
 class TestPolygonToShapely:

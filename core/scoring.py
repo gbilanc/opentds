@@ -87,8 +87,9 @@ def resolve_target_counts(
             "moving": num_moving,
         }
 
-    base = COURSE_TARGET_DISTRIBUTION.get(course_type,
-                                          {"paper": 8, "poppers": 1, "plates": 1, "mini": 0, "moving": 1})
+    base = COURSE_TARGET_DISTRIBUTION.get(course_type, {}).copy()
+    if not base:
+        base = {"paper": 8, "poppers": 1, "plates": 1, "mini": 0, "moving": 1}
 
     if num_targets > 0:
         base["paper"] = num_targets

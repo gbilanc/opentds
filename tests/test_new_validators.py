@@ -164,3 +164,46 @@ class TestValidateCourseType:
         engine = IPSCRulesEngine(stage)
         v = engine._validate_course_type()
         assert len(v) == 0
+
+    @pytest.mark.parametrize("course_type,paper_count,expect_violation", [
+        (CourseType.SHORT, 4, False),   # 4 paper = 8 colpi ≤ 12
+        (CourseType.SHORT, 7, True),    # 7 paper = 14 colpi > 12
+        (CourseType.MEDIUM, 8, False),  # 8 paper = 16 colpi ≤ 24
+        (CourseType.MEDIUM, 15, True),  # 15 paper = 30 colpi > 24
+        (CourseType.LONG, 14, False),   # 14 paper = 28 colpi ≤ 32
+        (CourseType.LONG, 20, True),    # 20 paper = 40 colpi > 32
+    ])
+    def test_course_type_round_limits(self, course_type, paper_count, expect_violation):
+        """Verifica limite colpi per ogni tipo corso."""
+        stage = Stage(width=25.0, depth=20.0, course_type=course_type)
+        for i in range(paper_count):
+            stage.add_item(StageItem(i + 1, ItemType.PAPER_TARGET,
+                                      5 + i * 1.5, 12, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_course_type()
+        colpi_violations = [x for x in v if "colpi" in x.lower()]
+        if expect_violation:
+            assert len(colpi_violations) > 0, (
+                f"Violazione attesa per {course_type.value} con {paper_count} paper")
+        else:
+            assert len(colpi_violations) == 0, (
+                f"Violazione inaspettata per {course_type.value} con {paper_count} paper: {v}")
+
+    @pytest.mark.parametrize("discipline", [
+        "ipsc_pistol", "mini_rifle", "shotgun",
+    ])
+    def test_all_disciplines_accept_valid_stage(self, discipline):
+        """Stage valido per ogni disciplina non dà violazioni catastrofiche."""
+        stage = Stage(width=25.0, depth=20.0)
+        for i in range(8):
+            stage.add_item(StageItem(i + 1, ItemType.PAPER_TARGET,
+                                      5 + i * 1.5, 12, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        engine.set_discipline(discipline)
+        v = engine.validate()
+        # Verifica che non ci siano violazioni di dimensioni minime
+        dim_violations = [x for x in v.violations
+                          if "stretto" in x.lower() or "corto" in x.lower()]
+        # Per stage 25x20, tutte le discipline hanno dimensioni sufficienti
+        assert len(dim_violations) == 0, (
+            f"Violazioni dimensioni per {discipline}: {dim_violations}")

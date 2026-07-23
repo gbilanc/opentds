@@ -123,6 +123,21 @@ class TestResolveTargetCounts:
         # Fallback: default distribution
         assert result["paper"] >= 5
 
+    @pytest.mark.parametrize("course,expected_paper,expected_poppers,expected_plates", [
+        ("short", 5, 1, 1),
+        ("medium", 11, 1, 2),
+        ("long", 15, 2, 2),
+    ])
+    def test_auto_distribution_all_courses(self, course, expected_paper,
+                                            expected_poppers, expected_plates):
+        """Distribuzione automatica per tutti i tipi corso."""
+        result = resolve_target_counts(
+            0, 0, 0, 0, 0, 0, True, course,
+        )
+        assert result["paper"] == expected_paper
+        assert result["poppers"] == expected_poppers
+        assert result["plates"] == expected_plates
+
 
 class TestScoreStage:
     def test_empty_stage_score_zero(self):
