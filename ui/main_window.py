@@ -129,6 +129,13 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        btn_validate = QPushButton("\u2705 Valida")
+        btn_validate.setToolTip("Valida lo stage con IPSCRulesEngine")
+        btn_validate.clicked.connect(self._on_validate)
+        toolbar.addWidget(btn_validate)
+
+        toolbar.addSeparator()
+
         btn_undo = QPushButton("\u21a9\ufe0f Undo")
         btn_undo.setToolTip("Annulla (Ctrl+Z)")
         btn_undo.clicked.connect(self._scene.undo_stack.undo)
@@ -253,6 +260,22 @@ class MainWindow(QMainWindow):
     @Slot(int, dict)
     def _on_property_changed(self, item_id: int, props: dict):
         self._scene.update_item_from_properties(item_id, **props)
+
+    @Slot()
+    def _on_validate(self):
+        """Esegue validazione IPSC e mostra risultati in Info panel."""
+        from core.ipsc_rules import IPSCRulesEngine
+        engine = IPSCRulesEngine(self._stage)
+        result = engine.validate()
+        n_violations = len(result.violations)
+        if n_violations == 0:
+            msg = "✅ Stage valido — nessuna violazione IPSC"
+            self._status.setStyleSheet("color: #16a34a;")
+        else:
+            msg = f"⚠️ {n_violations} violazion{'i' if n_violations != 1 else 'e'} IPSC"
+            self._status.setStyleSheet("color: #dc2626;")
+        self._status.showMessage(msg)
+        self._refresh_info()
 
     def _on_save(self):
         from PySide6.QtWidgets import QFileDialog

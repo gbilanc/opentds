@@ -968,6 +968,7 @@ class StageScene(QGraphicsScene):
         self.scale = 40.0
         self._items: dict[int, QGraphicsItem] = {}
         self._violation_ids: set[int] = set()
+        self._last_violations: list[str] = []
         self.undo_stack = QUndoStack(self)
         self._setup_grid()
         self._sync_from_model()
@@ -1047,18 +1048,30 @@ class StageScene(QGraphicsScene):
 
     # ── Evidenziazione violazioni ───────────────────────────────────────────
 
-    def set_violations(self, item_ids: set[int]):
-        """Imposta gli ID degli item con violazioni IPSC e forza il repaint."""
-        if self._violation_ids == item_ids:
-            return
+    def has_violation(self, item_id: int) -> bool:
+        return item_id in self._violation_ids
+
+    def get_violation_tooltip(self, item_id: int) -> str | None:
+        """Restituisce tooltip descrittivo della violazione per un item."""
+        if not self._last_violations:
+            return None
+        for v_text in self._last_violations:
+            import re
+            if re.search(rf'#{item_id}\b', v_text):
+                return f"⚠️ {v_text}"
+        return None
+
+    def set_violations(self, item_ids: set[int], violations: list[str] | None = None):
+        """Imposta gli ID degli item con violazioni IPSC.
+
+        Salva anche il testo delle violazioni per tooltip.
+        """
+        self._last_violations = violations or []
         self._violation_ids = set(item_ids)
         self.violationsChanged.emit()
         for g in self._items.values():
             if hasattr(g, 'update'):
                 g.update()
-
-    def has_violation(self, item_id: int) -> bool:
-        return item_id in self._violation_ids
 
     def push_add_item(self, item: StageItem):
         self.undo_stack.push(AddItemCommand(self, item))

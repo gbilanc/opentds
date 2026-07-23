@@ -185,6 +185,29 @@ class GeneratorPanel(QWidget):
 
         layout.addWidget(ipsc_group)
 
+        # Gruppo Opzioni avanzate
+        adv_group = QGroupBox("Opzioni Avanzate")
+        adv_layout = QFormLayout(adv_group)
+        adv_layout.setSpacing(8)
+
+        self._discipline_combo = QComboBox()
+        self._discipline_combo.addItems(["IPSC Pistola", "Mini Rifle", "Shotgun"])
+        self._discipline_combo.setCurrentIndex(0)
+        adv_layout.addRow("Disciplina:", self._discipline_combo)
+
+        self._delim_combo = QComboBox()
+        self._delim_combo.addItems(["Fault Lines", "Barriere", "Muri", "Misto"])
+        self._delim_combo.setCurrentIndex(0)
+        self._delim_combo.setToolTip("Tipo di delimitazione area di tiro")
+        adv_layout.addRow("Delimitazione:", self._delim_combo)
+
+        self._auto_dist_check = QCheckBox("Distribuzione automatica")
+        self._auto_dist_check.setChecked(True)
+        self._auto_dist_check.setToolTip("Calcola bersagli in base al tipo corso (Short/Medium/Long)")
+        adv_layout.addRow(self._auto_dist_check)
+
+        layout.addWidget(adv_group)
+
         # Progress
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)  # Indeterminato
@@ -227,8 +250,11 @@ class GeneratorPanel(QWidget):
                      "M": "M", "N": "N", "E": "E"}
         course_map = {"Non specificato": "", "Short Course": "short",
                        "Medium Course": "medium", "Long Course": "long"}
+        disc_map = {"IPSC Pistola": "ipsc_pistol", "Mini Rifle": "mini_rifle",
+                     "Shotgun": "shotgun"}
+        delim_map = {"Fault Lines": "fault_lines", "Barriere": "barriers",
+                      "Muri": "walls", "Misto": "mixed"}
         seed = self._seed_spin.value() if self._seed_spin.value() > 0 else None
-        # Usa num_steel=0 e passa poppers/plates/mini esplicitamente
         return GeneratorConfig(
             stage_width=self._width_spin.value(),
             stage_depth=self._depth_spin.value(),
@@ -247,6 +273,9 @@ class GeneratorPanel(QWidget):
             seed=seed,
             letter_shape=shape_map[self._shape_combo.currentText()],
             course_type=course_map[self._course_combo.currentText()],
+            discipline=disc_map[self._discipline_combo.currentText()],
+            delimitation=delim_map[self._delim_combo.currentText()],
+            auto_distribution=self._auto_dist_check.isChecked(),
         )
 
     @Slot()
