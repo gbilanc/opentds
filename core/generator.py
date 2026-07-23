@@ -54,6 +54,7 @@ from core.shapes import (
     perimeter_to_items as _perimeter_to_items,
     polygon_to_shapely as _perimeter_to_shapely_polygon,
 )
+from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
 from core.scoring import (
     is_paper_like as _is_paper_like,
     is_steel_like as _is_steel_like,
@@ -399,18 +400,41 @@ class StageGenerator:
             label="Barriera",
         )
 
+    def _blocks_entrance_corridor(self, item: StageItem,
+                                   stage_width: float = 0) -> bool:
+        """True se l'item blocca il corridoio d'ingresso all'area di tiro.
+
+        Il corridoio d'ingresso è lo spazio tra il fronte dello stage (y=0)
+        e il bordo frontale dell'area di tiro (y minima del poligono).
+        Le barriere NON possono essere posizionate in questo corridoio
+        perché isolerebbero l'area di tiro dall'ingresso.
+        """
+        if not self._perimeter_poly:
+            return False
+        front_y = min(v[1] for v in self._perimeter_poly)
+        if front_y < 0.5:
+            return False  # area di tiro arriva quasi al bordo
+        item_obb_geom = item_obb(item)
+        if item_obb_geom is None:
+            return False
+        w = stage_width if stage_width > 0 else 40.0
+        entrance = ShapelyPolygon([
+            (0, 0), (w, 0), (w, front_y), (0, front_y),
+        ])
+        from shapely import intersects as sh_intersect
+        return sh_intersect(item_obb_geom, entrance)
+
     def _place_blocking_items(self, stage: Stage, existing: List[StageItem],
                                count: int, item_type: ItemType,
                                base_width: callable, base_height: float,
                                color: str, label: str) -> List[StageItem]:
         """Piazza item (muri/barriere) fuori dall'area di tiro, tra area e bersagli.
 
-        Tenta prima di posizionare item che bloccano almeno 1 bersaglio.
-        Se fallisce, posiziona item in punti validi qualsiasi (fallback).
-
-        Regola: barriere NON possono essere posizionate all'interno dell'area
-        di tiro. Il controllo usa l'OBB completo dell'item (non solo il centro)
-        per verificare che non intersechi il poligono dell'area di tiro.
+        Regole:
+        - Deve bloccare almeno 1 bersaglio (linea di vista)
+        - NON può intersecare l'area di tiro (OBB check)
+        - NON può sovrapporsi ad altre barriere/muri (OBB check)
+        - NON può bloccare il corridoio d'ingresso all'area di tiro
         """
         from core.ipsc_rules import IPSCRulesEngine as _Engine
         from shapely import intersects as shapely_intersects
@@ -474,6 +498,10 @@ class StageGenerator:
                     if overlaps_obstacle:
                         continue
 
+                # NON deve bloccare l'ingresso all'area di tiro
+                if self._blocks_entrance_corridor(item, stage.width):
+                    continue
+
                 # Deve bloccare ALMENO 1 bersaglio
                 blocks_any = False
                 for t2 in targets:
@@ -533,6 +561,10 @@ class StageGenerator:
                     if item_obb_geom is not None and area_poly is not None:
                         if shapely_intersects(item_obb_geom, area_poly):
                             continue
+
+                    # NON deve bloccare l'ingresso all'area di tiro
+                    if self._blocks_entrance_corridor(item, stage.width):
+                        continue
 
                     # Deve bloccare ALMENO 1 bersaglio (nessuna barriera inutile)
                     blocks_any = False
@@ -1157,7 +1189,8 @@ class StageGenerator:
                         still_visible = True
                         break
 
-                if still_visible:
+                # NON deve bloccare l'ingresso all'area di tiro
+                if still_visible and not self._blocks_entrance_corridor(new_wall, stage.width):
                     new_walls.append(new_wall)
                     total_hits -= hits_this
                     all_blockers = self._get_blocking_walls(existing) + new_walls
