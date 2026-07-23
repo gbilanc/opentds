@@ -10,6 +10,41 @@ import math
 from dataclasses import dataclass
 from typing import List
 
+from core.constants import (
+    MIN_TARGET_TO_EDGE,
+    MIN_TARGET_TO_WALL,
+    MIN_TARGET_TO_TARGET,
+    MIN_TARGET_TO_BARRIER,
+    MIN_WALL_TO_EDGE,
+    MIN_OBSTACLE_GAP,
+    MIN_BACKSTOP_DEPTH,
+    MIN_STEEL_DISTANCE,
+    SAFETY_ANGLE_DEFAULT,
+    MAX_FIXED_TARGET_ANGLE,
+    MAX_OBSTACLE_HEIGHT,
+    MIN_BARRIER_HEIGHT,
+    MIN_PLATE_MOUNT_HEIGHT,
+    MIN_TARGETS,
+    MAX_STEEL_PCT,
+    MAX_STAGE_WIDTH,
+    MAX_STAGE_DEPTH,
+    RECOMMENDED_NO_SHOOT_INTERVAL,
+    MAX_HITS_PER_POSITION,
+    COURSE_MAX_ROUNDS,
+    MAX_TARGETS_BY_DISCIPLINE,
+    MIN_STAGE_DIMENSIONS,
+    DIVISION_MAG_CAPACITY,
+    DIVISION_ALLOW_OPTICS,
+    DIVISION_ALLOW_COMP,
+    DIVISION_MAX_BARREL_LENGTH,
+    DIVISION_MIN_TRIGGER_WEIGHT,
+    RATIO_SHORT,
+    RATIO_MEDIUM,
+    RATIO_LONG,
+    MATCH_MIN_STAGES,
+    MATCH_MIN_ROUNDS,
+    SAME_LINE_OF_FIRE_THRESHOLD_DEG,
+)
 from core.models import Stage, StageItem, ItemType, CourseType, Division
 from core.collision import (
     make_stage_boundary,
@@ -45,83 +80,35 @@ class IPSCRulesEngine:
     - Backstop minimo 3m dietro i bersagli
     """
 
-    # Distanze minime in metri
-    MIN_TARGET_TO_EDGE = 1.0
-    MIN_TARGET_TO_WALL = 0.8
-    MIN_TARGET_TO_TARGET = 0.8
-    MIN_TARGET_TO_BARRIER = 0.5
-    MIN_WALL_TO_EDGE = 0.3
-    MIN_OBSTACLE_GAP = 0.1  # distanza minima tra ostacoli (muri, barriere, porte)
-    MIN_BACKSTOP_DEPTH = 3.0
-    MIN_STEEL_DISTANCE = 7.0    # IPSC Reg. 2.1.3: distanza minima tiratore-bersaglio metallico
-    SAFETY_ANGLE_DEFAULT = 90.0  # IPSC Reg. 2.1.2: angolo di sicurezza default
-
-    # Reg. 2.1.8.4 — angolo massimo bersagli fissi (non attivati) rispetto alla verticale
-    MAX_FIXED_TARGET_ANGLE = 90.0
-    # Reg. 2.2.2 — altezza massima ostacoli
-    MAX_OBSTACLE_HEIGHT = 2.0
-    # Reg. 2.2.3 — altezza minima barriere
-    MIN_BARRIER_HEIGHT = 1.8
-    # App. C3 — altezza minima montaggio piatti metallici
-    MIN_PLATE_MOUNT_HEIGHT = 1.0
-
-    # Limiti IPSC
-    MIN_TARGETS = 8
-    MAX_STEEL_PCT = 0.4        # max 40% steel
-    MAX_STAGE_WIDTH = 40.0
-    MAX_STAGE_DEPTH = 30.0
-    RECOMMENDED_NO_SHOOT_INTERVAL = 8  # 1 no-shoot ogni 8 paper
-    MAX_HITS_PER_POSITION = 9   # IPSC Reg. 1.2.1: max 9 colppi conteggiabili da singola posizione
-
-    # Limiti per tipo di corso (Regola 1.2.1)
-    COURSE_MAX_ROUNDS: dict[str, int] = {
-        "short": 12,
-        "medium": 24,
-        "long": 32,
-    }
-
-    # Limiti Divisione (Appendici D1-D5)
-    DIVISION_MAG_CAPACITY: dict[str, int | None] = {
-        "open": None,
-        "standard": None,  # limitato da lunghezza 170mm
-        "classic": 8,       # 8 Major / 10 Minor
-        "production": 15,
-        "production_optics": 15,
-        "revolver": 6,      # 6 colpi, 7+ solo Minor
-    }
-    DIVISION_ALLOW_OPTICS: dict[str, bool] = {
-        "open": True,
-        "standard": False,
-        "classic": False,
-        "production": False,
-        "production_optics": True,
-        "revolver": False,
-    }
-    DIVISION_ALLOW_COMP: dict[str, bool] = {
-        "open": True,
-        "standard": False,
-        "classic": False,
-        "production": False,
-        "production_optics": False,
-        "revolver": False,
-    }
-    DIVISION_BOX_TEST: dict[str, tuple[float, float, float]] = {
-        "standard": (0.225, 0.150, 0.045),
-        "classic": (0.225, 0.150, 0.045),
-    }
-    DIVISION_MAX_BARREL_LENGTH: dict[str, float | None] = {
-        "production": 0.127,
-        "production_optics": 0.127,
-    }
-    DIVISION_MIN_TRIGGER_WEIGHT: dict[str, float | None] = {
-        "production": 2.27,     # kg primo colpo
-        "production_optics": 2.27,
-    }
-
-    # Rapporto 3:2:1 (Appendice A4)
-    RATIO_SHORT = 3
-    RATIO_MEDIUM = 2
-    RATIO_LONG = 1
+    # Costanti centralizzate da core.constants
+    MIN_TARGET_TO_EDGE = MIN_TARGET_TO_EDGE
+    MIN_TARGET_TO_WALL = MIN_TARGET_TO_WALL
+    MIN_TARGET_TO_TARGET = MIN_TARGET_TO_TARGET
+    MIN_TARGET_TO_BARRIER = MIN_TARGET_TO_BARRIER
+    MIN_WALL_TO_EDGE = MIN_WALL_TO_EDGE
+    MIN_OBSTACLE_GAP = MIN_OBSTACLE_GAP
+    MIN_BACKSTOP_DEPTH = MIN_BACKSTOP_DEPTH
+    MIN_STEEL_DISTANCE = MIN_STEEL_DISTANCE
+    SAFETY_ANGLE_DEFAULT = SAFETY_ANGLE_DEFAULT
+    MAX_FIXED_TARGET_ANGLE = MAX_FIXED_TARGET_ANGLE
+    MAX_OBSTACLE_HEIGHT = MAX_OBSTACLE_HEIGHT
+    MIN_BARRIER_HEIGHT = MIN_BARRIER_HEIGHT
+    MIN_PLATE_MOUNT_HEIGHT = MIN_PLATE_MOUNT_HEIGHT
+    MIN_TARGETS = MIN_TARGETS
+    MAX_STEEL_PCT = MAX_STEEL_PCT
+    MAX_STAGE_WIDTH = MAX_STAGE_WIDTH
+    MAX_STAGE_DEPTH = MAX_STAGE_DEPTH
+    RECOMMENDED_NO_SHOOT_INTERVAL = RECOMMENDED_NO_SHOOT_INTERVAL
+    MAX_HITS_PER_POSITION = MAX_HITS_PER_POSITION
+    COURSE_MAX_ROUNDS: dict[str, int] = COURSE_MAX_ROUNDS
+    DIVISION_MAG_CAPACITY: dict[str, int | None] = DIVISION_MAG_CAPACITY
+    DIVISION_ALLOW_OPTICS: dict[str, bool] = DIVISION_ALLOW_OPTICS
+    DIVISION_ALLOW_COMP: dict[str, bool] = DIVISION_ALLOW_COMP
+    DIVISION_MAX_BARREL_LENGTH: dict[str, float | None] = DIVISION_MAX_BARREL_LENGTH
+    DIVISION_MIN_TRIGGER_WEIGHT: dict[str, float | None] = DIVISION_MIN_TRIGGER_WEIGHT
+    RATIO_SHORT = RATIO_SHORT
+    RATIO_MEDIUM = RATIO_MEDIUM
+    RATIO_LONG = RATIO_LONG
 
     def __init__(self, stage: Stage, discipline: str = "ipsc_pistol"):
         self.stage = stage
@@ -134,27 +121,17 @@ class IPSCRulesEngine:
 
     @property
     def MIN_STAGE_WIDTH(self) -> float:
-        if self._discipline == "mini_rifle":
-            return 15.0
-        elif self._discipline == "shotgun":
-            return 8.0
-        return 10.0
+        dims = MIN_STAGE_DIMENSIONS.get(self._discipline, MIN_STAGE_DIMENSIONS["ipsc_pistol"])
+        return dims[0]
 
     @property
     def MIN_STAGE_DEPTH(self) -> float:
-        if self._discipline == "mini_rifle":
-            return 10.0
-        elif self._discipline == "shotgun":
-            return 8.0
-        return 8.0
+        dims = MIN_STAGE_DIMENSIONS.get(self._discipline, MIN_STAGE_DIMENSIONS["ipsc_pistol"])
+        return dims[1]
 
     @property
     def MAX_TARGETS(self) -> int:
-        if self._discipline == "mini_rifle":
-            return 40
-        elif self._discipline == "shotgun":
-            return 32
-        return 32
+        return MAX_TARGETS_BY_DISCIPLINE.get(self._discipline, 32)
 
     # ── Validazione completa ──────────────────────────────────────────────
 
@@ -176,6 +153,7 @@ class IPSCRulesEngine:
         violations.extend(self._validate_hard_cover_high_zone())
         violations.extend(self._validate_metal_rotating_prohibited())
         violations.extend(self._validate_plate_mounting_height())
+        violations.extend(self._validate_same_line_of_fire())
 
         return ConstraintResult(ok=len(violations) == 0, violations=violations)
 
@@ -295,14 +273,27 @@ class IPSCRulesEngine:
                         f"({self.MIN_TARGET_TO_BARRIER}m)")
 
         # Distanza tra bersagli che assegnano punti (esclude no-shoot)
+        # Regola: i bersagli cartacei (PAPER_TARGET, MINI_TARGET, MICRO_TARGET,
+        # SWINGER, DROP_TURNER, MOVER) possono essere affiancati o sovrapposti
+        # tra loro. Solo metallici (STEEL_TARGET, POPPER, METAL_PLATE) devono
+        # mantenere distanza minima e solo da altri metallici.
         eps = 0.05
         for i, a in enumerate(paper_targets):
             a_obb = item_obb(a)
             if not a_obb:
                 continue
+            a_is_paper = a.item_type in (
+                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
             for b in paper_targets[i + 1:]:
                 b_obb = item_obb(b)
                 if not b_obb:
+                    continue
+                b_is_paper = b.item_type in (
+                    ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                    ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                # Bersagli cartacei possono essere affiancati/sovrapposti
+                if a_is_paper and b_is_paper:
                     continue
                 if min_distance_between(a_obb, b_obb) < self.MIN_TARGET_TO_TARGET - eps:
                     violations.append(
@@ -359,6 +350,15 @@ class IPSCRulesEngine:
                     return False
             elif other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
                                       ItemType.NO_SHOOT):
+                # Bersagli cartacei possono essere affiancati/sovrapposti
+                item_is_paper = item.item_type in (
+                    ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                    ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                other_is_paper = other.item_type in (
+                    ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                    ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                if item_is_paper and other_is_paper:
+                    continue  # carta-carta: nessuna distanza minima
                 if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_TARGET - 0.05:
                     return False
             elif other.item_type == ItemType.BARRIER:
@@ -960,6 +960,53 @@ class IPSCRulesEngine:
 
         return v
 
+    def _validate_same_line_of_fire(self) -> List[str]:
+        """Verifica che non ci siano due bersagli sulla stessa linea di tiro.
+
+        Dal centro dell'area di tiro, se due bersagli che assegnano punti
+        hanno un angolo inferiore a SAME_LINE_OF_FIRE_THRESHOLD_DEG,
+        sono considerati sulla stessa linea di tiro.
+
+        Questo evita che un singolo colpo possa colpire due bersagli
+        e garantisce distribuzione angolare degli ingaggi.
+        """
+        v = []
+        targets = [
+            it for it in self.stage.items
+            if it.item_type in (
+                ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                ItemType.POPPER, ItemType.METAL_PLATE,
+                ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+            )
+        ]
+        if len(targets) < 2:
+            return v
+
+        # Centro dell'area di tiro approssimato
+        cx = self.stage.width / 2
+        cy = self.stage.depth * 0.3
+        if self.stage.shooting_positions:
+            cx = sum(sp.x for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
+            cy = sum(sp.y for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
+
+        threshold = SAME_LINE_OF_FIRE_THRESHOLD_DEG
+        for i, a in enumerate(targets):
+            a_angle = math.degrees(math.atan2(a.y - cy, a.x - cx))
+            for b in targets[i + 1:]:
+                if a.id == b.id:
+                    continue
+                b_angle = math.degrees(math.atan2(b.y - cy, b.x - cx))
+                diff = abs(a_angle - b_angle)
+                diff = min(diff, 360 - diff)
+                if diff < threshold:
+                    v.append(
+                        f"Bersagli #{a.id} e #{b.id} sulla stessa linea di tiro "
+                        f"(angolo {diff:.1f}°, soglia {threshold}°)"
+                    )
+
+        return v
+
     def count_targets(self) -> dict:
         """Conta i bersagli per tipo."""
 
@@ -1011,14 +1058,6 @@ class MatchValidator:
     - Distribuzione coerente
     """
 
-    # Match level requirements (Appendice A1)
-    MATCH_MIN_STAGES: dict[int, int] = {
-        1: 3, 2: 6, 3: 12, 4: 24, 5: 30,
-    }
-    MATCH_MIN_ROUNDS: dict[int, int] = {
-        1: 40, 2: 80, 3: 150, 4: 300, 5: 450,
-    }
-
     def __init__(self, stages: List[Stage], match_level: int = 1):
         self.stages = stages
         self.match_level = match_level
@@ -1067,7 +1106,7 @@ class MatchValidator:
     def _validate_min_stages(self) -> List[str]:
         """Verifica il numero minimo di esercizi per livello (App. A1)."""
         v = []
-        min_stages = self.MATCH_MIN_STAGES.get(self.match_level, 3)
+        min_stages = MATCH_MIN_STAGES.get(self.match_level, 3)
         if len(self.stages) < min_stages:
             v.append(
                 f"Gara livello {self.match_level}: {len(self.stages)} esercizi "
@@ -1077,7 +1116,7 @@ class MatchValidator:
     def _validate_min_rounds(self) -> List[str]:
         """Verifica il numero minimo di colpi totali per livello (App. A1)."""
         v = []
-        min_rounds = self.MATCH_MIN_ROUNDS.get(self.match_level, 40)
+        min_rounds = MATCH_MIN_ROUNDS.get(self.match_level, 40)
         total = 0
         for s in self.stages:
             for it in s.items:

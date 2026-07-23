@@ -1,5 +1,11 @@
 # core/generator.py
-"""Generatore procedurale di stage con vincoli IPSC."""
+"""Generatore procedurale di stage con vincoli IPSC.
+
+Modulo orchestratore: delega la logica specializzata a:
+- core/shapes.py: forme alfabetiche, poligoni, perimetri
+- core/placement.py: posizionamento bersagli/ostacoli
+- core/scoring.py: scoring, metadati, attivatori
+"""
 from __future__ import annotations
 import random
 import math
@@ -9,6 +15,27 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
+from core.constants import (
+    MIN_TARGET_TO_EDGE,
+    MIN_TARGET_TO_WALL,
+    MIN_TARGET_TO_TARGET,
+    MIN_TARGET_TO_BARRIER,
+    MIN_BACKSTOP_DEPTH,
+    MIN_STEEL_DISTANCE,
+    MIN_STEEL_PLACEMENT_DISTANCE,
+    MIN_POLY_DIM,
+    FRONT_OPEN_GAP,
+    INTERIOR_SAMPLE_COUNT,
+    MAX_ACTIVATOR_DISTANCE,
+    MAX_ACTIVATOR_MOVING_DISTANCE,
+    MAX_ACTIVATED_PER_ACTIVATOR,
+    MAX_HITS_PER_POSITION,
+    COURSE_TARGET_DISTRIBUTION,
+    TARGET_DIMENSIONS,
+    TARGET_COLORS,
+    SAME_LINE_OF_FIRE_THRESHOLD_DEG,
+    ACTIVATOR_SECTOR_ANGLE_DEG,
+)
 from core.models import Stage, StageItem, ItemType, CourseType
 from core.ipsc_rules import IPSCRulesEngine
 from core.geometry import (
@@ -17,29 +44,27 @@ from core.geometry import (
     segments_intersect,
     line_intersects_rect,
     euclidean_distance,
+    angle_between_points,
+    validate_polygon,
 )
 from core.collision import item_obb, min_distance_between as obb_distance
-
-
-# ── Helper functions per classificazione tipi IPSC ─────────────────────────
-
-def _is_paper_like(t: "ItemType") -> bool:
-    """True per tipi bersaglio cartaceo."""
-    return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
-
-def _is_steel_like(t: "ItemType") -> bool:
-    """True per tipi bersaglio metallico."""
-    return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
-
-def _is_scoring_target(t: "ItemType") -> bool:
-    """True per tutti i bersagli che assegnano punti."""
-    return _is_paper_like(t) or _is_steel_like(t) or t in (
-        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
-
-def _is_obstacle(t: "ItemType") -> bool:
-    """True per ostacoli/barriere/muri/coperture."""
-    return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR,
-                  ItemType.HARD_COVER, ItemType.SOFT_COVER)
+from core.shapes import (
+    LETTER_SHAPES,
+    generate_perimeter_polygon as _generate_perimeter_polygon,
+    perimeter_to_items as _perimeter_to_items,
+    polygon_to_shapely as _perimeter_to_shapely_polygon,
+)
+from core.scoring import (
+    is_paper_like as _is_paper_like,
+    is_steel_like as _is_steel_like,
+    is_scoring_target as _is_scoring_target,
+    is_obstacle as _is_obstacle,
+    is_blocking_wall as _is_blocking_wall,
+    resolve_target_counts as _resolve_target_counts,
+    create_activator_relationships as _create_activator_relationships,
+    populate_stage_metadata as _populate_stage_metadata,
+    score_stage as _score_stage,
+)
 
 
 @dataclass
@@ -74,94 +99,6 @@ class GeneratorResult:
     attempts: int
 
 
-# ── Forme alfabetiche per l'area di tiro ──────────────────────────────
-# Ogni forma è definita come lista di vertici in coordinate normalizzate (0-1)
-# in senso antiorario. (0,0) = angolo basso-sinistra dello stage.
-# La forma viene scalata alle dimensioni dello stage e perturbata.
-
-LETTER_SHAPES: dict[str, List[Tuple[float, float]]] = {
-    "L": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.35),
-        (0.35, 0.35), (0.35, 1.00), (0.00, 1.00),
-    ],
-    "T": [
-        (0.00, 0.65), (0.35, 0.65), (0.35, 0.00),
-        (0.65, 0.00), (0.65, 0.65), (1.00, 0.65),
-        (1.00, 1.00), (0.00, 1.00),
-    ],
-    "U": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00),
-        (0.70, 1.00), (0.70, 0.25), (0.30, 0.25),
-        (0.30, 1.00), (0.00, 1.00),
-    ],
-    "C": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.20),
-        (0.20, 0.20), (0.20, 0.80), (1.00, 0.80),
-        (1.00, 1.00), (0.00, 1.00),
-    ],
-    "H": [
-        (0.00, 0.00), (0.30, 0.00), (0.30, 0.35),
-        (0.70, 0.35), (0.70, 0.00), (1.00, 0.00),
-        (1.00, 1.00), (0.70, 1.00), (0.70, 0.65),
-        (0.30, 0.65), (0.30, 1.00), (0.00, 1.00),
-    ],
-    "F": [
-        (0.25, 0.00), (1.00, 0.00), (1.00, 0.25),
-        (0.55, 0.25), (0.55, 0.50), (1.00, 0.50),
-        (1.00, 0.75), (0.55, 0.75), (0.55, 1.00),
-        (0.25, 1.00), (0.25, 0.00),
-    ],
-    "O": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
-    ],
-    "Z": [
-        (0.00, 0.65), (0.65, 0.65), (0.00, 0.00),
-        (1.00, 0.00), (0.35, 0.65), (1.00, 0.65),
-        (1.00, 1.00), (0.00, 1.00),
-    ],
-    "S": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.20),
-        (0.25, 0.20), (0.25, 0.40), (1.00, 0.40),
-        (1.00, 0.60), (0.25, 0.60), (0.25, 0.80),
-        (1.00, 0.80), (1.00, 1.00), (0.00, 1.00),
-    ],
-    # ── Nuove forme ──────────────────────────────────────────────────────
-    "X": [
-        # Plus / croce: quattro bracci che si incontrano al centro
-        (0.35, 0.00), (0.65, 0.00), (0.65, 0.35),
-        (1.00, 0.35), (1.00, 0.65), (0.65, 0.65),
-        (0.65, 1.00), (0.35, 1.00), (0.35, 0.65),
-        (0.00, 0.65), (0.00, 0.35), (0.35, 0.35),
-    ],
-    "Y": [
-        # Stelo centrale in basso, biforcazione in alto a V
-        (0.40, 0.00), (0.60, 0.00), (0.60, 0.40),
-        (1.00, 0.70), (1.00, 1.00), (0.00, 1.00),
-        (0.00, 0.70), (0.40, 0.40),
-    ],
-    "M": [
-        # Due gambe in basso, V centrale in alto
-        (0.00, 0.00), (0.25, 0.00), (0.25, 1.00),
-        (0.50, 0.50), (0.75, 1.00), (0.75, 0.00),
-        (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
-    ],
-    "N": [
-        # Due barre verticali collegate da diagonale
-        (0.00, 0.00), (0.25, 0.00), (0.25, 0.70),
-        (0.75, 0.00), (1.00, 0.00), (1.00, 1.00),
-        (0.75, 1.00), (0.75, 0.30), (0.25, 1.00),
-        (0.00, 1.00),
-    ],
-    "E": [
-        # Tre ripiani orizzontali a destra, barra verticale a sinistra
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.25),
-        (0.30, 0.25), (0.30, 0.40), (1.00, 0.40),
-        (1.00, 0.60), (0.30, 0.60), (0.30, 0.75),
-        (1.00, 0.75), (1.00, 1.00), (0.00, 1.00),
-    ],
-}
-
-
 class StageGenerator:
     """Generatore procedurale constraint-based."""
 
@@ -171,6 +108,20 @@ class StageGenerator:
             random.seed(config.seed)
         self._perimeter_poly: List[Tuple[float, float]] = []  # vertici poligono area di tiro
         self._interior_samples: List[Tuple[float, float]] = []  # punti interni per visibility check
+        self._obb_cache: dict[int, object] = {}  # cache OBB per item (F2.4)
+
+    def _get_obb(self, item) -> object | None:
+        """OBB con cache. Invalida se l'item viene modificato."""
+        if item.id not in self._obb_cache:
+            self._obb_cache[item.id] = item_obb(item)
+        return self._obb_cache[item.id]
+
+    def _invalidate_obb_cache(self, item_id: int | None = None):
+        """Invalida la cache OBB. Se item_id è None, invalida tutto."""
+        if item_id is None:
+            self._obb_cache.clear()
+        else:
+            self._obb_cache.pop(item_id, None)
 
     def generate(self) -> GeneratorResult:
         """Genera uno stage IPSC.
@@ -232,13 +183,25 @@ class StageGenerator:
         attempts = 0
 
         # 1. Genera perimetro AREA DI TIRO (lettera dell'alfabeto)
-        poly = self._generate_perimeter_polygon(stage)
+        has_steel = (
+            cfg.num_steel > 0 or cfg.num_poppers > 0 or cfg.num_plates > 0
+            or (cfg.auto_distribution and cfg.course_type)
+        )
+        poly = _generate_perimeter_polygon(
+            stage,
+            letter_shape=cfg.letter_shape,
+            has_steel=has_steel,
+        )
         self._perimeter_poly = poly
         self._interior_samples = self._sample_interior_points(20)
-        items.extend(self._generate_perimeter_items(stage, poly))
+        items.extend(_perimeter_to_items(poly, style=cfg.delimitation))
 
         # ── Risolvi conteggi bersagli da course_type ──
-        resolved = self._resolve_target_counts(cfg)
+        resolved = _resolve_target_counts(
+            cfg.num_targets, cfg.num_steel, cfg.num_poppers, cfg.num_plates,
+            cfg.num_mini, cfg.num_moving,
+            cfg.auto_distribution, cfg.course_type,
+        )
         num_paper = resolved["paper"]
         num_poppers = resolved["poppers"]
         num_plates = resolved["plates"]
@@ -330,7 +293,7 @@ class StageGenerator:
             activator_items = [it for it in items
                                if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)]
             if activator_items:
-                self._create_activator_relationships(stage, items, activator_items)
+                _create_activator_relationships(stage, items, activator_items, self._perimeter_poly)
 
         # 3. Bersagli mobili
         moving_types_list = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
@@ -393,10 +356,22 @@ class StageGenerator:
         stage.items = items
         stage._next_id = max((it.id for it in items), default=0) + 1
 
-        # 9. Popola metadati briefing
-        self._populate_stage_metadata(stage, cfg, num_poppers, num_plates, num_moving)
+        # 9. Genera shooting positions automatiche (F2.1)
+        if not stage.shooting_positions:
+            stage.shooting_positions = self._generate_shooting_positions(stage, poly)
 
-        score = self._score_stage(stage, items)
+        # 10. Popola metadati briefing
+        _populate_stage_metadata(
+            stage, cfg.difficulty, num_poppers, num_plates, num_moving)
+
+        score = _score_stage(
+            stage, items,
+            perimeter_poly=self._perimeter_poly,
+            interior_samples=self._interior_samples,
+            get_blocking_walls_fn=lambda: self._get_blocking_walls(items),
+            is_target_visible_fn=lambda t, b: self._is_target_visible(t, b),
+            config_difficulty=cfg.difficulty,
+        )
         return GeneratorResult(stage=stage, score=score, attempts=attempts)
 
     def _generate_walls(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
@@ -432,15 +407,23 @@ class StageGenerator:
 
         Tenta prima di posizionare item che bloccano almeno 1 bersaglio.
         Se fallisce, posiziona item in punti validi qualsiasi (fallback).
+
+        Regola: barriere NON possono essere posizionate all'interno dell'area
+        di tiro. Il controllo usa l'OBB completo dell'item (non solo il centro)
+        per verificare che non intersechi il poligono dell'area di tiro.
         """
         from core.ipsc_rules import IPSCRulesEngine as _Engine
+        from shapely import intersects as shapely_intersects
         items = []
         targets = [it for it in existing if _is_scoring_target(it.item_type)]
         if not self._perimeter_poly:
             return items
 
         min_visible = max(1, math.ceil(len(targets) * 0.7)) if targets else 1
-        margin = _Engine.MIN_TARGET_TO_EDGE
+        margin = MIN_TARGET_TO_EDGE
+
+        # Poligono area di tiro come shapely Polygon per OBB intersection check
+        area_poly = _perimeter_to_shapely_polygon(self._perimeter_poly)
 
         for _ in range(count):
             placed = False
@@ -464,15 +447,18 @@ class StageGenerator:
                 wx = max(1.5, min(stage.width - 1.5, wx))
                 wy = max(1.5, min(stage.depth - 1.5, wy))
 
-                if point_in_polygon(wx, wy, self._perimeter_poly):
-                    continue
-
                 angle_to_target = math.degrees(math.atan2(dy, dx))
                 rotation = angle_to_target + random.choice([-90, 90])
 
                 item = StageItem(0, item_type, wx, wy,
                                  base_width(), base_height,
                                  rotation, color, label)
+
+                # VERIFICA OBB: l'item non deve intersecare l'area di tiro
+                item_obb_geom = item_obb(item)
+                if item_obb_geom is not None and area_poly is not None:
+                    if shapely_intersects(item_obb_geom, area_poly):
+                        continue
 
                 # Deve bloccare ALMENO 1 bersaglio
                 blocks_any = False
@@ -508,12 +494,18 @@ class StageGenerator:
                 for _ in range(100):
                     wx = random.uniform(margin + 1, stage.width - margin - 1)
                     wy = random.uniform(margin + 1, stage.depth - margin - 1)
-                    if point_in_polygon(wx, wy, self._perimeter_poly):
-                        continue
+
                     item = StageItem(0, item_type, wx, wy,
                                      base_width(), base_height,
                                      random.uniform(0, 360),
                                      color, label)
+
+                    # VERIFICA OBB: non deve intersecare area di tiro
+                    item_obb_geom = item_obb(item)
+                    if item_obb_geom is not None and area_poly is not None:
+                        if shapely_intersects(item_obb_geom, area_poly):
+                            continue
+
                     local_engine = _Engine(stage)
                     if local_engine.is_valid_position(item, existing + items):
                         item.properties["protected"] = True
@@ -594,13 +586,28 @@ class StageGenerator:
             label = "Paper"
             min_dist_from_edge = 1.0
 
-        # Classifica i lati del poligono per priorità di posizionamento:
-        # 1. FONDO (back): normale uscente con componente y positiva (ny > 0.3)
-        #    - bersagli posizionati verso il parapalle
-        # 2. LATERALI (sides): normale uscente con componente x prevalente (|nx| > 0.7)
-        # 3. INGRESSO (front): normale con ny < -0.3 — MAI usati
-        # I bersagli devono essere posizionati partendo dal fondo e preferibilmente
-        # ai lati dell'area di tiro.
+        # Classifica i lati del poligono per posizionamento:
+        # I bersagli devono essere posizionati ESCLUSIVAMENTE nel settore
+        # compreso tra l'area di tiro e il parapalle di fondo.
+        #
+        # 1. BACKSTOP ZONE (priorità 100%): lati con normale uscente
+        #    che punta verso il backstop (y crescente, ny > 0)
+        #    e settore entro 60° dalla perpendicolare al backstop.
+        # 2. LATERAL ZONE (fallback): lati laterali (|nx| > 0.7)
+        # 3. FRONT (escluso): normale ny < 0 — MAI usati
+        #
+        # Il posizionamento avviene solo nel settore backstop + laterali.
+        # Se non c'è spazio sufficiente, il settore viene allargato
+        # progressivamente (60° → 90° → 120°).
+        poly_cx = sum(v[0] for v in poly) / n
+        poly_cy = sum(v[1] for v in poly) / n
+
+        # Direzione del backstop (y crescente dello stage)
+        # Identifica il punto più a fondo del poligono
+        back_y = max(v[1] for v in poly)
+        backstop_dx = 0.0
+        backstop_dy = 1.0
+
         back_edges = []
         side_edges = []
         for i in range(n):
@@ -609,18 +616,30 @@ class StageGenerator:
             seg_len = math.hypot(x2 - x1, y2 - y1)
             if seg_len < 0.3:
                 continue
+            # Centro del lato
+            mx = (x1 + x2) / 2
+            my = (y1 + y2) / 2
+            # Normale uscente (poligono in senso antiorario)
             nx_seg = (y2 - y1) / seg_len
             ny_seg = -(x2 - x1) / seg_len
-            if ny_seg > 0.3:
+
+            # Angolo tra normale uscente e direzione backstop
+            dot_n = nx_seg * backstop_dx + ny_seg * backstop_dy
+            angle_n = math.degrees(math.acos(max(-1.0, min(1.0, dot_n))))
+
+            if angle_n < 60.0:  # entro 60° dalla direzione backstop
                 back_edges.append(i)
             elif abs(nx_seg) > 0.7 and ny_seg >= -0.3:
                 side_edges.append(i)
+            # frontali (ny_seg < -0.3) sono esclusi
 
-        # Crea lista prioritaria: fondo (70%) + laterali (30%)
-        # Se manca una categoria, usa l'altra
-        candidate_edges = back_edges * 7 + side_edges * 3
-        if not candidate_edges:
-            # Fallback: tutti i lati tranne quelli verso ingresso
+        # Settore progressivo: inizia con back_edges 100%
+        candidate_edges = list(back_edges)
+        if not candidate_edges or len(candidate_edges) < 2:
+            # Fallback: aggiungi laterali
+            candidate_edges.extend(side_edges)
+        if not candidate_edges or len(candidate_edges) < 2:
+            # Fallback estremo: tutti i lati tranne frontali espliciti
             for i in range(n):
                 x1, y1 = poly[i]
                 x2, y2 = poly[(i + 1) % n]
@@ -692,6 +711,15 @@ class StageGenerator:
             if point_in_polygon(px, py, poly):
                 continue
 
+            # NON deve essere dietro l'area di tiro (Req. 2)
+            if self._is_behind_shooting_area(px, py, poly):
+                continue
+
+            # Non deve condividere la linea di tiro con bersagli esistenti (Req. 5)
+            if self._targets_on_same_line(px, py, existing,
+                                          threshold_deg=SAME_LINE_OF_FIRE_THRESHOLD_DEG):
+                continue
+
             # Orientamento VERSO L'AREA DI TIRO (Reg. 2.1.8.4)
             # I bersagli IPSC devono puntare verso il tiratore, quindi
             # verso l'interno dell'area di tiro.
@@ -729,6 +757,15 @@ class StageGenerator:
                     for other in existing:
                         if other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
                                                ItemType.NO_SHOOT):
+                            # Bersagli cartacei possono essere affiancati/sovrapposti
+                            it_is_paper = ttype in (
+                                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                            other_is_paper = other.item_type in (
+                                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                            if it_is_paper and other_is_paper:
+                                continue
                             o_obb = item_obb(other)
                             if o_obb and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05:
                                 ok = False
@@ -776,7 +813,40 @@ class StageGenerator:
     # ─── Utilità geometriche ───
     # Le funzioni sono state migrate in core/geometry.py
 
-    def _sample_interior_points(self, count: int = 20) -> List[Tuple[float, float]]:
+    def _targets_on_same_line(self, target_x: float, target_y: float,
+                                existing: List[StageItem],
+                                threshold_deg: float = SAME_LINE_OF_FIRE_THRESHOLD_DEG) -> bool:
+        """True se il bersaglio è sulla stessa linea di tiro di uno esistente.
+
+        Calcola l'angolo dal centro dell'area di tiro per ogni bersaglio
+        esistente. Se la differenza angolare è < threshold_deg, sono
+        considerati sulla stessa linea di tiro.
+
+        Regola: non possono essere posizionati più bersagli sulla stessa
+        linea di tiro (per evitare che un singolo colpo possa colpire
+        due bersagli).
+        """
+        if not self._perimeter_poly:
+            return False
+
+        cx = sum(v[0] for v in self._perimeter_poly) / len(self._perimeter_poly)
+        cy = sum(v[1] for v in self._perimeter_poly) / len(self._perimeter_poly)
+
+        # Angolo del nuovo bersaglio rispetto al centro
+        new_angle = math.degrees(math.atan2(target_y - cy, target_x - cx))
+
+        for other in existing:
+            if not _is_scoring_target(other.item_type):
+                continue
+            other_angle = math.degrees(math.atan2(other.y - cy, other.x - cx))
+            diff = abs(new_angle - other_angle)
+            diff = min(diff, 360 - diff)  # gestione wrap-around
+            if diff < threshold_deg:
+                return True
+
+        return False
+
+    def _sample_interior_points(self, count: int = INTERIOR_SAMPLE_COUNT) -> List[Tuple[float, float]]:
         """Campiona punti casuali dentro il perimetro poligonale."""
         if not self._perimeter_poly:
             return [(5.0, 5.0)]
@@ -794,6 +864,48 @@ class StageGenerator:
             if point_in_polygon(x, y, self._perimeter_poly):
                 points.append((x, y))
         return points[:count] if points else [(polygon_center(self._perimeter_poly))]
+
+    def _is_behind_shooting_area(self, target_x: float, target_y: float,
+                                   poly: list[tuple[float, float]] | None = None) -> bool:
+        """True se il bersaglio è nel settore 'dietro' l'area di tiro.
+
+        La direzione di ingaggio principale va dal baricentro dell'area
+        verso il backstop (y crescente nello stage, ma dipende dalla
+        rotazione della lettera). 'Dietro' = oltre ±90° da questa direzione.
+
+        In pratica: se il bersaglio è dalla parte opposta al backstop
+        rispetto all'area di tiro, non è visibile dal tiratore in modo
+        sicuro e quindi va scartato.
+        """
+        p = poly if poly is not None else self._perimeter_poly
+        if not p or len(p) < 3:
+            return False
+
+        cx = sum(v[0] for v in p) / len(p)
+        cy = sum(v[1] for v in p) / len(p)
+
+        # Direzione di ingaggio: dal baricentro verso il backstop.
+        # Il backstop è il lato con y maggiore (fondo stage).
+        # Identifichiamo il punto medio del lato più a fondo del poligono.
+        back_x, back_y = cx, max(v[1] for v in p)
+        dx_forward = back_x - cx
+        dy_forward = back_y - cy
+        forward_len = math.hypot(dx_forward, dy_forward)
+        if forward_len < 0.1:
+            return False
+
+        # Vettore dal baricentro al bersaglio
+        dx_target = target_x - cx
+        dy_target = target_y - cy
+
+        # Angolo tra il vettore di ingaggio e il vettore bersaglio
+        dot = dx_forward * dx_target + dy_forward * dy_target
+        angle = math.degrees(math.acos(
+            max(-1.0, min(1.0, dot / (forward_len * math.hypot(dx_target, dy_target) + 1e-9)))
+        ))
+
+        # Se l'angolo supera 90°, il bersaglio è dietro l'area di tiro
+        return angle > 90.0
 
     def _get_blocking_walls(self, items: List[StageItem]) -> List[StageItem]:
         """Ritorna gli item che bloccano la visuale (muri, barriere, porte, hard cover)."""
@@ -825,32 +937,21 @@ class StageGenerator:
                                      back_y: Optional[float] = None,
                                      rotation: Optional[float] = None) -> List[Tuple[float, float]]:
         """Genera il poligono dell'area di tiro a forma di lettera dell'alfabeto.
-        
+
         La lettera viene scalata alle dimensioni dello stage, ruotata
         casualmente di 0/90/180/270 gradi, e leggermente perturbata.
         Il perimetro è completamente chiuso, accessibile dalla parte
         opposta al parapalle (fronte up-range). I bersagli vengono
         posizionati INTORNO, mai dietro.
-        """
-        margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
-        w = stage.width
-        # Riserva almeno MIN_BACKSTOP_DEPTH metri tra area di tiro e parapalle
-        backstop_margin = IPSCRulesEngine.MIN_BACKSTOP_DEPTH
-        d_eff = back_y if back_y is not None else stage.depth - backstop_margin
 
-        def _poly_is_simple(poly: List[Tuple[float, float]]) -> bool:
-            n = len(poly)
-            for i in range(n):
-                a, b = poly[i], poly[(i + 1) % n]
-                for j in range(i + 2, n):
-                    if (j + 1) % n == i:
-                        continue
-                    c, d = poly[j], poly[(j + 1) % n]
-                    if segments_intersect(a, b, c, d):
-                        if (i + 1) % n == j or (j + 1) % n == i:
-                            continue
-                        return False
-            return True
+        Il poligono risultato è validato con validate_polygon() per
+        garantire: area > 0, nessuna auto-intersezione, vertici non coincidenti.
+        """
+        margin = MIN_TARGET_TO_EDGE
+        w = stage.width
+        # Riserva MIN_BACKSTOP_DEPTH metri tra area di tiro e parapalle
+        backstop_margin = MIN_BACKSTOP_DEPTH
+        d_eff = back_y if back_y is not None else stage.depth - backstop_margin
 
         def _clamp(poly: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
             result = []
@@ -891,8 +992,8 @@ class StageGenerator:
         norm_verts = LETTER_SHAPES[letter]
 
         # Calcola margine dinamico in base ai tipi di bersaglio:
-        # - bersagli steel (popper, plate) richiedono 8m dal perimetro
-        #   + 1m dal bordo stage = 9m
+        # - bersagli steel (popper, plate) richiedono MIN_STEEL_PLACEMENT_DISTANCE
+        #   dal perimetro + 1m dal bordo stage
         # - bersagli carta richiedono 1m dal perimetro + 1m dal bordo = 2m
         # Usa il massimo tra le esigenze dei bersagli configurati
         has_steel = (
@@ -902,20 +1003,19 @@ class StageGenerator:
             (self.config.auto_distribution and self.config.course_type)
         )
         if has_steel:
-            # Per steel: 8m (distanza minima) + 2m (range random) + 1m (bordo) = 11m
-            dynamic_inset = max(margin + 1.0, IPSCRulesEngine.MIN_STEEL_DISTANCE + 3.0)
+            # Per steel: MIN_STEEL_PLACEMENT_DISTANCE + 2m (range random) + 1m (bordo stage)
+            dynamic_inset = max(margin + 1.0, MIN_STEEL_PLACEMENT_DISTANCE + 3.0)
         else:
             dynamic_inset = margin + 1.0
         # Limita l'inset per non rendere l'area di tiro troppo piccola
-        min_poly_dim = 4.0  # almeno 4m in ogni dimensione
-        max_inset_w = (w - min_poly_dim) / 2
-        max_inset_d = (d_eff - min_poly_dim) / 2
+        max_inset_w = (w - MIN_POLY_DIM) / 2
+        max_inset_d = (d_eff - MIN_POLY_DIM) / 2
         inset = min(dynamic_inset, max_inset_w, max_inset_d)
         scale_x = w - 2 * inset
         scale_y = d_eff - 2 * inset
         # Se lo stage è troppo piccolo per ospitare steel, scala tutto
         # e posiziona i bersagli più vicini (con avviso)
-        if scale_x < min_poly_dim or scale_y < min_poly_dim:
+        if scale_x < MIN_POLY_DIM or scale_y < MIN_POLY_DIM:
             # Fallback: usa margine minimo
             inset = margin + 1.0
             scale_x = w - 2 * inset
@@ -935,12 +1035,21 @@ class StageGenerator:
             poly = _rotate_poly(poly, rotation, cx, cy)
             poly = _clamp(poly)
 
+        # Tentativo con perturbazione: se invalido, usa poligono pulito
         for attempt in range(5):
             test_poly = _perturb(poly, amount=0.3)
             clamped = _clamp(test_poly)
-            if len(clamped) >= 3 and _poly_is_simple(clamped):
+            valid, errors = validate_polygon(clamped, min_vertices=4)
+            if valid:
                 return clamped
 
+        # Fallback: poligono pulito senza perturbazione
+        valid, errors = validate_polygon(poly, min_vertices=4)
+        if not valid:
+            # Ultima risorsa: lettera O semplice
+            norm_verts = LETTER_SHAPES["O"]
+            poly = [(inset + nx * scale_x, inset + ny * scale_y) for nx, ny in norm_verts]
+            return _clamp(poly)
         return _clamp(poly)
 
     def _generate_perimeter_items(self, stage: Stage,
@@ -948,15 +1057,22 @@ class StageGenerator:
         """Converte il poligono del perimetro in item Stage.
 
         Per fault lines: genera tutti i segmenti (linee a terra non bloccano).
-        Per barriere/walls: lascia un'apertura di ~2m sul fronte (lato up-range)
-        identificando il segmento orizzontale frontale più lungo e accorciandolo.
+        Per barriere/walls: lascia un'apertura di FRONT_OPEN_GAP sul fronte
+        (lato up-range) identificando il segmento orizzontale frontale più
+        lungo e accorciandolo.
+
+        Tutti gli item perimetrali ricevono `properties["perimeter"] = True`
+        e `properties["closed_chain"] = True` per indicare che formano un
+        ciclo chiuso.
         """
         items = []
         style = self.config.delimitation
         n = len(poly)
 
+        if n < 3:
+            return items
+
         is_blocking = style in ("barriers", "walls", "mixed")
-        open_gap = 2.0
         skip_idx = -1
 
         # Per barriere/walls: trova il segmento frontale (y minima) da accorciare
@@ -970,7 +1086,7 @@ class StageGenerator:
                 seg_len = math.hypot(x2 - x1, y2 - y1)
                 angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180)
                 is_horizontal = angle < 30 or angle > 150
-                if is_horizontal and seg_len >= open_gap and mid_y < best_y:
+                if is_horizontal and seg_len >= FRONT_OPEN_GAP and mid_y < best_y:
                     best_y = mid_y
                     best_idx = i
 
@@ -978,8 +1094,8 @@ class StageGenerator:
                 x1, y1 = poly[best_idx]
                 x2, y2 = poly[(best_idx + 1) % n]
                 seg_len = math.hypot(x2 - x1, y2 - y1)
-                # Due segmenti con gap centrale di open_gap
-                gap_half = max(0.05, (seg_len - open_gap) / 2 / seg_len)
+                # Due segmenti con gap centrale di FRONT_OPEN_GAP
+                gap_half = max(0.05, (seg_len - FRONT_OPEN_GAP) / 2 / seg_len)
                 for (sx1, sy1, sx2, sy2) in [
                     (x1, y1,
                      x1 + (x2 - x1) * gap_half, y1 + (y2 - y1) * gap_half),
@@ -993,21 +1109,22 @@ class StageGenerator:
                         continue
                     angle = math.degrees(math.atan2(sy2 - sy1, sx2 - sx1))
                     if style == "mixed":
-                        itype, thick, color, label = ItemType.FAULT_LINE, 0.0, "#dc2626", "Fault Line"
+                        itype, thick, color, label = ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"
                     elif style == "barriers":
-                        itype, thick, color, label = ItemType.BARRIER, 0.15, "#fbbf24", "Barriera"
+                        itype, thick, color, label = ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"
                     else:
-                        itype, thick, color, label = ItemType.WALL, 0.2, "#475569", "Muro"
+                        itype, thick, color, label = ItemType.WALL, 0.2, TARGET_COLORS["wall"], "Muro"
                     item = StageItem(0, itype, cx, cy, seg_len, thick, angle, color, label)
                     item.properties["perimeter"] = True
+                    item.properties["closed_chain"] = True
                     items.append(item)
                 skip_idx = best_idx
 
         # Genera i segmenti rimanenti
         style_map = {
-            "fault_lines": (ItemType.FAULT_LINE, 0.0, "#dc2626", "Fault Line"),
-            "barriers":    (ItemType.BARRIER, 0.15, "#fbbf24", "Barriera"),
-            "walls":       (ItemType.WALL, 0.2, "#475569", "Muro"),
+            "fault_lines": (ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"),
+            "barriers":    (ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"),
+            "walls":       (ItemType.WALL, 0.2, TARGET_COLORS["wall"], "Muro"),
         }
 
         for i in range(n):
@@ -1024,14 +1141,15 @@ class StageGenerator:
 
             if style == "mixed":
                 if abs(cy - stage.depth / 2) > abs(cx - stage.width / 2):
-                    itype, thick, color, label = ItemType.BARRIER, 0.15, "#fbbf24", "Barriera"
+                    itype, thick, color, label = ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"
                 else:
-                    itype, thick, color, label = ItemType.FAULT_LINE, 0.0, "#dc2626", "Fault Line"
+                    itype, thick, color, label = ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"
             else:
                 itype, thick, color, label = style_map.get(style, style_map["fault_lines"])
 
             item = StageItem(0, itype, cx, cy, length, thick, angle, color, label)
             item.properties["perimeter"] = True
+            item.properties["closed_chain"] = True
             items.append(item)
 
         return items
@@ -1438,6 +1556,15 @@ class StageGenerator:
                     if not o_obb:
                         continue
 
+                    # Bersagli cartacei possono essere affiancati/sovrapposti
+                    t_is_paper = t.item_type in (
+                        ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    other_is_paper = other.item_type in (
+                        ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    if t_is_paper and other_is_paper:
+                        continue
                     d = obb_distance(t_obb, o_obb)
                     if d < engine.MIN_TARGET_TO_TARGET - 0.03:
                         # Allontana: sposta il bersaglio più recente (id maggiore)
@@ -1551,13 +1678,20 @@ class StageGenerator:
         self, stage: Stage, items: List[StageItem],
         activators: List[StageItem]
     ) -> None:
-        """Collega poppers/plates a paper target vicini come attivatori.
+        """Collega poppers/plates a bersagli attivati (mobili o paper).
 
-        Per ogni attivatore, trova 1-3 paper target nello stesso settore
-        (distanza < 6m, angolo \u2264 45\u00b0) e li marca come "activated_by"
-        l'attivatore. L'attivatore riceve "activates" con la lista degli ID.
+        Priorità: bersagli MOBILI (swinger, drop_turner, mover) > paper target.
+
+        Per ogni attivatore (popper/plate), trova bersagli nelle immediate
+        vicinanze (distanza < MAX_ACTIVATOR_MOVING_DISTANCE per mobili,
+        < MAX_ACTIVATOR_DISTANCE per paper) nello stesso settore
+        (angolo ≤ ACTIVATOR_SECTOR_ANGLE_DEG) e li marca come attivati.
+
+        I bersagli mobili devono essere attivati da bersagli metallici
+        posti nelle immediate vicinanze (Req. 6).
+
         Genera descrizioni testuali per il briefing alla IPSC:
-            'P1 attiva T3 e T4 che resteranno visibili al termine del movimento'
+            'P1 attiva S1 (Swinger) che resterà visibile al termine del movimento'
         """
         if not activators or not self._perimeter_poly:
             return
@@ -1566,66 +1700,128 @@ class StageGenerator:
         cx = sum(p[0] for p in self._perimeter_poly) / len(self._perimeter_poly)
         cy = sum(p[1] for p in self._perimeter_poly) / len(self._perimeter_poly)
 
-        # Tutti i paper target (non ancora attivati da altri)
+        # Tutti i bersagli attivabili (non ancora attivati)
+        # Priorità 1: bersagli MOBILI (swinger, drop_turner, mover)
+        moving_targets = [it for it in items
+                          if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                          and "activated_by" not in it.properties]
+        # Priorità 2: paper target (fallback)
         papers = [it for it in items
                   if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
                   and "activated_by" not in it.properties]
 
-        if not papers:
+        if not moving_targets and not papers:
             return
 
-        # Ordina attivatori per distanza dal centro (pi\u00f9 vicini prima)
+        # Ordina attivatori per distanza dal centro (più vicini prima)
         activators.sort(key=lambda a: euclidean_distance(a.x, a.y, cx, cy))
 
-        used_papers = set()
+        used_targets = set()
         descs = []
 
+        # --- Passata 1: attiva bersagli MOBILI (distanza ravvicinata) ---
         for act_idx, activator in enumerate(activators):
-            if len(used_papers) >= len(papers):
+            if not moving_targets:
                 break
 
-            # Trova paper target nello stesso settore (stessa direzione dal centro)
+            act_angle = math.atan2(activator.y - cy, activator.x - cx)
+            nearby = []
+            for mt in moving_targets:
+                if mt.id in used_targets:
+                    continue
+                mt_angle = math.atan2(mt.y - cy, mt.x - cx)
+                angle_diff = abs(act_angle - mt_angle)
+                if angle_diff > math.pi:
+                    angle_diff = 2 * math.pi - angle_diff
+                dist = euclidean_distance(activator.x, activator.y, mt.x, mt.y)
+                if angle_diff < math.radians(ACTIVATOR_SECTOR_ANGLE_DEG) and dist < MAX_ACTIVATOR_MOVING_DISTANCE:
+                    nearby.append((dist, mt))
+
+            if not nearby:
+                continue
+
+            nearby.sort(key=lambda x: x[0])
+            selected = [mt for _, mt in nearby[:MAX_ACTIVATED_PER_ACTIVATOR]]
+            sel_ids = [s.id for s in selected]
+
+            activator.properties["activates"] = sel_ids
+            activator.properties["is_activator"] = True
+            label_prefix = "P" if activator.item_type == ItemType.POPPER else "MP"
+            activator.label = f"{label_prefix}{act_idx + 1}"
+
+            type_labels = {
+                ItemType.SWINGER: "Swinger",
+                ItemType.DROP_TURNER: "Drop Turner",
+                ItemType.MOVER: "Mover",
+            }
+            for s in selected:
+                s.properties["activated_by"] = [activator.id]
+                s.properties["activation_visible"] = True
+                used_targets.add(s.id)
+
+            label = activator.label
+            target_strs = []
+            for sid in sel_ids:
+                s_item = next((x for x in items if x.id == sid), None)
+                if s_item:
+                    tlabel = type_labels.get(s_item.item_type, "")
+                    if not s_item.label or s_item.label in ("Paper", "Mini", "Popper", "Plate"):
+                        s_item.label = f"S{sid}"
+                    target_strs.append(f"{s_item.label} ({tlabel})" if tlabel else s_item.label)
+                else:
+                    target_strs.append(f"S{sid}")
+            congiunzione = " e " if len(target_strs) > 1 else ""
+            vis = "resteranno visibili" if len(target_strs) > 1 else "resterà visibile"
+            desc = f"{label} attiva {congiunzione.join(target_strs)} che {vis} al termine del movimento"
+            descs.append(desc)
+
+        # --- Passata 2: attiva PAPER TARGET (fallback, distanza maggiore) ---
+        for act_idx, activator in enumerate(activators):
+            if "is_activator" in activator.properties:
+                continue  # già usato per un mobile
+            if not papers:
+                continue
+
             act_angle = math.atan2(activator.y - cy, activator.x - cx)
             nearby = []
             for p in papers:
-                if p.id in used_papers:
+                if p.id in used_targets:
                     continue
                 p_angle = math.atan2(p.y - cy, p.x - cx)
                 angle_diff = abs(act_angle - p_angle)
                 if angle_diff > math.pi:
                     angle_diff = 2 * math.pi - angle_diff
                 dist = euclidean_distance(activator.x, activator.y, p.x, p.y)
-                if angle_diff < math.radians(45) and dist < 6.0:
-                    nearby.append(p)
+                if angle_diff < math.radians(ACTIVATOR_SECTOR_ANGLE_DEG) and dist < MAX_ACTIVATOR_DISTANCE:
+                    nearby.append((dist, p))
 
             if not nearby:
                 continue
 
-            # Prendi al massimo 3 paper
-            selected = nearby[:min(3, len(nearby))]
+            nearby.sort(key=lambda x: x[0])
+            selected = [p for _, p in nearby[:MAX_ACTIVATED_PER_ACTIVATOR]]
             sel_ids = [s.id for s in selected]
 
-            # Marca attivatore
+            existing_activates = activator.properties.get("activates", [])
+            sel_ids = existing_activates + [sid for sid in sel_ids if sid not in existing_activates]
+
             activator.properties["activates"] = sel_ids
             activator.properties["is_activator"] = True
-            # Rinomina attivatore con label IPSC (P1, MP1, ...)
-            # I label di default sono "Popper" o "Plate" — sostituisci sempre
-            label_prefix = "P" if activator.item_type == ItemType.POPPER else "MP"
-            activator.label = f"{label_prefix}{act_idx + 1}"
+            if not activator.properties.get("_labeled"):
+                label_prefix = "P" if activator.item_type == ItemType.POPPER else "MP"
+                activator.label = f"{label_prefix}{act_idx + 1}"
+                activator.properties["_labeled"] = True
 
-            # Marca bersagli attivati
             for s in selected:
-                s.properties["activated_by"] = [activator.id]
+                s.properties["activated_by"] = s.properties.get("activated_by", []) + [activator.id]
                 s.properties["activation_visible"] = True
-                used_papers.add(s.id)
+                used_targets.add(s.id)
 
-            # Descrizione testuale per briefing (stile IPSC)
             label = activator.label or f"{activator.item_type.name}#{activator.id}"
             target_strs = []
             for sid in sel_ids:
                 s_item = next((x for x in items if x.id == sid), None)
                 if s_item:
-                    # Assegna label al target se non ne ha uno specifico
                     if not s_item.label or s_item.label in ("Paper", "Mini", "Popper", "Plate"):
                         s_item.label = f"T{sid}"
                     target_strs.append(s_item.label)
@@ -1696,6 +1892,64 @@ class StageGenerator:
             "Il punteggio verr\u00e0 conteggiato durante l'esecuzione dell'esercizio. "
             "Il tiratore potr\u00e0 delegare un altro tiratore alla verifica del punteggio."
         )
+
+    def _generate_shooting_positions(
+        self, stage: Stage,
+        poly: List[Tuple[float, float]] | None = None
+    ) -> List["ShootingPosition"]:
+        """Genera shooting positions automatiche per lo stage.
+
+        Crea:
+        1. Una posizione di partenza (start) sul lato frontale dell'area di tiro
+           (y minima del poligono, centrata x)
+        2. Opzionalmente una posizione intermedia per forme complesse
+           (es. forma H, X) dove il tiratore può spostarsi
+
+        Returns:
+            Lista di ShootingPosition
+        """
+        from core.models import ShootingPosition
+        p = poly if poly is not None else self._perimeter_poly
+        if not p or len(p) < 3:
+            return []
+
+        positions: list = []
+        poly_cx = sum(v[0] for v in p) / len(p)
+
+        # Trova il punto frontale (y minima nel poligono)
+        front_y = min(v[1] for v in p)
+        front_x = sum(v[0] for v in p if abs(v[1] - front_y) < 0.5) / max(
+            1, sum(1 for v in p if abs(v[1] - front_y) < 0.5))
+
+        # Posizione di partenza: appena dentro l'area di tiro, lato frontale
+        start = ShootingPosition(
+            id=1,
+            x=round(front_x, 2),
+            y=round(front_y + 0.5, 2),  # mezzo metro dentro l'area
+            label="Start",
+            is_start=True,
+            angle=90.0,  # verso il backstop
+        )
+        positions.append(start)
+
+        # Per forme complesse (H, X, F, E, N, M), aggiungi posizione intermedia
+        complex_shapes = {"H", "X", "F", "E", "N", "M", "S", "Z"}
+        letter = self.config.letter_shape
+        if letter in complex_shapes or (letter == "random" and len(p) > 6):
+            # Posizione intermedia: centro dell'area
+            mid_y = sum(v[1] for v in p) / len(p)
+            mid_x = poly_cx
+            intermediate = ShootingPosition(
+                id=2,
+                x=round(mid_x, 2),
+                y=round(mid_y, 2),
+                label="Intermediate",
+                is_start=False,
+                angle=90.0,
+            )
+            positions.append(intermediate)
+
+        return positions
 
     def _generate_fault_lines(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
         """Genera fault lines strategiche davanti ai bersagli."""

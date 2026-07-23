@@ -101,3 +101,87 @@ def line_intersects_rect(p1: Tuple[float, float],
 def euclidean_distance(x1: float, y1: float, x2: float, y2: float) -> float:
     """Distanza Euclidea tra due punti."""
     return math.hypot(x1 - x2, y1 - y2)
+
+
+def angle_between_points(cx: float, cy: float, px: float, py: float,
+                          qx: float, qy: float) -> float:
+    """Angolo assoluto (gradi) tra i vettori (cx,cy)→(px,py) e (cx,cy)→(qx,qy).
+
+    Ritorna un valore tra 0 e 180.
+    """
+    dx1 = px - cx
+    dy1 = py - cy
+    dx2 = qx - cx
+    dy2 = qy - cy
+    dot = dx1 * dx2 + dy1 * dy2
+    mag1 = math.hypot(dx1, dy1)
+    mag2 = math.hypot(dx2, dy2)
+    if mag1 < 1e-9 or mag2 < 1e-9:
+        return 0.0
+    cos_a = dot / (mag1 * mag2)
+    cos_a = max(-1.0, min(1.0, cos_a))
+    return math.degrees(math.acos(cos_a))
+
+
+def polygon_area(poly: list[tuple[float, float]]) -> float:
+    """Area del poligono (formula di Gauss). Ritorna 0 per poligoni degenere."""
+    n = len(poly)
+    if n < 3:
+        return 0.0
+    area = 0.0
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2.0
+
+
+def validate_polygon(poly: list[tuple[float, float]],
+                     min_vertices: int = 4,
+                     min_area: float = 0.1) -> tuple[bool, list[str]]:
+    """Valida un poligono rappresentante l'area di tiro.
+
+    Controlla:
+    - Numero minimo di vertici
+    - Area non degenere
+    - Nessun vertice coincidente
+    - Assenza auto-intersezioni (poligono semplice)
+    - Ordine antiorario (opzionale)
+
+    Returns:
+        (valido, lista_errori)
+    """
+    errors: list[str] = []
+
+    if len(poly) < min_vertices:
+        errors.append(f"Poligono con {len(poly)} vertici (min {min_vertices})")
+        return False, errors
+
+    area = polygon_area(poly)
+    if area < min_area:
+        errors.append(f"Poligono degenere: area {area:.3f} m² (min {min_area})")
+        return False, errors
+
+    # Vertici coincidenti (distanza < 1cm)
+    for i in range(len(poly)):
+        for j in range(i + 1, len(poly)):
+            d = euclidean_distance(poly[i][0], poly[i][1], poly[j][0], poly[j][1])
+            if d < 0.01:
+                errors.append(f"Vertici {i} e {j} coincidenti (distanza {d:.4f}m)")
+                return False, errors
+
+    # Auto-intersezioni (segmenti non consecutivi che si incrociano)
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        for j in range(i + 2, n):
+            if (j + 1) % n == i:
+                continue  # condividono un vertice
+            c, d = poly[j], poly[(j + 1) % n]
+            if (i + 1) % n == j or (j + 1) % n == i:
+                continue  # adiacenti
+            if segments_intersect(a, b, c, d):
+                errors.append(f"Auto-intersezione tra segmento {i}→{(i+1)%n} e {j}→{(j+1)%n}")
+                return False, errors
+
+    return True, errors

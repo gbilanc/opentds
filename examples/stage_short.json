@@ -1,0 +1,257 @@
+{
+  "version": 3,
+  "name": "Stage Generato",
+  "width": 20.0,
+  "depth": 18.0,
+  "course_type": "short",
+  "properties": {
+    "start_signal": "Acustico",
+    "start_position": "Ovunque nella shooting area",
+    "ready_condition_handgun": "In piedi come da regolamento IPSC Handgun punto 8.2.2 (Appendice E2), come mostrato",
+    "ready_condition_pcc": "In piedi come da regolamento IPSC PCC punto 8.2.2 (Appendice E1), come mostrato",
+    "handgun_condition": "Arma in fondina caricatore inserito colpo non camerato",
+    "pcc_condition": "Carico Option 1",
+    "procedure": "Al segnale di partenza ingaggiare tutti i bersagli.",
+    "max_points": 80,
+    "angoli_sicurezza": "90\u00b0 laterali e parapalle in verticale",
+    "hard_cover": "Le strutture sono hard cover",
+    "note": "Il punteggio verr\u00e0 conteggiato durante l'esecuzione dell'esercizio. Il tiratore potr\u00e0 delegare un altro tiratore alla verifica del punteggio."
+  },
+  "items": [
+    {
+      "id": 1,
+      "type": "FAULT_LINE",
+      "x": 7.89,
+      "y": 7.52,
+      "width": 9.19,
+      "height": 0.0,
+      "rotation": -91.5,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "FAULT_LINE",
+      "x": 9.82,
+      "y": 2.88,
+      "width": 4.1,
+      "height": 0.0,
+      "rotation": -1.4,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "FAULT_LINE",
+      "x": 11.95,
+      "y": 7.29,
+      "width": 8.93,
+      "height": 0.0,
+      "rotation": 88.91,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "FAULT_LINE",
+      "x": 10.02,
+      "y": 11.94,
+      "width": 4.05,
+      "height": 0.0,
+      "rotation": 174.9,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "PAPER_TARGET",
+      "x": 8.96,
+      "y": 13.93,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -79.51,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 6,
+      "type": "PAPER_TARGET",
+      "x": 15.94,
+      "y": 7.53,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -181.75,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 7,
+      "type": "PAPER_TARGET",
+      "x": 10.48,
+      "y": 13.51,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -102.93,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 8,
+      "type": "PAPER_TARGET",
+      "x": 9.78,
+      "y": 13.06,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -89.87,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 9,
+      "type": "PAPER_TARGET",
+      "x": 11.25,
+      "y": 13.96,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -94.73,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 10,
+      "type": "PAPER_TARGET",
+      "x": 14.91,
+      "y": 8.45,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -161.51,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 11,
+      "type": "PAPER_TARGET",
+      "x": 5.3,
+      "y": 7.64,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 5.76,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 12,
+      "type": "PAPER_TARGET",
+      "x": 14.65,
+      "y": 9.66,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -154.83,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 13,
+      "type": "WALL",
+      "x": 13.26,
+      "y": 5.15,
+      "width": 2.13,
+      "height": 0.2,
+      "rotation": -48.53,
+      "color": "#475569",
+      "label": "Muro",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 14,
+      "type": "BARRIER",
+      "x": 12.99,
+      "y": 9.77,
+      "width": 1.68,
+      "height": 0.15,
+      "rotation": -93.71,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 15,
+      "type": "BARRIER",
+      "x": 7.28,
+      "y": 7.38,
+      "width": 2.96,
+      "height": 0.15,
+      "rotation": 82.39,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "NO_SHOOT",
+      "x": 16.34,
+      "y": 7.53,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 0,
+      "color": "#eab308",
+      "label": "No-Shoot",
+      "properties": {}
+    },
+    {
+      "id": 17,
+      "type": "NO_SHOOT",
+      "x": 15.31,
+      "y": 8.45,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 0,
+      "color": "#eab308",
+      "label": "No-Shoot",
+      "properties": {}
+    }
+  ],
+  "shooting_positions": [
+    {
+      "id": 1,
+      "x": 9.82,
+      "y": 3.33,
+      "label": "Start",
+      "is_start": true,
+      "angle": 90.0,
+      "properties": {}
+    }
+  ],
+  "_generator_score": 126.82,
+  "_generator_attempts": 17
+}

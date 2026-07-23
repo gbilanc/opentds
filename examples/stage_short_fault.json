@@ -1,0 +1,299 @@
+{
+  "version": 3,
+  "name": "Stage Generato",
+  "width": 15.0,
+  "depth": 12.0,
+  "course_type": "short",
+  "properties": {
+    "start_signal": "Acustico",
+    "start_position": "In piedi nella shooting area",
+    "ready_condition_handgun": "In piedi come da regolamento IPSC Handgun punto 8.2.2 (Appendice E2), come mostrato",
+    "ready_condition_pcc": "In piedi come da regolamento IPSC PCC punto 8.2.2 (Appendice E1), come mostrato",
+    "handgun_condition": "Arma in fondina caricatore inserito colpo non camerato",
+    "pcc_condition": "Carico Option 1",
+    "procedure": "Al segnale di partenza ingaggiare tutti i bersagli.",
+    "max_points": 80,
+    "angoli_sicurezza": "90\u00b0 laterali e parapalle in verticale",
+    "hard_cover": "Le strutture sono hard cover",
+    "note": "Il punteggio verr\u00e0 conteggiato durante l'esecuzione dell'esercizio. Il tiratore potr\u00e0 delegare un altro tiratore alla verifica del punteggio."
+  },
+  "items": [
+    {
+      "id": 1,
+      "type": "FAULT_LINE",
+      "x": 5.39,
+      "y": 4.5,
+      "width": 6.8,
+      "height": 0.0,
+      "rotation": -92.02,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "FAULT_LINE",
+      "x": 6.02,
+      "y": 1.1,
+      "width": 1.5,
+      "height": 0.0,
+      "rotation": 0.0,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "FAULT_LINE",
+      "x": 6.86,
+      "y": 3.43,
+      "width": 4.66,
+      "height": 0.0,
+      "rotation": 87.91,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "FAULT_LINE",
+      "x": 8.3,
+      "y": 5.94,
+      "width": 2.74,
+      "height": 0.0,
+      "rotation": 7.33,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "FAULT_LINE",
+      "x": 9.52,
+      "y": 7.01,
+      "width": 1.81,
+      "height": 0.0,
+      "rotation": 98.89,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "FAULT_LINE",
+      "x": 7.45,
+      "y": 7.9,
+      "width": 3.87,
+      "height": 0.0,
+      "rotation": 180.0,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "PAPER_TARGET",
+      "x": 11.35,
+      "y": 6.66,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -148.75,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 8,
+      "type": "PAPER_TARGET",
+      "x": 3.15,
+      "y": 6.9,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -22.03,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 9,
+      "type": "PAPER_TARGET",
+      "x": 13.28,
+      "y": 6.98,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -156.17,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 10,
+      "type": "PAPER_TARGET",
+      "x": 10.66,
+      "y": 5.04,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -186.13,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 11,
+      "type": "PAPER_TARGET",
+      "x": 12.44,
+      "y": 8.1,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -142.84,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 12,
+      "type": "PAPER_TARGET",
+      "x": 1.94,
+      "y": 5.7,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -9.33,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 13,
+      "type": "PAPER_TARGET",
+      "x": 10.41,
+      "y": 7.77,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -135.18,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 14,
+      "type": "PAPER_TARGET",
+      "x": 3.26,
+      "y": 5.2,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -9.47,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 15,
+      "type": "WALL",
+      "x": 8.76,
+      "y": 3.43,
+      "width": 4.64,
+      "height": 0.2,
+      "rotation": -49.71,
+      "color": "#475569",
+      "label": "Muro",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "BARRIER",
+      "x": 9.24,
+      "y": 4.53,
+      "width": 1.67,
+      "height": 0.15,
+      "rotation": -58.72,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 17,
+      "type": "BARRIER",
+      "x": 4.86,
+      "y": 5.89,
+      "width": 2.44,
+      "height": 0.15,
+      "rotation": -266.25,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 18,
+      "type": "BARRIER",
+      "x": 8.68,
+      "y": 7.91,
+      "width": 2.51,
+      "height": 0.2,
+      "rotation": 85.51,
+      "color": "#fbbf24",
+      "label": "Barriera ristr.",
+      "properties": {}
+    },
+    {
+      "id": 19,
+      "type": "NO_SHOOT",
+      "x": 2.34,
+      "y": 5.7,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 0,
+      "color": "#eab308",
+      "label": "No-Shoot",
+      "properties": {}
+    },
+    {
+      "id": 20,
+      "type": "NO_SHOOT",
+      "x": 3.66,
+      "y": 5.2,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 0,
+      "color": "#eab308",
+      "label": "No-Shoot",
+      "properties": {}
+    }
+  ],
+  "shooting_positions": [
+    {
+      "id": 1,
+      "x": 6.02,
+      "y": 1.6,
+      "label": "Start",
+      "is_start": true,
+      "angle": 90.0,
+      "properties": {}
+    }
+  ],
+  "_generator_score": 145.47,
+  "_generator_attempts": 20
+}
