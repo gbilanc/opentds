@@ -58,12 +58,24 @@ def segments_intersect(a: Tuple[float, float],
     o3 = orient(c, d, a)
     o4 = orient(c, d, b)
 
-    # Caso collineare
+    # Caso collineare: tratta come NON intersecante
+    # Le forme lettera possono avere segmenti allineati che condividono
+    # la stessa retta (es. forma Z). Per l'uso come perimetro area tiro,
+    # questi non sono considerati auto-intersezioni.
     if abs(o1) < 1e-9 and abs(o2) < 1e-9 and abs(o3) < 1e-9 and abs(o4) < 1e-9:
-        def between(v, s1, s2):
-            return min(s1, s2) - 1e-6 <= v <= max(s1, s2) + 1e-6
-        return (between(a[0], c[0], d[0]) or between(b[0], c[0], d[0]) or
-                between(c[0], a[0], b[0]) or between(d[0], a[0], b[0]))
+        return False
+
+    # Se un estremo di un segmento giace sull'altro segmento (T-junction),
+    # non considerarlo un'intersezione — è un punto di contatto singolo
+    # accettabile per poligoni non convessi (es. forme lettera M, N).
+    if o1 == 0 and abs(o2) > 1e-9:
+        return False  # C è su AB ma non è un incrocio
+    if o2 == 0 and abs(o1) > 1e-9:
+        return False  # D è su AB
+    if o3 == 0 and abs(o4) > 1e-9:
+        return False  # A è su CD
+    if o4 == 0 and abs(o3) > 1e-9:
+        return False  # B è su CD
 
     return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
 
@@ -163,14 +175,22 @@ def validate_polygon(poly: list[tuple[float, float]],
         return False, errors
 
     # Vertici coincidenti (distanza < 1cm)
+    # Esonera: ultimo vertice che coincide col primo (chiusura poligono)
+    n = len(poly)
     for i in range(len(poly)):
         for j in range(i + 1, len(poly)):
+            # Salta la coppia primo-ultimo (chiusura poligono)
+            if i == 0 and j == n - 1:
+                continue
             d = euclidean_distance(poly[i][0], poly[i][1], poly[j][0], poly[j][1])
             if d < 0.01:
                 errors.append(f"Vertici {i} e {j} coincidenti (distanza {d:.4f}m)")
                 return False, errors
 
     # Auto-intersezioni (segmenti non consecutivi che si incrociano)
+    # NOTA: esclude intersezioni collineari (segmenti sulla stessa retta
+    # che si sovrappongono parzialmente) — accettabile per forme lettera
+    # dove il perimetro può avere tratti allineati (es. forma Z).
     n = len(poly)
     for i in range(n):
         a, b = poly[i], poly[(i + 1) % n]
@@ -180,6 +200,11 @@ def validate_polygon(poly: list[tuple[float, float]],
             c, d = poly[j], poly[(j + 1) % n]
             if (i + 1) % n == j or (j + 1) % n == i:
                 continue  # adiacenti
+            # Salta se condividono un vertice (es. poligono chiuso con
+            # ultimo vertice = primo)
+            if b == c or b == d or a == c or a == d:
+                continue
+            # Usa segments_intersect che esclude intersezioni collineari
             if segments_intersect(a, b, c, d):
                 errors.append(f"Auto-intersezione tra segmento {i}→{(i+1)%n} e {j}→{(j+1)%n}")
                 return False, errors
