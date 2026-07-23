@@ -439,18 +439,77 @@ class StageItemMixin:
     # ---- Evidenziazione selezione ----
 
     def _draw_selection_highlight(self, painter: QPainter):
-        """Disegna il bordo tratteggiato di selezione."""
+        """Disegna il bordo di selezione con angoli."""
         if not self.isSelected():
             return
-        pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
+        br = self.boundingRect().adjusted(-4, -4, 4, 4)
+        # Bordo principale
+        pen = QPen(QColor("#3b82f6"), 2.5, Qt.PenStyle.SolidLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        br = self.boundingRect().adjusted(-4, -4, 4, 4)
         if isinstance(self, QGraphicsEllipseItem):
             painter.drawEllipse(br)
         elif isinstance(self, QGraphicsRectItem):
             painter.drawRect(br)
-        # FaultLineGraphicsItem gestisce il proprio bounding rect in paint()
+        else:
+            painter.drawRoundedRect(br, 4, 4)
+        # Angoli di selezione (solo per item rettangolari)
+        if isinstance(self, QGraphicsRectItem) and not isinstance(self, FaultLineGraphicsItem):
+            pen.setWidth(1)
+            pen.setColor(QColor("#ffffff"))
+            painter.setPen(pen)
+            brush = QBrush(QColor("#3b82f6"))
+            painter.setBrush(brush)
+            s = 5.0
+            for corner in [
+                br.topLeft(), br.topRight(),
+                br.bottomLeft(), br.bottomRight(),
+            ]:
+                painter.drawRect(QRectF(corner.x() - s / 2, corner.y() - s / 2, s, s))
+
+    _resize_handle_size = 8.0
+    _resize_handle_color = QColor("#3b82f6")
+
+    def _resize_handle_rects(self) -> list[QRectF]:
+        """Restituisce i rettangoli delle maniglie di resize."""
+        if not self.isSelected():
+            return []
+        br = self.boundingRect()
+        s = self._resize_handle_size
+        half = s / 2
+        return [
+            QRectF(br.left() - half, br.top() - half, s, s),       # TL
+            QRectF(br.center().x() - half, br.top() - half, s, s), # TC
+            QRectF(br.right() - half, br.top() - half, s, s),      # TR
+            QRectF(br.left() - half, br.center().y() - half, s, s),# LC
+            QRectF(br.right() - half, br.center().y() - half, s, s),# RC
+            QRectF(br.left() - half, br.bottom() - half, s, s),    # BL
+            QRectF(br.center().x() - half, br.bottom() - half, s, s),# BC
+            QRectF(br.right() - half, br.bottom() - half, s, s),   # BR
+        ]
+
+    def _draw_resize_handles(self, painter: QPainter):
+        """Disegna le maniglie di ridimensionamento sugli angoli."""
+        if not self.isSelected():
+            return
+        if isinstance(self, (FaultLineGraphicsItem, QGraphicsPixmapItem)):
+            return  # niente resize per fault line e pixmap
+        painter.save()
+        pen = QPen(QColor("#ffffff"), 1.5)
+        painter.setPen(pen)
+        painter.setBrush(QBrush(self._resize_handle_color))
+        for rect in self._resize_handle_rects():
+            painter.drawRect(rect)
+        painter.restore()
+
+    def _handle_press_on_resize(self, pos: QPointF) -> int | None:
+        """Restituisce l'indice della maniglia premuta, o None."""
+        if not self.isSelected():
+            return None
+        for idx, rect in enumerate(self._resize_handle_rects()):
+            if rect.contains(pos):
+                return idx
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -489,6 +548,7 @@ class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
         self._paint_decoration(painter)
         self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
+        self._draw_resize_handles(painter)
         self._draw_rotation_handle(painter)
 
     def _paint_decoration(self, painter: QPainter):
@@ -525,6 +585,7 @@ class EllipseGraphicsItem(StageItemMixin, QGraphicsEllipseItem):
         self._paint_decoration(painter)
         self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
+        self._draw_resize_handles(painter)
         self._draw_rotation_handle(painter)
 
     def _paint_decoration(self, painter: QPainter):
@@ -794,9 +855,7 @@ class PixmapGraphicsItem(StageItemMixin, QGraphicsPixmapItem):
         super().update_from_model()
 
     def paint(self, painter, option, widget=None):
-        # Disegna il pixmap (ereditato da QGraphicsPixmapItem)
         super().paint(painter, option, widget)
-        # Overlay
         self._paint_decoration(painter)
         self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
@@ -1041,10 +1100,60 @@ class StageScene(QGraphicsScene):
         sel = self.selectedItems()
         if len(sel) == 1 and hasattr(sel[0], 'wrapper'):
             self.selectionChangedWrapper.emit(sel[0].wrapper)
+        elif len(sel) > 1:
+            self.selectionChangedWrapper.emit(None)
         else:
             self.selectionChangedWrapper.emit(None)
+        # Forza repaint per aggiornare handle di selezione e bounding box
+        self.invalidate()
+        for g in self._items.values():
+            if hasattr(g, 'update'):
+                g.update()
 
     # ── Public API con undo ──────────────────────────────────────────────────
+
+    def drawForeground(self, painter: QPainter, rect: QRectF):
+        """Disegna la bounding box collettiva per selezione multipla."""
+        super().drawForeground(painter, rect)
+        sel = self.selectedItems()
+        if len(sel) < 2:
+            return
+        # Calcola bounding box collettiva
+        has_wrapper = all(hasattr(g, 'wrapper') for g in sel)
+        if not has_wrapper:
+            return
+        br = None
+        for g in sel:
+            if br is None:
+                br = g.sceneBoundingRect()
+            else:
+                br = br.united(g.sceneBoundingRect())
+        if br is None:
+            return
+        painter.save()
+        pen = QPen(QColor("#6366f1"), 1.5, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(QBrush(QColor("#6366f1"), Qt.BrushStyle.Dense4Pattern))
+        margin = 8.0
+        painter.drawRoundedRect(
+            br.adjusted(-margin, -margin, margin, margin),
+            6, 6
+        )
+        # Etichetta col conteggio
+        font = painter.font()
+        font.setPointSize(9)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QPen(QColor("#ffffff")))
+        painter.setBrush(QBrush(QColor("#6366f1")))
+        txt = f"{len(sel)} selezionati"
+        fm = painter.fontMetrics()
+        tw = fm.horizontalAdvance(txt) + 12
+        th = fm.height() + 6
+        lbl_rect = QRectF(br.center().x() - tw / 2, br.top() - th - margin - 4, tw, th)
+        painter.drawRoundedRect(lbl_rect, 4, 4)
+        painter.drawText(lbl_rect, Qt.AlignmentFlag.AlignCenter, txt)
+        painter.restore()
 
     # ── Evidenziazione violazioni ───────────────────────────────────────────
 
