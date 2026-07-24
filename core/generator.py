@@ -362,6 +362,9 @@ class StageGenerator:
         if not stage.shooting_positions:
             stage.shooting_positions = self._generate_shooting_positions(stage, poly)
 
+        # 9a. Raffina rotazioni bersagli verso la shooting position più vicina
+        self._refine_target_rotations(stage, items)
+
         # 10. Popola metadati briefing
         _populate_stage_metadata(
             stage, cfg.difficulty, num_poppers, num_plates, num_moving)
@@ -794,12 +797,12 @@ class StageGenerator:
                 continue
 
             # Orientamento VERSO L'AREA DI TIRO (Reg. 2.1.8.4)
-            # I bersagli IPSC devono puntare verso il tiratore, quindi
-            # verso l'interno dell'area di tiro.
-            # Usa il centro del poligono dell'area di tiro come riferimento.
+            # I bersagli IPSC devono mostrare al tiratore la parte più ampia.
+            # Usa il centro del poligono come riferimento; dopo la generazione
+            # delle shooting positions, le rotazioni vengono raffinate.
             poly_cx = sum(p[0] for p in self._perimeter_poly) / len(self._perimeter_poly)
             poly_cy = sum(p[1] for p in self._perimeter_poly) / len(self._perimeter_poly)
-            rot = math.degrees(math.atan2(poly_cy - py, poly_cx - px))
+            rot = self._compute_target_rotation(px, py, poly_cx, poly_cy, w, h)
             rot += random.uniform(-10, 10)  # leggera variazione per naturalezza
 
             if is_moving:
@@ -918,6 +921,26 @@ class StageGenerator:
                 return True
 
         return False
+
+    @staticmethod
+    def _compute_target_rotation(
+        target_x: float, target_y: float,
+        ref_x: float, ref_y: float,
+        target_w: float, target_h: float,
+    ) -> float:
+        """Calcola la rotazione ottimale perché il tiratore veda la parte più ampia.
+
+        La rotazione punta la dimensione più larga del bersaglio (width o height)
+        perpendicolarmente alla linea di vista tiratore → bersaglio.
+
+        Returns:
+            Rotazione in gradi (0 = allineato asse X scena).
+        """
+        base_angle = math.degrees(math.atan2(ref_y - target_y, ref_x - target_x))
+        # Se l'altezza > larghezza, ruota di 90° per mostrare il lato più ampio
+        if target_h > target_w:
+            base_angle += 90.0
+        return base_angle % 360.0
 
     def _sample_interior_points(self, count: int = INTERIOR_SAMPLE_COUNT) -> List[Tuple[float, float]]:
         """Campiona punti casuali dentro il perimetro poligonale."""
@@ -1469,6 +1492,36 @@ class StageGenerator:
     # ═══════════════════════════════════════════════════════════════════════
     #  Nuovi metodi: conteggi, attivatori, metadati
     # ═══════════════════════════════════════════════════════════════════════
+
+    def _refine_target_rotations(
+        self, stage: Stage, items: list[StageItem],
+    ) -> None:
+        """Raffina le rotazioni dei bersagli verso la shooting position più vicina.
+
+        Dopo che le shooting positions sono state generate, ogni bersaglio
+        viene ruotato per mostrare la parte più ampia verso la posizione
+        di tiro più vicina (invece che verso il centro del poligono).
+        """
+        if not stage.shooting_positions:
+            return
+
+        positions = [(sp.x, sp.y) for sp in stage.shooting_positions]
+
+        for it in items:
+            if not _is_scoring_target(it.item_type):
+                continue
+
+            # Trova la shooting position più vicina
+            nearest = min(
+                positions,
+                key=lambda pos: math.hypot(pos[0] - it.x, pos[1] - it.y),
+            )
+            ref_x, ref_y = nearest
+
+            # Ricalcola rotazione ottimale
+            it.rotation = self._compute_target_rotation(
+                it.x, it.y, ref_x, ref_y, it.width, it.height,
+            )
 
     def _generate_shooting_positions(
         self, stage: Stage,
