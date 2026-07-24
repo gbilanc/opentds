@@ -24,7 +24,7 @@ from core.models import Stage, StageItem, ItemType
 from core.collision import make_obb, item_obb, overlaps as shapely_overlaps
 from shapely.geometry import box as shapely_box, Point as ShapelyPoint
 
-from ui.editor.target_images import TargetImageManager
+from ui.editor.target_images import TargetSvgManager
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -722,12 +722,6 @@ class WallGraphicsItem(RectGraphicsItem):
                          pen_color="#0f172a", pen_width=2)
 
 
-class TargetGraphicsItem(EllipseGraphicsItem):
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-
 class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
     """Linea di fault: linea tratteggiata rossa con bounding rect custom."""
 
@@ -770,21 +764,6 @@ class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
         return super().itemChange(change, value)
 
 
-class NoShootGraphicsItem(EllipseGraphicsItem):
-    """No-shoot: ellisse rossa semitrasparente con X."""
-
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#dc2626", pen_width=2, brush_alpha=120)
-
-    def _paint_decoration(self, painter: QPainter):
-        r = self.rect()
-        pen = QPen(QColor("#7f1d1d"), 2)
-        painter.setPen(pen)
-        painter.drawLine(r.topLeft(), r.bottomRight())
-        painter.drawLine(r.topRight(), r.bottomLeft())
-
-
 class BarrierGraphicsItem(RectGraphicsItem):
     """Barriera: rettangolo giallo tratteggiato semitrasparente."""
 
@@ -813,104 +792,7 @@ class DoorGraphicsItem(RectGraphicsItem):
         painter.fillPath(handle, QColor("#0f172a"))
 
 
-class SwingerGraphicsItem(RectGraphicsItem):
-    """Swinger: rettangolo viola con arco di oscillazione."""
-
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-    def _paint_decoration(self, painter: QPainter):
-        amp = self.wrapper.item.properties.get("amplitude", 45)
-        pen = QPen(QColor("#a855f7"), 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        r = 40
-        start_angle = -amp - self.rotation()
-        span = amp * 2
-        painter.drawArc(-r, -r, r * 2, r * 2, int(start_angle * 16), int(span * 16))
-
-
-class DropTurnerGraphicsItem(RectGraphicsItem):
-    """Drop Turner: rettangolo verde acqua con freccia caduta."""
-
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-    def _paint_decoration(self, painter: QPainter):
-        pen = QPen(QColor("#0f172a"), 2)
-        painter.setPen(pen)
-        r = self.rect()
-        cx, cy = r.center().x(), r.center().y()
-        painter.drawLine(cx, cy - 8, cx, cy + 8)
-        painter.drawLine(cx - 4, cy + 4, cx, cy + 8)
-        painter.drawLine(cx + 4, cy + 4, cx, cy + 8)
-
-
-class MoverGraphicsItem(RectGraphicsItem):
-    """Mover: rettangolo arancione con linea traiettoria."""
-
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-    def _paint_decoration(self, painter: QPainter):
-        dist = self.wrapper.item.properties.get("distance", 3.0) * self.scale
-        pen = QPen(QColor("#f97316"), 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        angle = math.radians(self.rotation())
-        dx = math.cos(angle) * dist / 2
-        dy = math.sin(angle) * dist / 2
-        painter.drawLine(-dx, -dy, dx, dy)
-
-
-# ── Nuovi tipi IPSC (shape-based) ────────────────────────────────────────
-
-
-class PopperGraphicsItem(EllipseGraphicsItem):
-    """Popper: bersaglio metallico calibrato con zona calibrazione."""
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-    def _paint_decoration(self, painter: QPainter):
-        r = self.rect()
-        pen = QPen(QColor("#dc2626"), 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        cal_r = min(r.width(), r.height()) * 0.3
-        painter.drawEllipse(r.center(), cal_r, cal_r)
-
-
-class MetalPlateGraphicsItem(EllipseGraphicsItem):
-    """Piatto metallico: cerchio semplice non calibrato."""
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-
-class MiniTargetGraphicsItem(EllipseGraphicsItem):
-    """Mini Target: bersaglio cartaceo ridotto (App. B3)."""
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
-
-    def _paint_decoration(self, painter: QPainter):
-        r = self.rect()
-        pen = QPen(QColor("#78350f"), 1, Qt.PenStyle.DotLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        ir = min(r.width(), r.height()) * 0.4
-        painter.drawEllipse(r.center(), ir, ir)
-
-
-class MicroTargetGraphicsItem(EllipseGraphicsItem):
-    """Micro Target: bersaglio cartaceo micro."""
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
+# ── Nuovi tipi IPSC (ostacoli) ────────────────────────────────────────
 
 
 class HardCoverGraphicsItem(RectGraphicsItem):
@@ -936,59 +818,136 @@ class SoftCoverGraphicsItem(RectGraphicsItem):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  PixmapGraphicsItem — item basato su immagini IPSC (dal Regolamento PDF)
+#  SvgTargetGraphicsItem — bersaglio vettoriale unificato (SVG)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class PixmapGraphicsItem(StageItemMixin, QGraphicsPixmapItem):
-    """Classe base per bersagli disegnati con immagini PNG estratte dal Regolamento.
+class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
+    """Bersaglio renderizzato da SVG vettoriale con tinta colore.
 
-    Usa TargetImageManager per caricare, tintare e scalare il pixmap
-    in base alle dimensioni reali del bersaglio.
+    Sostituisce tutte le precedenti classi per bersagli
+    (PixmapGraphicsItem, EllipseGraphicsItem, TargetGraphicsItem, ecc.).
 
-    Le sottoclassi possono sovrascrivere _paint_decoration() per
-    aggiungere overlay (X no-shoot, arco swinger, ecc.).
+    Il SVG viene rasterizzato via QSvgRenderer alla risoluzione
+    corrente e tintato con il colore configurato per il tipo.
+    Le decorazioni (X no-shoot, arco swinger, ecc.) sono
+    disegnate via QPainter in _paint_decoration().
     """
 
-    def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        QGraphicsPixmapItem.__init__(self, parent)
+    # Bersagli che richiedono decorazioni speciali
+    _DECORATED_TYPES: set[ItemType] = {
+        ItemType.NO_SHOOT,
+        ItemType.SWINGER,
+        ItemType.DROP_TURNER,
+        ItemType.MOVER,
+    }
+
+    def __init__(self, wrapper: StageItemWrapper, scale: float,
+                 parent: QGraphicsItem | None = None):
+        QGraphicsItem.__init__(self, parent)
         self.stage_item_init(wrapper, scale)
-        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
-        self.setShapeMode(QGraphicsPixmapItem.ShapeMode.BoundingRectShape)
+        self._cached_pixmap: QPixmap | None = None
+        self._cached_size: tuple[int, int] = (0, 0)
         self.update_from_model()
 
-    def update_from_model(self):
+    def _get_pixmap(self) -> QPixmap | None:
+        """Ottiene il pixmap SVG renderizzato per le dimensioni correnti."""
         it = self.wrapper.item
-        w_px = int(it.width * self.scale)
-        h_px = int(it.height * self.scale)
+        w_px = max(1, int(it.width * self.scale))
+        h_px = max(1, int(it.height * self.scale))
 
-        if w_px > 0 and h_px > 0:
-            pixmap = TargetImageManager.instance().get_pixmap(
-                it.item_type, w_px, h_px
-            )
-            if pixmap is not None and not pixmap.isNull():
-                self.setPixmap(pixmap)
-                self.setOffset(-pixmap.width() / 2.0, -pixmap.height() / 2.0)
-            else:
-                self.setPixmap(QPixmap())
-        else:
-            self.setPixmap(QPixmap())
+        if (w_px, h_px) == self._cached_size and self._cached_pixmap is not None:
+            return self._cached_pixmap
 
+        manager = TargetSvgManager.instance()
+        pixmap = manager.get_pixmap(it.item_type, w_px, h_px)
+        if pixmap is not None and not pixmap.isNull():
+            self._cached_pixmap = pixmap
+            self._cached_size = (w_px, h_px)
+            return pixmap
+        return None
+
+    def update_from_model(self) -> None:
+        """Aggiorna posizione, rotazione e invalida cache pixmap."""
+        self._cached_size = (0, 0)  # forza refresh
+        self.prepareGeometryChange()
         super().update_from_model()
 
-    def paint(self, painter, option, widget=None):
-        super().paint(painter, option, widget)
+    def boundingRect(self) -> QRectF:
+        it = self.wrapper.item
+        w_px = it.width * self.scale
+        h_px = it.height * self.scale
+        return QRectF(-w_px / 2, -h_px / 2, w_px, h_px)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        pixmap = self._get_pixmap()
+        if pixmap is not None:
+            r = self.boundingRect()
+            painter.drawPixmap(r.toRect(), pixmap)
+        else:
+            # Fallback: ellisse colorata
+            it = self.wrapper.item
+            painter.setBrush(QBrush(QColor(it.color)))
+            painter.setPen(QPen(QColor("#0f172a"), 2))
+            painter.drawEllipse(self.boundingRect())
+
         self._paint_decoration(painter)
         self._draw_violation_highlight(painter)
         self._draw_selection_highlight(painter)
+        self._draw_resize_handles(painter)
         self._draw_rotation_handle(painter)
 
-    def _paint_decoration(self, painter: QPainter):
-        """Override per decorazioni specifiche (X, arco, freccia, linea)."""
-        pass
+    def _paint_decoration(self, painter: QPainter) -> None:
+        """Decorazioni specifiche per tipo bersaglio."""
+        it = self.wrapper.item
+        br = self.boundingRect()
 
-    # ---- Override per supportare highlight su bounding corretto ----
+        if it.item_type == ItemType.NO_SHOOT:
+            # X rossa
+            margin = br.width() * 0.15
+            pen = QPen(QColor("#dc2626"), 2)
+            painter.setPen(pen)
+            painter.drawLine(
+                br.left() + margin, br.top() + margin,
+                br.right() - margin, br.bottom() - margin,
+            )
+            painter.drawLine(
+                br.right() - margin, br.top() + margin,
+                br.left() + margin, br.bottom() - margin,
+            )
 
-    def _draw_selection_highlight(self, painter: QPainter):
+        elif it.item_type == ItemType.SWINGER:
+            # Arco di oscillazione
+            amp = it.properties.get("amplitude", 45)
+            pen = QPen(QColor("#a855f7"), 1, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            r = 40
+            start_angle = -amp - self.rotation()
+            span = amp * 2
+            painter.drawArc(-r, -r, r * 2, r * 2,
+                            int(start_angle * 16), int(span * 16))
+
+        elif it.item_type == ItemType.DROP_TURNER:
+            # Freccia caduta
+            pen = QPen(QColor("#0f172a"), 2)
+            painter.setPen(pen)
+            cx, cy = br.center().x(), br.center().y()
+            painter.drawLine(cx, cy - 8, cx, cy + 8)
+            painter.drawLine(cx - 4, cy + 4, cx, cy + 8)
+            painter.drawLine(cx + 4, cy + 4, cx, cy + 8)
+
+        elif it.item_type == ItemType.MOVER:
+            # Linea traiettoria
+            dist = it.properties.get("distance", 3.0) * self.scale
+            pen = QPen(QColor("#f97316"), 1, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            angle = math.radians(self.rotation())
+            dx = math.cos(angle) * dist / 2
+            dy = math.sin(angle) * dist / 2
+            painter.drawLine(-dx, -dy, dx, dy)
+
+    def _draw_selection_highlight(self, painter: QPainter) -> None:
         if not self.isSelected():
             return
         pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
@@ -997,95 +956,12 @@ class PixmapGraphicsItem(StageItemMixin, QGraphicsPixmapItem):
         br = self.boundingRect().adjusted(-4, -4, 4, 4)
         painter.drawRect(br)
 
+    # I target non sono resizeables (le dimensioni sono fisse per tipo)
+    def _draw_resize_handles(self, painter: QPainter) -> None:
+        return  # no resize per bersagli
 
-# ─── Implementazioni pixmap per tipi bersaglio ──────────────────────────────
-
-
-class PaperTargetPixmapItem(PixmapGraphicsItem):
-    """Bersaglio cartaceo IPSC: silhouette marrone dal Regolamento."""
-    pass
-
-
-class MiniTargetPixmapItem(PixmapGraphicsItem):
-    """Mini Target IPSC: silhouette ridotta marrone (App. B3)."""
-    pass
-
-
-class MicroTargetPixmapItem(PixmapGraphicsItem):
-    """Micro Target IPSC: silhouette micro marrone."""
-    pass
-
-
-class SteelTargetPixmapItem(PixmapGraphicsItem):
-    """Bersaglio metallico: popper grigio dal Regolamento."""
-    pass
-
-
-class PopperPixmapItem(PixmapGraphicsItem):
-    """Popper: bersaglio metallico calibrato grigio (App. C2)."""
-    pass
-
-
-class MetalPlatePixmapItem(PixmapGraphicsItem):
-    """Piatto metallico: diagramma non calibrato (App. C3)."""
-    pass
-
-
-class NoShootPixmapItem(PixmapGraphicsItem):
-    """No-Shoot: silhouette gialla IPSC con X rosso (Reg. 4.1.3)."""
-
-    def _paint_decoration(self, painter: QPainter):
-        r = self.boundingRect()
-        margin = r.width() * 0.15
-        x1 = r.left() + margin
-        y1 = r.top() + margin
-        x2 = r.right() - margin
-        y2 = r.bottom() - margin
-        pen = QPen(QColor("#dc2626"), 2)
-        painter.setPen(pen)
-        painter.drawLine(x1, y1, x2, y2)
-        painter.drawLine(x2, y1, x1, y2)
-
-
-class SwingerPixmapItem(PixmapGraphicsItem):
-    """Swinger: silhouette mobile con arco di oscillazione."""
-
-    def _paint_decoration(self, painter: QPainter):
-        amp = self.wrapper.item.properties.get("amplitude", 45)
-        pen = QPen(QColor("#a855f7"), 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        r = 40
-        start_angle = -amp - self.rotation()
-        span = amp * 2
-        painter.drawArc(-r, -r, r * 2, r * 2, int(start_angle * 16), int(span * 16))
-
-
-class DropTurnerPixmapItem(PixmapGraphicsItem):
-    """Drop Turner: silhouette mobile con freccia caduta."""
-
-    def _paint_decoration(self, painter: QPainter):
-        pen = QPen(QColor("#0f172a"), 2)
-        painter.setPen(pen)
-        br = self.boundingRect()
-        cx, cy = br.center().x(), br.center().y()
-        painter.drawLine(cx, cy - 8, cx, cy + 8)
-        painter.drawLine(cx - 4, cy + 4, cx, cy + 8)
-        painter.drawLine(cx + 4, cy + 4, cx, cy + 8)
-
-
-class MoverPixmapItem(PixmapGraphicsItem):
-    """Mover: silhouette mobile con linea traiettoria."""
-
-    def _paint_decoration(self, painter: QPainter):
-        dist = self.wrapper.item.properties.get("distance", 3.0) * self.scale
-        pen = QPen(QColor("#f97316"), 1, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        angle = math.radians(self.rotation())
-        dx = math.cos(angle) * dist / 2
-        dy = math.sin(angle) * dist / 2
-        painter.drawLine(-dx, -dy, dx, dy)
+    def _handle_press_on_resize(self, pos: QPointF) -> None:
+        return None  # no resize per bersagli
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1193,6 +1069,16 @@ class StageScene(QGraphicsScene):
             poly = _build_polygon_from_fault_lines(self.stage.items)
         self._shooting_area.set_polygon(poly or [], self.scale)
 
+    def reload_all_targets(self):
+        """Ricarica tutti i bersagli dopo un cambio di configurazione aspetto."""
+        from ui.editor.target_images import TargetSvgManager
+        # Invalida cache SVG
+        TargetSvgManager.reset_instance()
+        # Aggiorna tutti gli SvgTargetGraphicsItem nella scena
+        for item_id, gitem in self._items.items():
+            if isinstance(gitem, SvgTargetGraphicsItem):
+                gitem.update_from_model()
+
     def _sync_from_model(self):
         for it in self.stage.items:
             self._do_add_graphics_item(it)
@@ -1200,22 +1086,24 @@ class StageScene(QGraphicsScene):
     # ── Factory ──────────────────────────────────────────────────────────────
 
     _GRAPHICS_ITEM_CLASSES: dict[ItemType, tuple[type, str | None]] = {
+        # Ostacoli (forme geometriche)
         ItemType.WALL:          (WallGraphicsItem, None),
-        ItemType.PAPER_TARGET:  (PaperTargetPixmapItem, None),
-        ItemType.STEEL_TARGET:  (SteelTargetPixmapItem, None),
-        ItemType.POPPER:        (PopperPixmapItem, None),
-        ItemType.METAL_PLATE:   (MetalPlatePixmapItem, None),
-        ItemType.MINI_TARGET:   (MiniTargetPixmapItem, None),
-        ItemType.MICRO_TARGET:  (MicroTargetPixmapItem, None),
-        ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
-        ItemType.NO_SHOOT:      (NoShootPixmapItem, None),
         ItemType.BARRIER:       (BarrierGraphicsItem, None),
         ItemType.DOOR:          (DoorGraphicsItem, None),
         ItemType.HARD_COVER:    (HardCoverGraphicsItem, None),
         ItemType.SOFT_COVER:    (SoftCoverGraphicsItem, None),
-        ItemType.SWINGER:       (SwingerPixmapItem, None),
-        ItemType.DROP_TURNER:   (DropTurnerPixmapItem, None),
-        ItemType.MOVER:         (MoverPixmapItem, None),
+        ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
+        # Bersagli (SVG vettoriali unificati)
+        ItemType.PAPER_TARGET:  (SvgTargetGraphicsItem, None),
+        ItemType.STEEL_TARGET:  (SvgTargetGraphicsItem, None),
+        ItemType.POPPER:        (SvgTargetGraphicsItem, None),
+        ItemType.METAL_PLATE:   (SvgTargetGraphicsItem, None),
+        ItemType.MINI_TARGET:   (SvgTargetGraphicsItem, None),
+        ItemType.MICRO_TARGET:  (SvgTargetGraphicsItem, None),
+        ItemType.NO_SHOOT:      (SvgTargetGraphicsItem, None),
+        ItemType.SWINGER:       (SvgTargetGraphicsItem, None),
+        ItemType.DROP_TURNER:   (SvgTargetGraphicsItem, None),
+        ItemType.MOVER:         (SvgTargetGraphicsItem, None),
     }
 
     def _make_graphics_item(self, item: StageItem) -> QGraphicsItem:
@@ -1354,23 +1242,32 @@ class StageScene(QGraphicsScene):
 
     def add_target(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                    item_type: ItemType = ItemType.PAPER_TARGET):
-        # IPSC: carta = marrone, metallo = bianco/grigio (Regola 4.1.2)
-        color = "#8B4513" if item_type == ItemType.PAPER_TARGET else "#d1d5db"
-        label = "Paper" if item_type == ItemType.PAPER_TARGET else "Steel"
+        from core.constants import TARGET_COLORS
+        if item_type == ItemType.PAPER_TARGET:
+            color = TARGET_COLORS.get("paper", "#8B4513")
+            label = "Paper"
+        else:
+            color = TARGET_COLORS.get("steel_generic", "#d1d5db")
+            label = "Steel"
         item = StageItem(0, item_type, x, y, w, h, 0, color, label)
         self.push_add_item(item)
 
     def add_fault_line(self, x: float, y: float, length: float = 3.0):
-        item = StageItem(0, ItemType.FAULT_LINE, x, y, length, 0.0, 0, "#dc2626", "Fault Line")
+        from core.constants import TARGET_COLORS
+        item = StageItem(0, ItemType.FAULT_LINE, x, y, length, 0.0, 0,
+                         TARGET_COLORS.get("fault_line", "#dc2626"), "Fault Line")
         self.push_add_item(item)
 
     def add_no_shoot(self, x: float, y: float, w: float = 0.45, h: float = 0.45):
-        # IPSC: colore uniforme DIVERSO dai bersagli punti (Regola 4.1.3)
-        item = StageItem(0, ItemType.NO_SHOOT, x, y, w, h, 0, "#eab308", "No-Shoot")
+        from core.constants import TARGET_COLORS
+        item = StageItem(0, ItemType.NO_SHOOT, x, y, w, h, 0,
+                         TARGET_COLORS.get("no_shoot", "#eab308"), "No-Shoot")
         self.push_add_item(item)
 
     def add_barrier(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
-        item = StageItem(0, ItemType.BARRIER, x, y, w, h, 0, "#fbbf24", "Barriera")
+        from core.constants import TARGET_COLORS
+        item = StageItem(0, ItemType.BARRIER, x, y, w, h, 0,
+                         TARGET_COLORS.get("barrier", "#fbbf24"), "Barriera")
         self.push_add_item(item)
 
     def add_door(self, x: float, y: float, w: float = 1.0, h: float = 0.1):
@@ -1379,22 +1276,25 @@ class StageScene(QGraphicsScene):
 
     def add_swinger(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                     amplitude: float = 45.0, speed: float = 1.0):
-        # IPSC: bersaglio cartaceo mobile → marrone
-        item = StageItem(0, ItemType.SWINGER, x, y, w, h, 0, "#A0522D", "Swinger",
+        from core.constants import TARGET_COLORS
+        item = StageItem(0, ItemType.SWINGER, x, y, w, h, 0,
+                         TARGET_COLORS.get("swinger", "#A0522D"), "Swinger",
                          properties={"amplitude": amplitude, "speed": speed, "axis": "y"})
         self.push_add_item(item)
 
     def add_drop_turner(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                         fall_time: float = 0.5):
-        # IPSC: bersaglio cartaceo mobile → marrone
-        item = StageItem(0, ItemType.DROP_TURNER, x, y, w, h, 0, "#8B6914", "Drop Turner",
+        from core.constants import TARGET_COLORS
+        item = StageItem(0, ItemType.DROP_TURNER, x, y, w, h, 0,
+                         TARGET_COLORS.get("drop_turner", "#8B6914"), "Drop Turner",
                          properties={"trigger": "hit", "fall_time": fall_time})
         self.push_add_item(item)
 
     def add_mover(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
                   distance: float = 3.0, speed: float = 1.5):
-        # IPSC: bersaglio cartaceo mobile → marrone
-        item = StageItem(0, ItemType.MOVER, x, y, w, h, 0, "#CD853F", "Mover",
+        from core.constants import TARGET_COLORS
+        item = StageItem(0, ItemType.MOVER, x, y, w, h, 0,
+                         TARGET_COLORS.get("mover", "#CD853F"), "Mover",
                          properties={"distance": distance, "speed": speed, "direction": 0})
         self.push_add_item(item)
 
@@ -1402,29 +1302,33 @@ class StageScene(QGraphicsScene):
 
     def add_popper(self, x: float, y: float, diameter: float = 0.30):
         """Aggiunge un Popper (bersaglio metallico calibrato, App. C1-C2)."""
+        from core.constants import TARGET_COLORS
         item = StageItem(0, ItemType.POPPER, x, y, diameter, diameter, 0,
-                         "#d1d5db", "Popper",
+                         TARGET_COLORS.get("popper", "#d1d5db"), "Popper",
                          properties={"calibrated": True, "calibration_pf": 125})
         self.push_add_item(item)
 
     def add_metal_plate(self, x: float, y: float, diameter: float = 0.20):
         """Aggiunge un piatto metallico (non calibrato, App. C3)."""
+        from core.constants import TARGET_COLORS
         item = StageItem(0, ItemType.METAL_PLATE, x, y, diameter, diameter, 0,
-                         "#d1d5db", "Piatto",
+                         TARGET_COLORS.get("metal_plate", "#e5e7eb"), "Piatto",
                          properties={"calibrated": False, "diameter": diameter})
         self.push_add_item(item)
 
     def add_mini_target(self, x: float, y: float):
         """Aggiunge un Mini Target IPSC (bersaglio cartaceo ridotto, App. B3)."""
+        from core.constants import TARGET_COLORS
         item = StageItem(0, ItemType.MINI_TARGET, x, y, 0.30, 0.30, 0,
-                         "#8B4513", "Mini Target",
+                         TARGET_COLORS.get("mini", "#8B4513"), "Mini Target",
                          properties={"scale": 0.75})
         self.push_add_item(item)
 
     def add_micro_target(self, x: float, y: float):
         """Aggiunge un Micro Target IPSC."""
+        from core.constants import TARGET_COLORS
         item = StageItem(0, ItemType.MICRO_TARGET, x, y, 0.20, 0.20, 0,
-                         "#8B4513", "Micro Target",
+                         TARGET_COLORS.get("micro", "#8B4513"), "Micro Target",
                          properties={"scale": 0.50})
         self.push_add_item(item)
 

@@ -13,7 +13,15 @@ from PySide6.QtWidgets import (
 
 from core.models import StageItem, ItemType
 from ui.editor.stage_scene import StageItemWrapper
+from ui.editor.target_images import TargetSvgManager
 import math
+
+# Tipi bersaglio: colore e forma sono definiti centralmente, non modificabili per item
+_TARGET_TYPES = {
+    ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
+    ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+    ItemType.NO_SHOOT, ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+}
 
 
 class PropertyDock(QDockWidget):
@@ -159,6 +167,7 @@ class PropertyDock(QDockWidget):
             self._color_btn.setStyleSheet("background-color: #808080; border-radius: 4px; border: 1px solid #e2e8f0;")
         else:
             it = wrapper.item
+            is_target = it.item_type in _TARGET_TYPES
             self.setEnabled(True)
             self._title.setText(it.label or f"Oggetto #{it.id}")
             self._type_label.setText(it.item_type.name.replace("_", " ").title())
@@ -167,9 +176,20 @@ class PropertyDock(QDockWidget):
             self._x_spin.setValue(it.x)
             self._y_spin.setValue(it.y)
             self._w_spin.setValue(it.width)
+            self._w_spin.setEnabled(not is_target)
             self._h_spin.setValue(it.height)
+            self._h_spin.setEnabled(not is_target)
             self._rot_spin.setValue(it.rotation)
-            self._update_color_btn(it.color)
+            # Per i bersagli: colore dal TargetSvgManager (centralizzato)
+            if is_target:
+                svg_color = TargetSvgManager.instance().get_color(it.item_type)
+                self._update_color_btn(svg_color.name())
+                self._color_btn.setEnabled(False)
+                self._color_btn.setToolTip("Colore definito per tipo bersaglio (non modificabile)")
+            else:
+                self._update_color_btn(it.color)
+                self._color_btn.setEnabled(True)
+                self._color_btn.setToolTip("Clicca per cambiare colore")
             # Mostra/nascondi parametri mobili
             is_mobile = it.item_type in (ItemType.SWINGER, ItemType.MOVER, ItemType.DROP_TURNER)
             self._mobility_group.setVisible(is_mobile)
@@ -227,7 +247,10 @@ class PropertyDock(QDockWidget):
     def _on_color_pick(self):
         if self._wrapper is None:
             return
-        color = QColorDialog.getColor(QColor(self._wrapper.item.color), self, "Seleziona colore")
+        it = self._wrapper.item
+        if it.item_type in _TARGET_TYPES:
+            return  # bersagli: colore centralizzato, non modificabile
+        color = QColorDialog.getColor(QColor(it.color), self, "Seleziona colore")
         if color.isValid():
             hex_color = color.name()
             self._update_color_btn(hex_color)

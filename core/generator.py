@@ -338,7 +338,7 @@ class StageGenerator:
                         if (margin <= nx <= stage.width - margin and
                             margin <= ny <= stage.depth - margin):
                             ns = StageItem(0, ItemType.NO_SHOOT, nx, ny,
-                                           0.45, 0.45, 0, "#eab308", "No-Shoot")
+                                           0.45, 0.45, 0, TARGET_COLORS["no_shoot"], "No-Shoot")
                             items.append(ns)
                             ns_placed += 1
 
@@ -385,7 +385,7 @@ class StageGenerator:
             item_type=ItemType.WALL,
             base_width=lambda: random.uniform(avg_len * 0.7, avg_len * 1.3),
             base_height=0.2,
-            color="#475569",
+            color=TARGET_COLORS["wall"],
             label="Muro",
         )
 
@@ -397,7 +397,7 @@ class StageGenerator:
             item_type=ItemType.BARRIER,
             base_width=lambda: random.uniform(1.5, 3.0),
             base_height=0.15,
-            color="#fbbf24",
+            color=TARGET_COLORS["barrier"],
             label="Barriera",
         )
 
@@ -614,22 +614,34 @@ class StageGenerator:
         n = len(poly)
 
         # Parametri bersaglio
+        tcolor = TARGET_COLORS.get(
+            {ItemType.STEEL_TARGET: "steel_generic",
+             ItemType.POPPER: "popper",
+             ItemType.METAL_PLATE: "metal_plate",
+             ItemType.MINI_TARGET: "mini",
+             ItemType.MICRO_TARGET: "micro",
+             ItemType.SWINGER: "swinger",
+             ItemType.DROP_TURNER: "drop_turner",
+             ItemType.MOVER: "mover"}.get(ttype, "paper"),
+            "#808080")
         if ttype == ItemType.STEEL_TARGET:
-            w, h = 0.30, 0.30; color = "#d1d5db"; label = "Steel"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
+            w, h = 0.30, 0.30; label = "Steel"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
         elif ttype == ItemType.POPPER:
-            w, h = 0.30, 0.30; color = "#d1d5db"; label = "Popper"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
+            w, h = 0.30, 0.30; label = "Popper"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
         elif ttype == ItemType.METAL_PLATE:
-            w, h = 0.20, 0.20; color = "#e5e7eb"; label = "Plate"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
+            w, h = 0.20, 0.20; label = "Plate"; min_dist_from_edge = MIN_STEEL_PLACEMENT_DISTANCE
         elif is_moving:
-            colors = {ItemType.SWINGER: ("#A0522D", "Swinger"), ItemType.DROP_TURNER: ("#8B6914", "Drop Turner"), ItemType.MOVER: ("#CD853F", "Mover")}
-            color, label = colors.get(ttype, ("#808080", ""))
+            labels = {ItemType.SWINGER: "Swinger", ItemType.DROP_TURNER: "Drop Turner", ItemType.MOVER: "Mover"}
+            label = labels.get(ttype, "")
             w, h = 0.45, 0.45; min_dist_from_edge = 1.0
         elif ttype == ItemType.MINI_TARGET:
-            w, h = 0.34, 0.34; color = "#A0522D"; label = "Mini"; min_dist_from_edge = 1.0
+            w, h = 0.34, 0.34; label = "Mini"; min_dist_from_edge = 1.0
         elif ttype == ItemType.MICRO_TARGET:
-            w, h = 0.23, 0.23; color = "#8B4513"; label = "Micro"; min_dist_from_edge = 1.0
+            w, h = 0.23, 0.23; label = "Micro"; min_dist_from_edge = 1.0
         else:
-            w, h = 0.45, 0.45; color = "#8B4513"; label = "Paper"; min_dist_from_edge = 1.0
+            w, h = 0.45, 0.45; label = "Paper"; min_dist_from_edge = 1.0
+
+        color = tcolor
 
         # Classifica i lati del poligono per posizionamento:
         # I bersagli devono essere posizionati ESCLUSIVAMENTE nel settore
@@ -866,7 +878,7 @@ class StageGenerator:
             y = paper.y - ny * ns_dist
             if point_in_polygon(x, y, poly):
                 continue
-            it = StageItem(0, ItemType.NO_SHOOT, x, y, 0.45, 0.45, 0, "#eab308", "No-Shoot")
+            it = StageItem(0, ItemType.NO_SHOOT, x, y, 0.45, 0.45, 0, TARGET_COLORS["no_shoot"], "No-Shoot")
             if engine.is_valid_position(it, existing):
                 return it
         return None
@@ -1167,7 +1179,7 @@ class StageGenerator:
                 new_wall = StageItem(
                     0, ItemType.BARRIER, wx, wy,
                     wall_len, 0.2, wall_angle,
-                    "#fbbf24", "Barriera ristr.")
+                    TARGET_COLORS["barrier"], "Barriera ristr.")
 
                 # Valida con IPSCRulesEngine (distanza da target, ostacoli, bordo)
                 test_items = existing + new_walls
@@ -1288,7 +1300,7 @@ class StageGenerator:
                             wall = StageItem(0, ItemType.BARRIER, wx, wy,
                                              1.5, 0.2,
                                              math.degrees(math.atan2(ny, nx)),
-                                             "#fbbf24", "Barriera ripar.")
+                                             TARGET_COLORS["barrier"], "Barriera ripar.")
                             # Verifica che il target resti visibile da almeno 1 posizione
                             test_blockers = self._get_blocking_walls(stage.items + [wall])
                             if self._is_target_visible(t_block, test_blockers):
@@ -1357,7 +1369,7 @@ class StageGenerator:
                                 wall = StageItem(0, ItemType.BARRIER, wx, wy,
                                                  2.0, 0.2,
                                                  math.degrees(math.atan2(ny, nx)),
-                                                 "#fbbf24", "Barriera div.")
+                                                 TARGET_COLORS["barrier"], "Barriera div.")
                                 stage.add_item(wall)
                                 repaired = True
 
@@ -1533,7 +1545,7 @@ class StageGenerator:
                 continue
             length = random.uniform(2.0, 4.0)
             rot = target.rotation + random.uniform(-15, 15)
-            fl = StageItem(0, ItemType.FAULT_LINE, fx, fy, length, 0.0, rot, "#dc2626", "Fault Line")
+            fl = StageItem(0, ItemType.FAULT_LINE, fx, fy, length, 0.0, rot, TARGET_COLORS["fault_line"], "Fault Line")
             margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
             if (margin <= fx and fx <= stage.width - margin and
                     margin <= fy and fy <= stage.depth - margin):

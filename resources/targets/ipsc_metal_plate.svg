@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- IPSC Metal Plate — piatto circolare non calibrato -->
+  <circle cx="50" cy="50" r="45" fill="currentColor"/>
+  <!-- Bordo esterno -->
+  <circle cx="50" cy="50" r="45" fill="none" stroke="#fff" stroke-width="3" opacity="0.4"/>
+  <!-- Cerchio interno decorativo -->
+  <circle cx="50" cy="50" r="28" fill="none" stroke="#fff" stroke-width="1.5" opacity="0.3"/>
+</svg>

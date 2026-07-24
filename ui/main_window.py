@@ -28,6 +28,7 @@ from services.openscad_exporter import (
     openscad_available,
     ScadExportOptions,
 )
+from ui.dialogs.target_config_dialog import TargetConfigDialog
 
 
 class MainWindow(QMainWindow):
@@ -219,6 +220,13 @@ class MainWindow(QMainWindow):
         del_action.triggered.connect(self._scene.push_remove_selected)
         edit_menu.addAction(del_action)
 
+        # ── Configurazione ──
+        config_menu = menubar.addMenu("&Configurazione")
+
+        target_appearance_action = QAction("&Aspetto Bersagli…", self)
+        target_appearance_action.triggered.connect(self._on_target_config)
+        config_menu.addAction(target_appearance_action)
+
     def _setup_status_bar(self):
         self._status = QStatusBar()
         self.setStatusBar(self._status)
@@ -260,6 +268,12 @@ class MainWindow(QMainWindow):
     @Slot(int, dict)
     def _on_property_changed(self, item_id: int, props: dict):
         self._scene.update_item_from_properties(item_id, **props)
+
+    def _on_target_config(self):
+        """Apre il dialog di configurazione aspetto bersagli."""
+        dialog = TargetConfigDialog(self)
+        if dialog.exec():
+            self._scene.reload_all_targets()
 
     @Slot()
     def _on_validate(self):
