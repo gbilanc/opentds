@@ -186,7 +186,7 @@ def generate_perimeter_polygon(
     d_eff = back_y if back_y is not None else stage.depth - backstop_margin
 
     # Sceglie la lettera
-    _ALLOWED_RANDOM = ["Q", "O", "X", "Y", "Z", "W"]
+    _ALLOWED_RANDOM = ["Q", "O", "T", "U", "W", "X", "Y", "Z"]
     if letter_shape in LETTER_SHAPES:
         letter = letter_shape
     else:

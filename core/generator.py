@@ -88,7 +88,7 @@ class GeneratorConfig:
     seed: Optional[int] = None
     max_attempts: int = 500
     discipline: str = "ipsc_pistol"  # ipsc_pistol | mini_rifle | shotgun
-    letter_shape: str = "random"  # random | Q (quadrato) | O (rettangolo) | X | Y | Z | W
+    letter_shape: str = "random"  # random | Q (quadrato) | O (rettangolo) | T | U | W | X | Y | Z
     course_type: str = ""  # "short" | "medium" | "long" | "" = non classificato
     auto_distribution: bool = True  # se True, calcola bersagli da course_type
 
