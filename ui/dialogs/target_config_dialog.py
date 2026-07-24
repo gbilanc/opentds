@@ -78,7 +78,6 @@ class _TargetColorRow(QFrame):
         self._color_btn = QPushButton()
         self._color_btn.setFixedSize(36, 36)
         self._color_btn.clicked.connect(self._pick_color)
-        self._update_color_style()
         layout.addWidget(self._color_btn)
 
         # Valore hex
@@ -86,6 +85,8 @@ class _TargetColorRow(QFrame):
         self._hex_label.setStyleSheet("font-family: monospace; color: #475569; border: none;")
         self._hex_label.setFixedWidth(70)
         layout.addWidget(self._hex_label)
+
+        self._update_color_style()
 
         layout.addStretch()
 
