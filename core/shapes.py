@@ -104,6 +104,15 @@ LETTER_SHAPES: dict[str, List[Tuple[float, float]]] = {
         (1.00, 0.60), (0.30, 0.60), (0.30, 0.75),
         (1.00, 0.75), (1.00, 1.00), (0.00, 1.00),
     ],
+    "W": [
+        (0.00, 0.00), (0.25, 0.00), (0.25, 0.50),
+        (0.50, 1.00), (0.75, 0.50), (0.75, 0.00),
+        (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+    ],
+    # Quadrato: stessi vertici di O ma scaling uniforme (gestito in generate_perimeter_polygon)
+    "Q": [
+        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+    ],
 }
 
 
@@ -177,10 +186,11 @@ def generate_perimeter_polygon(
     d_eff = back_y if back_y is not None else stage.depth - backstop_margin
 
     # Sceglie la lettera
+    _ALLOWED_RANDOM = ["Q", "O", "X", "Y", "Z", "W"]
     if letter_shape in LETTER_SHAPES:
         letter = letter_shape
     else:
-        letter = random.choice(list(LETTER_SHAPES.keys()))
+        letter = random.choice(_ALLOWED_RANDOM)
     norm_verts = LETTER_SHAPES[letter]
 
     # Calcola margine dinamico in base ai tipi di bersaglio
@@ -200,10 +210,20 @@ def generate_perimeter_polygon(
         scale_x = w - 2 * inset
         scale_y = d_eff - 2 * inset
 
+    # Quadrato: scaling uniforme, centrato
+    if letter == "Q":
+        side = min(scale_x, scale_y)
+        offset_x = (w - side) / 2 - inset
+        offset_y = (d_eff - side) / 2 - inset
+        scale_x = scale_y = side
+
     poly = []
     for nx, ny in norm_verts:
         x = inset + nx * scale_x
         y = inset + ny * scale_y
+        if letter == "Q":
+            x += offset_x
+            y += offset_y
         poly.append((x, y))
 
     # Rotazione casuale

@@ -158,8 +158,7 @@ class GeneratorPanel(QWidget):
         # Forma area di tiro (lettera)
         self._shape_combo = QComboBox()
         self._shape_combo.addItems(
-            ["Casuale", "L", "T", "U", "C", "H", "F", "O", "Z", "S",
-             "X", "Y", "M", "N", "E"])
+            ["Casuale", "Quadrato", "Rettangolo", "X", "Y", "Z", "W"])
         self._shape_combo.setCurrentIndex(0)
         diff_layout.addRow("Forma area:", self._shape_combo)
 
@@ -244,10 +243,9 @@ class GeneratorPanel(QWidget):
 
     def _build_config(self) -> GeneratorConfig:
         diff_map = {0: "easy", 1: "medium", 2: "hard"}
-        shape_map = {"Casuale": "random", "L": "L", "T": "T", "U": "U",
-                     "C": "C", "H": "H", "F": "F", "O": "O",
-                     "Z": "Z", "S": "S", "X": "X", "Y": "Y",
-                     "M": "M", "N": "N", "E": "E"}
+        shape_map = {"Casuale": "random", "Quadrato": "Q",
+                     "Rettangolo": "O", "X": "X", "Y": "Y",
+                     "Z": "Z", "W": "W"}
         course_map = {"Non specificato": "", "Short Course": "short",
                        "Medium Course": "medium", "Long Course": "long"}
         disc_map = {"IPSC Pistola": "ipsc_pistol", "Mini Rifle": "mini_rifle",

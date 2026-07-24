@@ -36,8 +36,8 @@ class TestLetterShapes:
             assert len(verts) >= 3, f"Lettera {letter} ha solo {len(verts)} vertici"
 
     def test_knows_14_shapes(self):
-        """14 forme alfabetiche definite."""
-        assert len(LETTER_SHAPES) == 14
+        """16 forme alfabetiche definite (incluse W e Q)."""
+        assert len(LETTER_SHAPES) == 16
 
     @pytest.mark.parametrize("letter", [
         "L", "T", "U", "C", "H", "F", "O", "S", "X", "Y", "M", "N", "E",
