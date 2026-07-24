@@ -465,7 +465,6 @@ class MainWindow(QMainWindow):
 
     def _replace_stage(self, new_stage: Stage):
         """Sostituisce lo stage nell'editor 2D, 3D e Info."""
-        self._scene.clear()
         self._stage.name = new_stage.name
         self._stage.width = new_stage.width
         self._stage.depth = new_stage.depth
