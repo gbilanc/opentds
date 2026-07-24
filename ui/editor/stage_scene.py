@@ -27,6 +27,136 @@ from shapely.geometry import box as shapely_box, Point as ShapelyPoint
 from ui.editor.target_images import TargetImageManager
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Utility: ricostruzione poligono area di tiro da fault-line
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_polygon_from_fault_lines(items: list[StageItem]) -> list[tuple[float, float]] | None:
+    """Ricostruisce il poligono dell'area di tiro dalle fault-line perimetrali.
+
+    Le fault-line con `properties["perimeter"] = True` formano una catena
+    chiusa. L'algoritmo ricostruisce gli endpoint di ogni segmento e li
+    concatena in ordine per formare il poligono.
+
+    Returns:
+        Lista di vertici (x, y) o None se non ci sono abbastanza fault-line.
+    """
+    fault_lines = [
+        it for it in items
+        if it.item_type == ItemType.FAULT_LINE and it.properties.get("perimeter")
+    ]
+    if len(fault_lines) < 3:
+        return None
+
+    # Calcola gli endpoint di ogni segmento
+    segments: list[tuple[tuple[float, float], tuple[float, float], int]] = []
+    for fl in fault_lines:
+        rad = math.radians(fl.rotation)
+        half = fl.width / 2
+        dx = math.cos(rad) * half
+        dy = math.sin(rad) * half
+        p1 = (round(fl.x - dx, 4), round(fl.y - dy, 4))
+        p2 = (round(fl.x + dx, 4), round(fl.y + dy, 4))
+        segments.append((p1, p2, fl.id))
+
+    # Costruisci la catena: per ogni segmento, trova il successivo
+    # il cui primo endpoint è vicino al secondo endpoint del corrente
+    eps = 0.15  # tolleranza 15 cm
+    chain: list[tuple[float, float]] = []
+    used: set[int] = set()
+
+    # Parti dal primo segmento
+    p1, p2, sid = segments[0]
+    chain.append(p1)
+    chain.append(p2)
+    used.add(sid)
+
+    # Segui la catena
+    while len(used) < len(segments):
+        last = chain[-1]
+        found = False
+        for s1, s2, sid in segments:
+            if sid in used:
+                continue
+            d1 = math.hypot(s1[0] - last[0], s1[1] - last[1])
+            d2 = math.hypot(s2[0] - last[0], s2[1] - last[1])
+            if d1 < eps:
+                chain.append(s2)
+                used.add(sid)
+                found = True
+                break
+            elif d2 < eps:
+                chain.append(s1)
+                used.add(sid)
+                found = True
+                break
+        if not found:
+            break  # catena interrotta
+
+    # Chiudi il poligono (rimuovi l'ultimo punto se coincide col primo)
+    if len(chain) >= 3:
+        d_close = math.hypot(chain[0][0] - chain[-1][0], chain[0][1] - chain[-1][1])
+        if d_close < eps:
+            chain.pop()
+
+    return chain if len(chain) >= 3 else None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ShootingAreaItem — evidenziazione area di tiro
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ShootingAreaItem(QGraphicsItem):
+    """Evidenzia l'area di tiro (delimitata dalle fault-line) in verde."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._polygon: list[tuple[float, float]] = []
+        self._scale: float = 40.0
+        self.setZValue(-1)  # dietro la griglia ma sopra lo sfondo
+        self.setAcceptHoverEvents(False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+
+    def set_polygon(self, poly: list[tuple[float, float]], scale: float):
+        """Imposta il poligono dell'area di tiro."""
+        self._polygon = poly
+        self._scale = scale
+        self.prepareGeometryChange()
+        self.update()
+
+    def boundingRect(self) -> QRectF:
+        if not self._polygon:
+            return QRectF()
+        xs = [p[0] * self._scale for p in self._polygon]
+        ys = [p[1] * self._scale for p in self._polygon]
+        return QRectF(min(xs) - 2, min(ys) - 2,
+                       max(xs) - min(xs) + 4, max(ys) - min(ys) + 4)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        if len(self._polygon) < 3:
+            return
+        painter.save()
+        # Riempimento verde semitrasparente
+        fill_color = QColor("#22c55e")
+        fill_color.setAlpha(40)
+        painter.setBrush(QBrush(fill_color))
+        # Bordo verde
+        pen = QPen(QColor("#16a34a"))
+        pen.setWidthF(2.5)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+
+        path = QPainterPath()
+        first = self._polygon[0]
+        path.moveTo(first[0] * self._scale, first[1] * self._scale)
+        for p in self._polygon[1:]:
+            path.lineTo(p[0] * self._scale, p[1] * self._scale)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.restore()
+
+
 # Helper per classificazione tipi (condivisa con generator)
 def _is_paper_like(t: ItemType) -> bool:
     return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
@@ -100,15 +230,6 @@ class GridItem(QGraphicsItem):
         painter.setFont(font)
         painter.drawText(4, int(h - 6), "⬇ PARAPALLE DI FONDO")
 
-        # Area di partenza
-        start_brush = QBrush(QColor("#22c55e"))
-        start_brush.setStyle(Qt.BrushStyle.Dense4Pattern)
-        painter.setBrush(start_brush)
-        painter.setPen(Qt.PenStyle.NoPen)
-        sw = 2.0 * self.scale
-        sh = 2.0 * self.scale
-        painter.drawRect(int(w / 2 - sw / 2), 0, int(sw), int(sh))
-
         # Griglia
         painter.setPen(self.pen)
         for i in range(int(self.width_m) + 1):
@@ -122,8 +243,8 @@ class GridItem(QGraphicsItem):
         font.setPointSize(8)
         font.setBold(False)
         painter.setFont(font)
-        painter.setPen(QPen(QColor("#22c55e"), 1))
-        painter.drawText(4, 14, "🟢 UP-RANGE (ingresso tiratore)")
+        painter.setPen(QPen(QColor("#64748b"), 1))
+        painter.drawText(4, 14, "UP-RANGE (ingresso tiratore)")
         painter.setPen(QPen(QColor("#ef4444"), 1))
         painter.drawText(4, int(h - 22), "🔴 DOWN-RANGE (verso parapalle)")
 
@@ -1029,18 +1150,34 @@ class StageScene(QGraphicsScene):
         self._violation_ids: set[int] = set()
         self._last_violations: list[str] = []
         self.undo_stack = QUndoStack(self)
+        self._shooting_area = ShootingAreaItem()
         self._setup_grid()
         self._sync_from_model()
+        self._update_shooting_area()
         self.selectionChanged.connect(self._on_selection_changed)
+        # Aggiorna area di tiro quando un item viene aggiunto/rimosso/modificato
+        self.itemAdded.connect(lambda w: self._update_shooting_area())
+        self.itemRemoved.connect(lambda i: self._update_shooting_area())
+        self.itemUpdated.connect(lambda i: self._update_shooting_area())
 
     def _setup_grid(self):
         self.grid = GridItem(self.stage.width, self.stage.depth, self.scale)
         self.addItem(self.grid)
+        self.addItem(self._shooting_area)
         self.setSceneRect(
             0, 0,
             self.stage.width * self.scale,
             self.stage.depth * self.scale,
         )
+
+    def _update_shooting_area(self):
+        """Ricalcola e ridisegna l'area di tiro dal poligono perimetrale."""
+        # Priorità 1: poligono salvato nelle properties (da generatore)
+        poly = self.stage.properties.get("perimeter_poly")
+        # Priorità 2: ricostruisci dalle fault-line
+        if not poly:
+            poly = _build_polygon_from_fault_lines(self.stage.items)
+        self._shooting_area.set_polygon(poly or [], self.scale)
 
     def _sync_from_model(self):
         for it in self.stage.items:

@@ -194,6 +194,7 @@ class StageGenerator:
             has_steel=has_steel,
         )
         self._perimeter_poly = poly
+        stage.properties["perimeter_poly"] = [(round(x, 2), round(y, 2)) for x, y in poly]
         self._interior_samples = self._sample_interior_points(20)
         items.extend(_perimeter_to_items(poly, style=cfg.delimitation))
 
