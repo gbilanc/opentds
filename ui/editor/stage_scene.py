@@ -1150,7 +1150,7 @@ class StageScene(QGraphicsScene):
         self._violation_ids: set[int] = set()
         self._last_violations: list[str] = []
         self.undo_stack = QUndoStack(self)
-        self._shooting_area = ShootingAreaItem()
+        self._shooting_area: ShootingAreaItem | None = None
         self._setup_grid()
         self._sync_from_model()
         self._update_shooting_area()
@@ -1161,7 +1161,19 @@ class StageScene(QGraphicsScene):
         self.itemUpdated.connect(lambda i: self._update_shooting_area())
 
     def _setup_grid(self):
+        # Rimuovi grid e shooting area precedenti
+        if hasattr(self, 'grid') and self.grid is not None:
+            self.removeItem(self.grid)
+        if self._shooting_area is not None:
+            self.removeItem(self._shooting_area)
+        self._shooting_area = None
+        # Rimuovi vecchi stage item grafici dalla scena
+        for g in self._items.values():
+            self.removeItem(g)
+        self._items.clear()
+
         self.grid = GridItem(self.stage.width, self.stage.depth, self.scale)
+        self._shooting_area = ShootingAreaItem()
         self.addItem(self.grid)
         self.addItem(self._shooting_area)
         self.setSceneRect(
@@ -1172,6 +1184,8 @@ class StageScene(QGraphicsScene):
 
     def _update_shooting_area(self):
         """Ricalcola e ridisegna l'area di tiro dal poligono perimetrale."""
+        if self._shooting_area is None:
+            return
         # Priorità 1: poligono salvato nelle properties (da generatore)
         poly = self.stage.properties.get("perimeter_poly")
         # Priorità 2: ricostruisci dalle fault-line
