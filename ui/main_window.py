@@ -470,6 +470,8 @@ class MainWindow(QMainWindow):
         self._stage.depth = new_stage.depth
         self._stage.course_type = new_stage.course_type
         self._stage.division = new_stage.division
+        self._stage.properties = dict(new_stage.properties)
+        self._stage.shooting_positions = list(new_stage.shooting_positions)
         self._stage.items.clear()
         self._stage._next_id = new_stage._next_id
         for it in new_stage.items:
@@ -478,6 +480,7 @@ class MainWindow(QMainWindow):
         self._scene._items.clear()
         self._scene._setup_grid()
         self._scene._sync_from_model()
+        self._scene._update_shooting_area()
         # Adatta la vista per mostrare tutto lo stage
         self._view.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self._prop_dock.set_item(None)
