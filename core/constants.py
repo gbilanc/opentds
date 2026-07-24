@@ -50,6 +50,9 @@ MIN_STEEL_PLACEMENT_DISTANCE: Final = 8.0
 # Angolo di sicurezza di default (Reg. 2.1.2)
 SAFETY_ANGLE_DEFAULT: Final = 90.0
 
+# Tolleranza angolare per validazione cono di ingaggio (gradi)
+SAFETY_ANGLE_TOLERANCE_DEG: Final = 2.0
+
 # Angolo massimo bersagli fissi rispetto alla verticale (Reg. 2.1.8.4)
 MAX_FIXED_TARGET_ANGLE: Final = 90.0
 

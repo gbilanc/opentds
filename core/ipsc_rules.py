@@ -20,6 +20,7 @@ from core.constants import (
     MIN_BACKSTOP_DEPTH,
     MIN_STEEL_DISTANCE,
     SAFETY_ANGLE_DEFAULT,
+    SAFETY_ANGLE_TOLERANCE_DEG,
     MAX_FIXED_TARGET_ANGLE,
     MAX_OBSTACLE_HEIGHT,
     MIN_BARRIER_HEIGHT,
@@ -90,6 +91,7 @@ class IPSCRulesEngine:
     MIN_BACKSTOP_DEPTH = MIN_BACKSTOP_DEPTH
     MIN_STEEL_DISTANCE = MIN_STEEL_DISTANCE
     SAFETY_ANGLE_DEFAULT = SAFETY_ANGLE_DEFAULT
+    SAFETY_ANGLE_TOLERANCE_DEG = SAFETY_ANGLE_TOLERANCE_DEG
     MAX_FIXED_TARGET_ANGLE = MAX_FIXED_TARGET_ANGLE
     MAX_OBSTACLE_HEIGHT = MAX_OBSTACLE_HEIGHT
     MIN_BARRIER_HEIGHT = MIN_BARRIER_HEIGHT
@@ -367,6 +369,49 @@ class IPSCRulesEngine:
 
         return True
 
+    # ── Helper: direzione frontale e cono di ingaggio ─────────────────
+
+    @staticmethod
+    def _forward_direction(angle_deg: float) -> tuple[float, float]:
+        """Vettore direzione frontale dato un angolo in gradi.
+
+        0° = asse X positivo, 90° = asse Y positivo (verso parapalle).
+        """
+        rad = math.radians(angle_deg)
+        return (math.cos(rad), math.sin(rad))
+
+    def _target_angle_from_position(
+        self, pos: Point, target: StageItem, forward_angle_deg: float
+    ) -> float:
+        """Angolo (0-180°) tra la direzione frontale e il bersaglio."""
+        dx = target.x - pos.x
+        dy = target.y - pos.y
+        dist = math.hypot(dx, dy)
+        if dist < 0.01:
+            return 0.0
+        forward = self._forward_direction(forward_angle_deg)
+        cos_angle = (dx * forward[0] + dy * forward[1]) / dist
+        cos_angle = max(-1.0, min(1.0, cos_angle))
+        return math.degrees(math.acos(cos_angle))
+
+    def _get_positions_with_directions(
+        self,
+    ) -> list[tuple[Point, float]]:
+        """Restituisce (punto, angolo_frontale_gradi) per ogni posizione.
+
+        Se non ci sono shooting positions, usa il centro stage con
+        direzione frontale verso il parapalle (90° = asse Y positivo).
+        """
+        if self.stage.shooting_positions:
+            return [
+                (Point(sp.x, sp.y), sp.angle)
+                for sp in self.stage.shooting_positions
+            ]
+        # Fallback: centro area di tiro, direzione verso il parapalle
+        return [
+            (Point(self.stage.width / 2, self.stage.depth * 0.2), 90.0)
+        ]
+
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _validate_shooting_positions(self) -> List[str]:
@@ -430,32 +475,18 @@ class IPSCRulesEngine:
     # ── Validazione max colpi per posizione ───────────────────────────────────
 
     def _validate_max_hits_per_position(self) -> List[str]:
-        """Verifica max 9 colppi conteggiabili da una singola posizione (Reg. 1.2.1).
+        """Verifica max 9 colpi conteggiabili da una singola posizione (Reg. 1.2.1).
 
         Da qualsiasi singola posizione di tiro, il tiratore non deve poter
         mettere a segno più di 9 colpi su bersagli che assegnano punti.
-        Per i bersagli carta si contano 2 colpi ciascuno (default),
-        per i metallici 1 colpo ciascuno (devono cadere).
+        Conta solo i bersagli entro il cono di ingaggio frontale (180°)
+        e con linea di vista non ostruita da muri/barriere.
         """
         v = []
         targets = [it for it in self.stage.items
                    if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]
         if not targets:
             return v
-
-        positions = []
-        if self.stage.shooting_positions:
-            for sp in self.stage.shooting_positions:
-                positions.append(Point(sp.x, sp.y))
-        else:
-            # Se non ci sono shooting positions, campiona punti nell'area di tiro
-            cx, cy = self.stage.width / 2, self.stage.depth / 2
-            positions = [
-                Point(cx, cy),
-                Point(cx - 2, cy),
-                Point(cx + 2, cy),
-                Point(cx, cy + 2),
-            ]
 
         # Costruisce OBB per ogni bersaglio
         target_obbs = {}
@@ -464,21 +495,21 @@ class IPSCRulesEngine:
             if obb:
                 target_obbs[t.id] = obb
 
+        walls = [it for it in self.stage.items
+                 if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR)]
+        wall_obbs = [wob for w in walls if (wob := item_obb(w)) is not None]
+
         from shapely.geometry import LineString as ShapelyLineString
 
-        for pos in positions:
-            hits = 0
-            # Per ogni bersaglio, verifica se è visibile dalla posizione
-            # (linea di vista non ostruita da muri/barriere)
-            walls = [it for it in self.stage.items
-                     if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR)]
-            wall_obbs = []
-            for w in walls:
-                wob = item_obb(w)
-                if wob:
-                    wall_obbs.append(wob)
+        max_angle = self.SAFETY_ANGLE_DEFAULT + self.SAFETY_ANGLE_TOLERANCE_DEG
 
+        for pos, forward_deg in self._get_positions_with_directions():
+            hits = 0
             for t in targets:
+                # Filtra per cono di ingaggio 180°
+                if self._target_angle_from_position(pos, t, forward_deg) > max_angle:
+                    continue
+
                 obb = target_obbs.get(t.id)
                 if obb is None:
                     continue
@@ -487,20 +518,14 @@ class IPSCRulesEngine:
                 line = ShapelyLineString([(pos.x, pos.y), (t.x, t.y)])
 
                 # Verifica se la linea interseca muri/barriere
-                blocked = False
-                for wob in wall_obbs:
-                    if line.intersects(wob):
-                        blocked = True
-                        break
-
+                blocked = any(line.intersects(wob) for wob in wall_obbs)
                 if not blocked:
-                    # Carta: 2 colpi, metallo: 1 colpo
                     hits += 2 if t.item_type == ItemType.PAPER_TARGET else 1
 
             if hits > self.MAX_HITS_PER_POSITION:
                 v.append(
                     f"Posizione ({pos.x:.1f}, {pos.y:.1f}): {hits} colpi "
-                    f"conteggiabili (max {self.MAX_HITS_PER_POSITION}, Reg. 1.2.1)")
+                    f"conteggiabili nel cono 180° (max {self.MAX_HITS_PER_POSITION}, Reg. 1.2.1)")
 
         return v
 
@@ -509,14 +534,12 @@ class IPSCRulesEngine:
     def _validate_safety_angles(self) -> List[str]:
         """Verifica angoli di sicurezza 90° (Reg. 2.1.2).
 
-        L'angolo di sicurezza massimo di default è 90° in ogni direzione,
-        misurato dal tiratore posto frontalmente rispetto al centro frontale
-        dell'area di tiro. I bersagli non devono richiedere al tiratore di
-        superare questi angoli per essere ingaggiati.
+        Il tiratore può ingaggiare solo bersagli entro un cono di 180°
+        frontali (90° a sinistra + 90° a destra) dalla direzione di
+        puntamento della posizione di tiro.
 
-        Nota: questa è una validazione geometrica semplificata. Verifica che
-        i bersagli non siano posizionati a un angolo >90° rispetto alla
-        direzione frontale (verso il parapalle di fondo) dalle posizioni di tiro.
+        Usa ShootingPosition.angle come direzione frontale; se non
+        definita, assume direzione verso il parapalle (90° = +Y).
         """
         v = []
         targets = [it for it in self.stage.items
@@ -526,39 +549,18 @@ class IPSCRulesEngine:
         if not targets:
             return v
 
-        positions = []
-        if self.stage.shooting_positions:
-            for sp in self.stage.shooting_positions:
-                positions.append(Point(sp.x, sp.y))
-        else:
-            positions.append(Point(self.stage.width / 2, self.stage.depth * 0.2))
+        max_angle = self.SAFETY_ANGLE_DEFAULT + self.SAFETY_ANGLE_TOLERANCE_DEG
 
-        # Direzione frontale = verso il parapalle di fondo (y crescente)
-        forward = (0.0, 1.0)
-
-        for pos in positions:
+        for pos, forward_deg in self._get_positions_with_directions():
             for t in targets:
-                dx = t.x - pos.x
-                dy = t.y - pos.y
-                dist = math.hypot(dx, dy)
-                if dist < 0.1:
-                    continue
+                angle_deg = self._target_angle_from_position(pos, t, forward_deg)
 
-                # Angolo tra vettore posizione→bersaglio e direzione frontale
-                angle_rad = math.acos(
-                    (dx * forward[0] + dy * forward[1]) / dist
-                )
-                angle_deg = math.degrees(angle_rad)
-
-                # L'angolo di sicurezza di default è 90° a sinistra e destra
-                # = il bersaglio deve essere entro ±90° dalla direzione frontale
-                # Tolleranza 20° per tenere conto di forme poligonali complesse
-                if angle_deg > self.SAFETY_ANGLE_DEFAULT + 20:  # tolleranza 20°
+                if angle_deg > max_angle:
                     v.append(
                         f"Bersaglio #{t.id} a {angle_deg:.0f}° dalla posizione "
                         f"({pos.x:.1f}, {pos.y:.1f}) — "
-                        f"supera angolo sicurezza default {self.SAFETY_ANGLE_DEFAULT}° "
-                        f"(Reg. 2.1.2)")
+                        f"supera angolo sicurezza {self.SAFETY_ANGLE_DEFAULT}° "
+                        f"(cono ingaggio 180°, Reg. 2.1.2)")
 
         return v
 
@@ -570,11 +572,11 @@ class IPSCRulesEngine:
         Short ≤12 colpi, Medium ≤24, Long ≤32.
         Inoltre: max 9 colpi da singola posizione per tutti i tipi;
         Medium/Long non devono permettere di ingaggiare tutti i bersagli
-        da una singola posizione.
+        da una singola posizione (considerando il cono di ingaggio 180°).
         """
         v = []
         if not self.stage.course_type:
-            return v  # nessun tipo dichiarato → nessuna validazione
+            return v
 
         ct = self.stage.course_type.value
         max_rounds = self.COURSE_MAX_ROUNDS.get(ct)
@@ -583,7 +585,6 @@ class IPSCRulesEngine:
             return v
 
         # Calcola il numero di colpi richiesti dallo stage
-        # (default: 2 per paper, 1 per metallo/swinger/drop/mover)
         total_rounds = 0
         paper_like = (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
                       ItemType.MICRO_TARGET, ItemType.SWINGER,
@@ -593,9 +594,9 @@ class IPSCRulesEngine:
 
         for it in self.stage.items:
             if it.item_type in paper_like:
-                total_rounds += 2  # default: 2 colpi per bersaglio carta
+                total_rounds += 2
             elif it.item_type in steel_like:
-                total_rounds += 1  # 1 colpo per metallico
+                total_rounds += 1
 
         if total_rounds > max_rounds:
             v.append(
@@ -607,22 +608,25 @@ class IPSCRulesEngine:
             targets = [it for it in self.stage.items
                        if it.item_type in paper_like or it.item_type in steel_like]
             if targets:
-                positions = self._get_sample_positions()
                 walls = [it for it in self.stage.items
                          if it.item_type in (ItemType.WALL, ItemType.BARRIER,
                                              ItemType.DOOR, ItemType.HARD_COVER)]
                 from shapely.geometry import LineString as SLine
 
-                for pos in positions:
+                max_angle = self.SAFETY_ANGLE_DEFAULT + self.SAFETY_ANGLE_TOLERANCE_DEG
+
+                for pos, forward_deg in self._get_positions_with_directions():
                     visible_count = 0
                     for t in targets:
+                        # Filtra per cono di ingaggio 180°
+                        if self._target_angle_from_position(pos, t, forward_deg) > max_angle:
+                            continue
                         line = SLine([(pos.x, pos.y), (t.x, t.y)])
-                        blocked = False
-                        for w in walls:
-                            wob = item_obb(w)
-                            if wob and line.intersects(wob):
-                                blocked = True
-                                break
+                        blocked = any(
+                            line.intersects(wob)
+                            for w in walls
+                            if (wob := item_obb(w)) is not None
+                        )
                         if not blocked:
                             visible_count += 1
 
@@ -634,19 +638,6 @@ class IPSCRulesEngine:
                         break
 
         return v
-
-    def _get_sample_positions(self) -> List[Point]:
-        """Restituisce posizioni di tiro di esempio per validazione."""
-        if self.stage.shooting_positions:
-            return [Point(sp.x, sp.y) for sp in self.stage.shooting_positions]
-        # Fallback: campiona punti nell'area di tiro
-        cx, cy = self.stage.width / 2, self.stage.depth / 2
-        return [
-            Point(cx, cy),
-            Point(cx - 2, cy),
-            Point(cx + 2, cy),
-            Point(cx, cy + 2),
-        ]
 
     # ── Validazione Divisione ───────────────────────────────────────────────────
 
@@ -963,9 +954,10 @@ class IPSCRulesEngine:
     def _validate_same_line_of_fire(self) -> List[str]:
         """Verifica che non ci siano due bersagli sulla stessa linea di tiro.
 
-        Dal centro dell'area di tiro, se due bersagli che assegnano punti
-        hanno un angolo inferiore a SAME_LINE_OF_FIRE_THRESHOLD_DEG,
-        sono considerati sulla stessa linea di tiro.
+        Dal punto di riferimento dell'area di tiro (media delle shooting
+        positions, o centro stage come fallback), due bersagli che assegnano
+        punti non devono avere un angolo reciproco inferiore a
+        SAME_LINE_OF_FIRE_THRESHOLD_DEG.
 
         Questo evita che un singolo colpo possa colpire due bersagli
         e garantisce distribuzione angolare degli ingaggi.
@@ -983,12 +975,10 @@ class IPSCRulesEngine:
         if len(targets) < 2:
             return v
 
-        # Centro dell'area di tiro approssimato
-        cx = self.stage.width / 2
-        cy = self.stage.depth * 0.3
-        if self.stage.shooting_positions:
-            cx = sum(sp.x for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
-            cy = sum(sp.y for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
+        # Punto di riferimento: media delle shooting positions, o centro stage
+        positions = self._get_positions_with_directions()
+        cx = sum(p.x for p, _ in positions) / len(positions)
+        cy = sum(p.y for p, _ in positions) / len(positions)
 
         threshold = SAME_LINE_OF_FIRE_THRESHOLD_DEG
         for i, a in enumerate(targets):

@@ -207,3 +207,165 @@ class TestValidateCourseType:
         # Per stage 25x20, tutte le discipline hanno dimensioni sufficienti
         assert len(dim_violations) == 0, (
             f"Violazioni dimensioni per {discipline}: {dim_violations}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Test per cono di ingaggio 180°
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestEngagementConeSafetyAngles:
+    """Verifica che i bersagli fuori dal cono 180° siano rilevati."""
+
+    def test_target_in_front_within_cone(self):
+        """Bersaglio davanti alla posizione (angolo 90°) → OK."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=3.0, angle=90.0, is_start=True))
+        # Bersaglio direttamente di fronte (y=12, stesso x)
+        stage.add_item(StageItem(1, ItemType.PAPER_TARGET, 10.0, 12.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_safety_angles()
+        assert len(v) == 0, f"Violazioni inaspettate: {v}"
+
+    def test_target_behind_shooter_violation(self):
+        """Bersaglio dietro al tiratore → violazione cono 180°."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        # Tiratore a (10, 10) con direzione 90° (verso +Y, parapalle)
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=10.0, angle=90.0, is_start=True))
+        # Bersaglio dietro al tiratore (y=2, verso -Y)
+        stage.add_item(StageItem(1, ItemType.PAPER_TARGET, 10.0, 2.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_safety_angles()
+        assert len(v) > 0, "Violazione attesa: bersaglio dietro al tiratore"
+
+    def test_target_90_degrees_left_within_cone(self):
+        """Bersaglio esattamente a 90° a sinistra → al limite del cono."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        # Tiratore a (10, 10) con direzione 90° (+Y)
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=10.0, angle=90.0, is_start=True))
+        # Bersaglio a sinistra: (-X rispetto al tiratore, stessa Y)
+        stage.add_item(StageItem(1, ItemType.PAPER_TARGET, 0.5, 10.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_safety_angles()
+        # 90° esatti + tolleranza 2° → ancora dentro il cono
+        assert len(v) == 0, f"Bersaglio a 90° laterali dovrebbe essere accettato: {v}"
+
+    def test_target_beyond_90_degrees_violation(self):
+        """Bersaglio oltre 90° laterali → violazione."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=10.0, angle=90.0, is_start=True))
+        # Bersaglio molto a sinistra e leggermente dietro (angolo > 90°)
+        stage.add_item(StageItem(1, ItemType.PAPER_TARGET, 0.5, 9.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_safety_angles()
+        assert len(v) > 0, "Violazione attesa: bersaglio oltre 90° laterali"
+
+    def test_multiple_positions_each_checked(self):
+        """Ogni shooting position ha il proprio cono di ingaggio."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        # Posizione 1: guarda verso +Y (90°), bersaglio davanti OK
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=5.0, y=3.0, angle=90.0, is_start=True))
+        # Posizione 2: guarda verso +Y (90°), ma il bersaglio è dietro
+        stage.shooting_positions.append(
+            ShootingPosition(id=2, x=15.0, y=10.0, angle=90.0))
+        # Bersaglio a (5, 12): davanti per pos1 (stesso X=5, Y=12 > 3),
+        # ma per pos2 (15,10) il bersaglio è a -X e +Y → angolo > 90°
+        # Da pos2: dx=-10, dy=2. Forward=(0,1). cos = 2/sqrt(104) ≈ 0.196.
+        # acos(0.196) ≈ 78.7° — ancora dentro il cono!
+        # Mettiamolo a (0, 3): da pos2 (15,10) dx=-15, dy=-7, forward=(0,1).
+        # cos = -7/sqrt(274) ≈ -0.423. acos ≈ 115° > 92° → violazione.
+        stage.add_item(StageItem(1, ItemType.PAPER_TARGET, 0.0, 3.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_safety_angles()
+        # Deve rilevare che dalla pos2 il bersaglio è fuori cono
+        violations_pos2 = [x for x in v if "(15.0, 10.0)" in x]
+        assert len(violations_pos2) > 0, (
+            f"Violazione attesa dalla posizione 2: {v}")
+
+
+class TestEngagementConeMaxHits:
+    """Verifica che il conteggio colpi rispetti il cono 180°."""
+
+    def test_targets_behind_not_counted(self):
+        """Bersagli dietro al tiratore non contano per max 9 colpi."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=10.0, angle=90.0, is_start=True))
+        # 5 bersagli davanti (10 colpi) + 2 dietro (4 colpi ignorati)
+        for i in range(5):
+            stage.add_item(StageItem(i + 1, ItemType.PAPER_TARGET,
+                                      5 + i * 2, 13.0, 0.45, 0.45))
+        # Bersagli dietro: non dovrebbero contare
+        stage.add_item(StageItem(6, ItemType.PAPER_TARGET, 5.0, 2.0, 0.45, 0.45))
+        stage.add_item(StageItem(7, ItemType.PAPER_TARGET, 15.0, 2.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_max_hits_per_position()
+        # 5 paper davanti = 10 colpi > 9 → violazione, ma non per i 2 dietro
+        assert len(v) > 0, "Violazione attesa: 10 colpi davanti > 9"
+
+    def test_few_targets_in_cone_no_violation(self):
+        """Pochi bersagli nel cono frontale → nessuna violazione."""
+        stage = Stage(width=20.0, depth=15.0)
+        from core.models import ShootingPosition
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=3.0, angle=90.0, is_start=True))
+        # 3 bersagli davanti = 6 colpi
+        for i in range(3):
+            stage.add_item(StageItem(i + 1, ItemType.PAPER_TARGET,
+                                      5 + i * 3, 12.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_max_hits_per_position()
+        assert len(v) == 0, f"Violazioni inaspettate: {v}"
+
+
+class TestEngagementConeCourseType:
+    """Verifica cono 180° nella validazione course type."""
+
+    def test_medium_course_all_targets_in_cone_triggers_violation(self):
+        """Medium course: se tutti i bersagli sono ingaggiabili da una
+        posizione (cono + visibilità) → violazione."""
+        stage = Stage(width=20.0, depth=15.0, course_type=CourseType.MEDIUM)
+        from core.models import ShootingPosition
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=3.0, angle=90.0, is_start=True))
+        # 4 bersagli tutti davanti, nessun muro → tutti ingaggiabili
+        for i in range(4):
+            stage.add_item(StageItem(i + 1, ItemType.PAPER_TARGET,
+                                      5 + i * 3, 12.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_course_type()
+        # 4 paper = 8 colpi ≤ 24 (ok), ma tutti visibili da 1 posizione
+        all_visible_violations = [x for x in v if "tutti" in x.lower()]
+        assert len(all_visible_violations) > 0, (
+            f"Violazione attesa: tutti bersagli ingaggiabili da una posizione: {v}")
+
+    def test_medium_course_targets_split_by_cone_no_violation(self):
+        """Medium course: bersagli divisi tra cono e fuori cono → OK."""
+        stage = Stage(width=20.0, depth=15.0, course_type=CourseType.MEDIUM)
+        from core.models import ShootingPosition
+        stage.shooting_positions.append(
+            ShootingPosition(id=1, x=10.0, y=10.0, angle=90.0, is_start=True))
+        # 3 davanti (nel cono) + 2 dietro (fuori cono)
+        for i in range(3):
+            stage.add_item(StageItem(i + 1, ItemType.PAPER_TARGET,
+                                      5 + i * 3, 13.0, 0.45, 0.45))
+        for i in range(2):
+            stage.add_item(StageItem(i + 4, ItemType.PAPER_TARGET,
+                                      5 + i * 5, 5.0, 0.45, 0.45))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_course_type()
+        # I bersagli dietro non sono ingaggiabili → non tutti da una posizione
+        all_visible_violations = [x for x in v if "tutti" in x.lower()]
+        assert len(all_visible_violations) == 0, (
+            f"Nessuna violazione attesa: bersagli fuori cono non sono ingaggiabili: {v}")
