@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 from core.models import Stage, StageItem, ItemType
-from core.generator import StageGenerator, GeneratorConfig, GeneratorResult
+from core.generator import StageGenerator, GeneratorConfig, Phase1Config, Phase2Config, GeneratorResult
 from core.ipsc_rules import IPSCRulesEngine
 from core.geometry import (
     point_in_polygon,
@@ -386,3 +386,153 @@ class TestGeometryHelpers:
     def test_line_intersects_rect_miss(self):
         """Linea che non tocca il rettangolo."""
         assert not line_intersects_rect((0, 0), (20, 0), 10, 10, 4, 4, 0)
+
+
+# ─── Phase 1 + Phase 2 ────────────────────────────────────────────────────────
+
+
+class TestPhase1Config:
+    """Test per Phase1Config."""
+
+    def test_default_values(self):
+        cfg = Phase1Config()
+        assert cfg.stage_width == 20.0
+        assert cfg.stage_depth == 15.0
+        assert cfg.letter_shape == "random"
+        assert cfg.rotation == 0.0
+        assert cfg.delimitation == "fault_lines"
+
+    def test_custom_rotation(self):
+        cfg = Phase1Config(rotation=45.0, letter_shape="T")
+        assert cfg.rotation == 45.0
+        assert cfg.letter_shape == "T"
+
+
+class TestPhase2Config:
+    """Test per Phase2Config."""
+
+    def test_default_values(self):
+        cfg = Phase2Config()
+        assert cfg.num_targets == 8
+        assert cfg.shooting_positions == []
+        assert cfg.include_no_shoots is True
+
+    def test_shooting_positions_default_to_empty(self):
+        cfg = Phase2Config()
+        assert cfg.shooting_positions == []
+
+    def test_custom_positions(self):
+        cfg = Phase2Config(
+            shooting_positions=[(10.0, 5.0, True), (12.0, 7.0, False)]
+        )
+        assert len(cfg.shooting_positions) == 2
+        assert cfg.shooting_positions[0] == (10.0, 5.0, True)
+
+
+class TestGeneratePerimeter:
+    """Test per generate_perimeter() — Fase 1."""
+
+    def test_generate_returns_stage_and_poly(self):
+        """generate_perimeter() restituisce (Stage, list)."""
+        cfg = Phase1Config(stage_width=20.0, stage_depth=15.0,
+                           letter_shape="O")
+        stage, poly = StageGenerator.generate_perimeter(cfg)
+        assert isinstance(stage, Stage)
+        assert isinstance(poly, list)
+        assert len(poly) >= 4
+        assert stage.width == 20.0
+        assert stage.depth == 15.0
+
+    def test_generated_stage_has_perimeter_items(self):
+        """Lo stage generato ha item perimetrali."""
+        cfg = Phase1Config(stage_width=20.0, stage_depth=15.0,
+                           letter_shape="Q")
+        stage, poly = StageGenerator.generate_perimeter(cfg)
+        assert len(stage.items) >= 4
+        # Tutti gli item devono essere perimetrali
+        for it in stage.items:
+            assert it.properties.get("perimeter") is True
+
+    def test_perimeter_poly_saved_in_properties(self):
+        """Il poligono è salvato in properties."""
+        cfg = Phase1Config(stage_width=20.0, stage_depth=15.0,
+                           letter_shape="T")
+        stage, poly = StageGenerator.generate_perimeter(cfg)
+        saved = stage.properties.get("perimeter_poly")
+        assert saved is not None
+        assert len(saved) >= 4
+
+    def test_arbitrary_rotation(self):
+        """Rotazione arbitraria (non solo multipli di 90) funziona."""
+        cfg = Phase1Config(stage_width=20.0, stage_depth=15.0,
+                           letter_shape="U", rotation=45.0)
+        stage, poly = StageGenerator.generate_perimeter(cfg)
+        from core.geometry import validate_polygon
+        valid, errors = validate_polygon(poly)
+        assert valid, f"Poligono con rotazione 45° invalido: {errors}"
+
+    def test_different_shapes(self):
+        """Ogni forma lettera produce un poligono valido."""
+        from core.geometry import validate_polygon
+        for shape in ["Q", "O", "T", "U", "L", "H"]:
+            cfg = Phase1Config(stage_width=20.0, stage_depth=15.0,
+                               letter_shape=shape)
+            _, poly = StageGenerator.generate_perimeter(cfg)
+            valid, errors = validate_polygon(poly)
+            assert valid, f"Forma {shape} invalida: {errors}"
+
+
+class TestPlaceTargetsAndObstacles:
+    """Test per place_targets_and_obstacles() — Fase 2."""
+
+    def test_raises_without_perimeter(self):
+        """Lancia ValueError se non c'è perimetro."""
+        stage = Stage(width=20.0, depth=15.0)
+        cfg = Phase2Config(num_targets=2)
+        with pytest.raises(ValueError, match="Nessun perimetro"):
+            StageGenerator.place_targets_and_obstacles(stage, cfg)
+
+    def test_places_targets_and_obstacles(self):
+        """Dato un perimetro, posiziona bersagli e ostacoli."""
+        p1 = Phase1Config(stage_width=25.0, stage_depth=20.0, letter_shape="O")
+        stage, poly = StageGenerator.generate_perimeter(p1)
+        initial_count = len(stage.items)
+        p2 = Phase2Config(
+            num_targets=4, num_poppers=1, num_plates=0,
+            num_moving=0, num_walls=1, num_barriers=2,
+            include_no_shoots=False,
+        )
+        result = StageGenerator.place_targets_and_obstacles(stage, p2, poly)
+        # place_targets_and_obstacles modifica stage in-place E lo restituisce
+        assert len(result.stage.items) > initial_count
+        assert result.score > 0
+
+    def test_uses_provided_poly(self):
+        """Usa il poly passato esplicitamente."""
+        p1 = Phase1Config(stage_width=30.0, stage_depth=20.0, letter_shape="Q")
+        stage, poly = StageGenerator.generate_perimeter(p1)
+        p2 = Phase2Config(num_targets=3)
+        result = StageGenerator.place_targets_and_obstacles(stage, p2, poly)
+        assert result.score > 0
+        assert len(result.stage.items) >= 4  # perimeter + targets
+
+    def test_uses_stage_properties_poly_fallback(self):
+        """Se poly non passato, usa stage.properties."""
+        p1 = Phase1Config(stage_width=25.0, stage_depth=18.0, letter_shape="T")
+        stage, poly = StageGenerator.generate_perimeter(p1)
+        # Rimuovi poly dalla chiamata — deve usare quello in properties
+        p2 = Phase2Config(num_targets=2)
+        result = StageGenerator.place_targets_and_obstacles(stage, p2)
+        assert result.score > 0
+
+
+class TestGenerateBackwardCompat:
+    """Test retrocompatibilità: generate() funziona come prima."""
+
+    def test_generate_still_works(self):
+        """generate() con GeneratorConfig produce risultato valido."""
+        cfg = GeneratorConfig(seed=42, num_targets=4)
+        result = StageGenerator(cfg).generate()
+        assert isinstance(result, GeneratorResult)
+        assert result.score > 0
+        assert len(result.stage.items) > 5

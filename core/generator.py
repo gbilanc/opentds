@@ -54,6 +54,34 @@ from core.shapes import (
     perimeter_to_items as _perimeter_to_items,
     polygon_to_shapely as _perimeter_to_shapely_polygon,
 )
+
+
+# ── Helper per estrarre poligono dalle properties ──────────────
+
+def _get_perimeter_poly(stage: Stage) -> list[tuple[float, float]] | None:
+    """Recupera il poligono dell'area di tiro dalle properties dello stage.
+
+    Usa prima `perimeter_poly` salvato dal generatore, poi tenta
+    la ricostruzione dalle fault-line perimetrali.
+    """
+    poly = stage.properties.get("perimeter_poly")
+    if poly:
+        return [(round(x, 2), round(y, 2)) for x, y in poly]
+    # Tentativo di ricostruzione dalle fault-line perimetrali
+    try:
+        from ui.editor.stage_scene import _build_polygon_from_fault_lines
+        return _build_polygon_from_fault_lines(stage.items)
+    except ImportError:
+        return None
+
+
+def _assign_ids(items: list[StageItem]) -> None:
+    """Assegna ID univoci progressivi a tutti gli item."""
+    next_id = max((it.id for it in items if it.id > 0), default=0) + 1
+    for it in items:
+        if it.id == 0:
+            it.id = next_id
+            next_id += 1
 from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
 from core.scoring import (
     is_paper_like as _is_paper_like,
@@ -94,6 +122,42 @@ class GeneratorConfig:
 
 
 @dataclass
+class Phase1Config:
+    """Configurazione per la Fase 1: generazione dell'area di tiro."""
+    stage_width: float = 20.0
+    stage_depth: float = 15.0
+    letter_shape: str = "random"  # random | Q | O | T | U | W | X | Y | Z
+    rotation: float = 0.0       # gradi 0-360
+    delimitation: str = "fault_lines"  # fault_lines | barriers | walls | mixed
+    seed: Optional[int] = None
+    discipline: str = "ipsc_pistol"
+
+
+@dataclass
+class Phase2Config:
+    """Configurazione per la Fase 2: posizionamento bersagli e ostacoli."""
+    shooting_positions: list[tuple[float, float, bool]] = None  # (x, y, is_start)
+    num_targets: int = 8
+    num_poppers: int = 1
+    num_plates: int = 1
+    num_mini: int = 0
+    num_moving: int = 1
+    num_walls: int = 1
+    num_barriers: int = 4
+    include_no_shoots: bool = True
+    include_activators: bool = True
+    difficulty: str = "medium"
+    course_type: str = ""
+    auto_distribution: bool = True
+    seed: Optional[int] = None
+    max_attempts: int = 500
+
+    def __post_init__(self):
+        if self.shooting_positions is None:
+            self.shooting_positions = []
+
+
+@dataclass
 class GeneratorResult:
     stage: Stage
     score: float
@@ -124,83 +188,101 @@ class StageGenerator:
         else:
             self._obb_cache.pop(item_id, None)
 
-    def generate(self) -> GeneratorResult:
-        """Genera uno stage IPSC.
+    # ═══════════════════════════════════════════════════════════════
+    #  Fase 1: Generazione perimetro area di tiro
+    # ═══════════════════════════════════════════════════════════════
 
-        Genera una volta, applica post-processing per ridurre le
-        violazioni, e restituisce il risultato.
+    @staticmethod
+    def generate_perimeter(phase1: Phase1Config) -> tuple[Stage, list[tuple[float, float]]]:
+        """Genera solo il perimetro dell'area di tiro (Fase 1).
+
+        Crea uno Stage con le dimensioni specificate, genera il poligono
+        dell'area di tiro a forma di lettera, e produce gli item perimetrali
+        (fault lines o barriere). Non posiziona bersagli né ostacoli.
+
+        Returns:
+            (stage, perimeter_poly) — stage con solo perimetro popolato
         """
-        cfg = self.config
-        disc = cfg.discipline
-
-        # Tenta fino a 3 seed diversi
-        for retry in range(3):
-            result = self._generate_once(cfg, disc)
-            engine = IPSCRulesEngine(result.stage)
-            engine.set_discipline(disc)
-            v = engine.validate()
-
-            if not v.violations:
-                return result
-
-            # Ignora soft violations (no-shoot raccomandati)
-            critical = [x for x in v.violations if "no-shoot" not in x.lower()]
-            if not critical:
-                return result
-
-            # Se abbiamo un seed iniziale, usa incremento deterministico
-            # invece di random.seed() (che usa entropia di sistema)
-            if cfg.seed is not None:
-                random.seed(cfg.seed + retry + 1)
-            else:
-                random.seed()
-
-        return result
-
-    def _generate_once(self, cfg: GeneratorConfig, disc: str) -> GeneratorResult:
-        """Esegue una singola generazione di stage (senza validazione)."""
-        if disc == "mini_rifle":
-            w = cfg.stage_width or 30.0
-            d = cfg.stage_depth or 20.0
-        elif disc == "shotgun":
-            w = cfg.stage_width or 15.0
-            d = cfg.stage_depth or 12.0
-        else:
-            w = cfg.stage_width
-            d = cfg.stage_depth
-
-        # Assicura dimensioni minime per evitare backstop violations
-        min_depth_needed = IPSCRulesEngine.MIN_BACKSTOP_DEPTH + 5.0
-        if d < min_depth_needed:
-            d = min_depth_needed
-
-        ct = None
-        if cfg.course_type in ("short", "medium", "long"):
-            ct = CourseType(cfg.course_type)
-        stage = Stage(name="Stage Generato", width=w, depth=d, course_type=ct)
-        engine = IPSCRulesEngine(stage)
-        engine.set_discipline(disc)
-        items: List[StageItem] = []
-        attempts = 0
-
-        # 1. Genera perimetro AREA DI TIRO (lettera dell'alfabeto)
-        has_steel = (
-            cfg.num_steel > 0 or cfg.num_poppers > 0 or cfg.num_plates > 0
-            or (cfg.auto_distribution and cfg.course_type)
+        stage = Stage(
+            name="Stage - Fase 1",
+            width=phase1.stage_width,
+            depth=phase1.stage_depth,
         )
+        items: list[StageItem] = []
+
         poly = _generate_perimeter_polygon(
             stage,
-            letter_shape=cfg.letter_shape,
-            has_steel=has_steel,
+            letter_shape=phase1.letter_shape,
+            rotation=phase1.rotation,
         )
-        self._perimeter_poly = poly
-        stage.properties["perimeter_poly"] = [(round(x, 2), round(y, 2)) for x, y in poly]
-        self._interior_samples = self._sample_interior_points(20)
-        items.extend(_perimeter_to_items(poly, style=cfg.delimitation))
+        stage.properties["perimeter_poly"] = [
+            (round(x, 2), round(y, 2)) for x, y in poly
+        ]
+        items.extend(_perimeter_to_items(
+            poly,
+            style=phase1.delimitation,
+            stage_width=phase1.stage_width,
+            stage_depth=phase1.stage_depth,
+        ))
 
-        # ── Risolvi conteggi bersagli da course_type ──
+        _assign_ids(items)
+        stage.items = items
+        stage._next_id = max((it.id for it in items), default=0) + 1
+        return stage, poly
+
+    # ═══════════════════════════════════════════════════════════════
+    #  Fase 2: Posizionamento bersagli e ostacoli
+    # ═══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def place_targets_and_obstacles(
+        stage: Stage,
+        phase2: Phase2Config,
+        perimeter_poly: list[tuple[float, float]] | None = None,
+    ) -> GeneratorResult:
+        """Posiziona bersagli, ostacoli, no-shoot e shooting positions
+        in uno stage che ha già un perimetro area di tiro definito (Fase 2).
+
+        Il poligono del perimetro viene recuperato da:
+        1. `perimeter_poly` passato direttamente
+        2. `stage.properties["perimeter_poly"]`
+
+        Returns:
+            GeneratorResult con stage completo e score
+        """
+        poly = perimeter_poly
+        if poly is None:
+            poly = _get_perimeter_poly(stage)
+        if not poly:
+            raise ValueError(
+                "Nessun perimetro area di tiro definito. "
+                "Esegui prima la Fase 1 (generate_perimeter)."
+            )
+
+        disc = "ipsc_pistol"
+        cfg = phase2
+
+        gen = StageGenerator(
+            GeneratorConfig(
+                stage_width=stage.width,
+                stage_depth=stage.depth,
+                num_walls=cfg.num_walls,
+                num_barriers=cfg.num_barriers,
+            )
+        )
+        gen._perimeter_poly = poly
+        gen._interior_samples = gen._sample_interior_points(20)
+        gen.config.seed = cfg.seed
+        if cfg.seed is not None:
+            random.seed(cfg.seed)
+
+        engine = IPSCRulesEngine(stage)
+        engine.set_discipline(disc)
+        items = list(stage.items)
+        attempts = 0
+
         resolved = _resolve_target_counts(
-            cfg.num_targets, cfg.num_steel, cfg.num_poppers, cfg.num_plates,
+            cfg.num_targets, 0, cfg.num_poppers, cfg.num_plates,
             cfg.num_mini, cfg.num_moving,
             cfg.auto_distribution, cfg.course_type,
         )
@@ -211,173 +293,275 @@ class StageGenerator:
         num_moving = resolved["moving"]
         include_activators = cfg.include_activators and (num_poppers > 0 or num_plates > 0)
 
-        # 2. Posiziona bersagli INTORNO all'area di tiro (fuori dal perimetro)
-        min_targets = IPSCRulesEngine.MIN_TARGETS
+        _dbg = lambda msg: None  # debug silenzioso
+        _dbg(f"Phase2: paper={num_paper}, poppers={num_poppers}, plates={num_plates}, "
+             f"mini={num_mini}, moving={num_moving}, walls={cfg.num_walls}, "
+             f"barriers={cfg.num_barriers}, noshoot={cfg.include_no_shoots}")
 
-        # 2a. Paper targets + mini targets (mescolati per varietà)
+        # 1. Paper targets + mini targets
         combined_paper = num_paper + num_mini
         paper_placed = 0
         for _ in range(combined_paper * 3):
             if paper_placed >= combined_paper:
                 break
-            # Alterna mini e paper
             if paper_placed < num_mini:
                 ttype = ItemType.MINI_TARGET if paper_placed % 2 == 0 else ItemType.PAPER_TARGET
             else:
                 ttype = ItemType.PAPER_TARGET
-            it = self._place_target_around(stage, items, ttype, engine)
+            it = gen._place_target_around(stage, items, ttype, engine)
             if it:
                 items.append(it)
                 paper_placed += 1
             attempts += 1
+        _dbg(f"  Placed paper/mini: {paper_placed}/{combined_paper}")
 
-        # 2b. Poppers calibrati (App. C1-C2)
+        # 2. Poppers
         poppers_placed = 0
         for _ in range(num_poppers * 3):
             if poppers_placed >= num_poppers:
                 break
-            it = self._place_target_around(stage, items, ItemType.POPPER, engine)
+            it = gen._place_target_around(stage, items, ItemType.POPPER, engine)
             if it:
-                # Proprietà popper calibrato
                 it.properties["calibrated"] = True
                 it.properties["calibration_pf"] = 125
                 items.append(it)
                 poppers_placed += 1
             attempts += 1
+        _dbg(f"  Placed poppers: {poppers_placed}/{num_poppers}")
 
-        # 2c. Metal plates non calibrati (App. C3)
+        # 3. Metal plates
         plates_placed = 0
         for _ in range(num_plates * 3):
             if plates_placed >= num_plates:
                 break
-            it = self._place_target_around(stage, items, ItemType.METAL_PLATE, engine)
+            it = gen._place_target_around(stage, items, ItemType.METAL_PLATE, engine)
             if it:
                 items.append(it)
                 plates_placed += 1
             attempts += 1
+        _dbg(f"  Placed plates: {plates_placed}/{num_plates}")
 
-        # 2d. Reg. 4.3.3.3: se ci sono piatti metallici, serve almeno
-        #     un bersaglio carta o Popper che assegni punti
+        # 4. Reg. 4.3.3.3
         has_plates = any(it.item_type == ItemType.METAL_PLATE for it in items)
         has_paper_or_popper = any(
             it.item_type in (ItemType.PAPER_TARGET, ItemType.POPPER)
             for it in items)
         if has_plates and not has_paper_or_popper:
             for _ in range(5):
-                it = self._place_target_around(
+                it = gen._place_target_around(
                     stage, items, ItemType.PAPER_TARGET, engine)
                 if it:
                     items.append(it)
                     break
                 attempts += 1
 
-        # 2e. Se non abbiamo abbastanza bersagli, aggiungi paper
-        fill_attempts = 0
+        # 5. Raggiungi minimo bersagli
+        min_targets = IPSCRulesEngine.MIN_TARGETS
         while len([x for x in items if _is_scoring_target(x.item_type)]) < min_targets:
-            it = self._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
+            it = gen._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
             if it:
                 items.append(it)
             attempts += 1
-            fill_attempts += 1
-            if fill_attempts > 50:
+            if attempts > 50:
                 break
 
-        # 2e. Pre-assegna ID a tutti gli item (prima degli attivatori)
-        all_ids = {it.id for it in items if it.id > 0}
-        next_id = max(all_ids) + 1 if all_ids else 1
-        for it in items:
-            if it.id == 0:
-                it.id = next_id
-                next_id += 1
-
-        # 2f. Attivatori: collega poppers/plates a paper target vicini
+        # 6. Attivatori
+        _assign_ids(items)
         if include_activators:
             activator_items = [it for it in items
                                if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)]
             if activator_items:
-                _create_activator_relationships(stage, items, activator_items, self._perimeter_poly)
+                _create_activator_relationships(stage, items, activator_items, poly)
 
-        # 3. Bersagli mobili
+        # 7. Bersagli mobili
         moving_types_list = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
         for i in range(num_moving):
             mtype = moving_types_list[i % len(moving_types_list)]
-            it = self._place_target_around(stage, items, mtype, engine, is_moving=True)
+            it = gen._place_target_around(stage, items, mtype, engine, is_moving=True)
             if it:
                 items.append(it)
             attempts += 1
+        _dbg(f"  Placed moving: {sum(1 for x in items if x.item_type in moving_types_list)}/{num_moving}")
 
-        # 4. Muri/barriere FUORI dall'area di tiro
-        items.extend(self._generate_walls(stage, items))
-        items.extend(self._generate_barriers(stage, items))
+        # 8. Muri/barriere
+        walls_before = len(items)
+        items.extend(gen._generate_walls(stage, items))
+        items.extend(gen._generate_barriers(stage, items))
+        _dbg(f"  Walls+barriers placed: {len(items) - walls_before}")
 
-        # 5. Aggiunge muri/barriere restrittivi per max 9 colpi/posizione
-        items.extend(self._add_restrictive_walls(stage, items, engine))
+        # 9. Muri restrittivi
+        items.extend(gen._add_restrictive_walls(stage, items, engine))
 
-        # 6. No-shoots (con fallback posizionale)
+        # 10. No-shoot
         if cfg.include_no_shoots:
             ns_count = max(1, len([x for x in items if _is_scoring_target(x.item_type)]) // 4)
             ns_placed = 0
             for _ in range(ns_count * 3):
                 if ns_placed >= ns_count:
                     break
-                it = self._place_no_shoot(stage, items, engine)
+                it = gen._place_no_shoot(stage, items, engine)
                 if it:
                     items.append(it)
                     ns_placed += 1
                 attempts += 1
-            if ns_placed < ns_count and self._perimeter_poly:
+            if ns_placed < ns_count and poly:
                 papers = [x for x in items
                           if x.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)]
                 if papers:
                     for _ in range(ns_count - ns_placed):
                         p = random.choice(papers)
-                        dx, dy = 0.4, 0.0
-                        nx = p.x + dx
-                        ny = p.y + dy
+                        nx = p.x + 0.4
+                        ny = p.y
                         margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
                         if (margin <= nx <= stage.width - margin and
                             margin <= ny <= stage.depth - margin):
                             ns = StageItem(0, ItemType.NO_SHOOT, nx, ny,
-                                           0.45, 0.45, 0, TARGET_COLORS["no_shoot"], "No-Shoot")
+                                           0.45, 0.45, 0,
+                                           TARGET_COLORS["no_shoot"], "No-Shoot")
                             items.append(ns)
                             ns_placed += 1
+            _dbg(f"  Placed no-shoot: {ns_placed}/{ns_count}")
 
-        # 7. Garantisce visibilità (solo per fault lines)
-        if cfg.delimitation == "fault_lines":
-            items = self._ensure_target_visibility(stage, items)
+        items = gen._separate_overlapping(stage, items, engine)
 
-        # 8. Post-processing
-        items = self._separate_overlapping(stage, items, engine)
-
-        # Assegna ID finali a tutti gli item (anche quelli aggiunti dopo muri/no-shoot)
-        next_id_final = max((it.id for it in items if it.id > 0), default=0) + 1
-        for it in items:
-            if it.id == 0:
-                it.id = next_id_final
-                next_id_final += 1
+        _assign_ids(items)
         stage.items = items
         stage._next_id = max((it.id for it in items), default=0) + 1
 
-        # 9. Genera shooting positions automatiche (F2.1)
-        if not stage.shooting_positions:
-            stage.shooting_positions = self._generate_shooting_positions(stage, poly)
+        # 13. Shooting positions
+        if cfg.shooting_positions:
+            from core.models import ShootingPosition
+            stage.shooting_positions = [
+                ShootingPosition(
+                    id=i + 1, x=x, y=y, label="Start" if is_start else f"Pos {i + 1}",
+                    is_start=is_start, angle=90.0
+                )
+                for i, (x, y, is_start) in enumerate(cfg.shooting_positions)
+            ]
+        else:
+            stage.shooting_positions = gen._generate_shooting_positions(stage, poly)
 
-        # 9a. Raffina rotazioni bersagli verso la shooting position più vicina
-        self._refine_target_rotations(stage, items)
+        gen._refine_target_rotations(stage, items)
 
-        # 10. Popola metadati briefing
         _populate_stage_metadata(
             stage, cfg.difficulty, num_poppers, num_plates, num_moving)
 
         score = _score_stage(
             stage, items,
-            perimeter_poly=self._perimeter_poly,
-            interior_samples=self._interior_samples,
-            get_blocking_walls_fn=lambda: self._get_blocking_walls(items),
-            is_target_visible_fn=lambda t, b: self._is_target_visible(t, b),
+            perimeter_poly=poly,
+            interior_samples=gen._interior_samples,
+            get_blocking_walls_fn=lambda: gen._get_blocking_walls(items),
+            is_target_visible_fn=lambda t, b: gen._is_target_visible(t, b),
             config_difficulty=cfg.difficulty,
         )
+        _dbg(f"  FINAL: {len(items)} items, score={score:.1f}")
         return GeneratorResult(stage=stage, score=score, attempts=attempts)
+
+    # ═══════════════════════════════════════════════════════════════
+    #  Generazione completa (Fase 1 + 2 legacy)
+    # ═══════════════════════════════════════════════════════════════
+
+    def generate(self) -> GeneratorResult:
+        """Genera uno stage IPSC completo (Fase 1 + 2).
+
+        Mantenuto per retrocompatibilità. Per il nuovo flusso a 2 fasi,
+        usa `generate_perimeter()` e `place_targets_and_obstacles()`.
+        """
+        cfg = self.config
+        disc = cfg.discipline
+
+        for retry in range(3):
+            phase1 = Phase1Config(
+                stage_width=cfg.stage_width,
+                stage_depth=cfg.stage_depth,
+                letter_shape=cfg.letter_shape,
+                delimitation=cfg.delimitation,
+                seed=cfg.seed,
+                discipline=disc,
+            )
+            stage, poly = self.generate_perimeter(phase1)
+            self._perimeter_poly = poly
+            self._interior_samples = self._sample_interior_points(20)
+
+            has_steel = (
+                cfg.num_steel > 0 or cfg.num_poppers > 0 or cfg.num_plates > 0
+                or (cfg.auto_distribution and cfg.course_type)
+            )
+            phase2 = Phase2Config(
+                num_targets=cfg.num_targets,
+                num_poppers=cfg.num_poppers,
+                num_plates=cfg.num_plates,
+                num_mini=cfg.num_mini,
+                num_moving=cfg.num_moving,
+                num_walls=cfg.num_walls,
+                num_barriers=cfg.num_barriers,
+                include_no_shoots=cfg.include_no_shoots,
+                include_activators=cfg.include_activators,
+                difficulty=cfg.difficulty,
+                course_type=cfg.course_type,
+                auto_distribution=cfg.auto_distribution,
+                seed=cfg.seed,
+                max_attempts=cfg.max_attempts,
+            )
+            result = self.place_targets_and_obstacles(stage, phase2, poly)
+
+            engine = IPSCRulesEngine(result.stage)
+            engine.set_discipline(disc)
+            v = engine.validate()
+
+            if not v.violations:
+                return result
+
+            critical = [x for x in v.violations if "no-shoot" not in x.lower()]
+            if not critical:
+                return result
+
+            if cfg.seed is not None:
+                random.seed(cfg.seed + retry + 1)
+            else:
+                random.seed()
+
+        return result
+
+    # ═══════════════════════════════════════════════════════════════
+    #  Metodi originali (usati da entrambe le fasi)
+    # ═══════════════════════════════════════════════════════════════
+
+    def _generate_once(self, cfg: GeneratorConfig, disc: str) -> GeneratorResult:
+        """Esegue una singola generazione di stage (wrapper legacy).
+
+        Mantenuto per retrocompatibilità con eventuali chiamate esterne.
+        """
+        # Costruisce Phase1Config e Phase2Config da GeneratorConfig
+        phase1 = Phase1Config(
+            stage_width=cfg.stage_width,
+            stage_depth=cfg.stage_depth,
+            letter_shape=cfg.letter_shape,
+            delimitation=cfg.delimitation,
+            seed=cfg.seed,
+            discipline=disc,
+        )
+        stage, poly = self.generate_perimeter(phase1)
+        self._perimeter_poly = poly
+        self._interior_samples = self._sample_interior_points(20)
+
+        phase2 = Phase2Config(
+            num_targets=cfg.num_targets,
+            num_poppers=cfg.num_poppers,
+            num_plates=cfg.num_plates,
+            num_mini=cfg.num_mini,
+            num_moving=cfg.num_moving,
+            num_walls=cfg.num_walls,
+            num_barriers=cfg.num_barriers,
+            include_no_shoots=cfg.include_no_shoots,
+            include_activators=cfg.include_activators,
+            difficulty=cfg.difficulty,
+            course_type=cfg.course_type,
+            auto_distribution=cfg.auto_distribution,
+            seed=cfg.seed,
+            max_attempts=cfg.max_attempts,
+        )
+        return self.place_targets_and_obstacles(stage, phase2, poly)
 
     def _generate_walls(self, stage: Stage, existing: List[StageItem]) -> List[StageItem]:
         """Genera muri FUORI dal perimetro che oscurano bersagli."""
@@ -428,11 +612,63 @@ class StageGenerator:
         from shapely import intersects as sh_intersect
         return sh_intersect(item_obb_geom, entrance)
 
+    @staticmethod
+    def _push_outside_perimeter(
+        wx: float, wy: float,
+        poly: list[tuple[float, float]],
+        min_dist: float = 0.3,
+    ) -> tuple[float, float]:
+        """Sposta il punto (wx, wy) verso l'esterno del perimetro
+        se si trova al suo interno.
+
+        Calcola il punto più vicino sul bordo del poligono e si
+        sposta verso l'esterno lungo la normale.
+        """
+        from core.geometry import point_in_polygon
+        if not point_in_polygon(wx, wy, poly):
+            return (wx, wy)
+
+        # Trova il segmento più vicino del poligono
+        best_dist = float('inf')
+        best_nx = best_ny = 0.0
+        n = len(poly)
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            # Vettore segmento
+            sx, sy = x2 - x1, y2 - y1
+            seg_len = math.hypot(sx, sy)
+            if seg_len < 0.01:
+                continue
+            # Proiezione del punto sul segmento
+            t = ((wx - x1) * sx + (wy - y1) * sy) / (seg_len * seg_len)
+            t = max(0.0, min(1.0, t))
+            px = x1 + t * sx
+            py = y1 + t * sy
+            # Distanza
+            d = math.hypot(wx - px, wy - py)
+            if d < best_dist:
+                best_dist = d
+                # Normale uscente (assumendo poligono antiorario)
+                best_nx = sy / seg_len  # normale = (sy, -sx) / len
+                best_ny = -sx / seg_len
+
+        if best_dist < float('inf'):
+            wx = wx + best_nx * (min_dist + best_dist * 1.1)
+            wy = wy + best_ny * (min_dist + best_dist * 1.1)
+
+        return (wx, wy)
+
     def _place_blocking_items(self, stage: Stage, existing: List[StageItem],
                                count: int, item_type: ItemType,
                                base_width: callable, base_height: float,
                                color: str, label: str) -> List[StageItem]:
-        """Piazza item (muri/barriere) fuori dall'area di tiro, tra area e bersagli.
+        """Piazza item (muri/barriere) fuori dall'area di tiro.
+
+        Strategia:
+        1. Prima prova a posizionare lungo la linea di vista (tra area e bersaglio)
+        2. Se la posizione cade dentro l'area, la spinge all'esterno
+        3. Fallback: posiziona lungo il bordo del perimetro
 
         Regole:
         - Deve bloccare almeno 1 bersaglio (linea di vista)
@@ -449,13 +685,13 @@ class StageGenerator:
 
         min_visible = max(1, math.ceil(len(targets) * 0.7)) if targets else 1
         margin = MIN_TARGET_TO_EDGE
-
-        # Poligono area di tiro come shapely Polygon per OBB intersection check
         area_poly = _perimeter_to_shapely_polygon(self._perimeter_poly)
 
         for _ in range(count):
             placed = False
-            # Passata 1: cerca posizione che blocchi almeno 1 bersaglio
+
+            # Passata 1: posiziona lungo la linea di vista, spingendo fuori
+            # se necessario
             for _ in range(150):
                 if not targets or not self._interior_samples:
                     break
@@ -472,8 +708,13 @@ class StageGenerator:
                 t_frac = random.uniform(0.3, 0.7)
                 wx = ox + nx * dist * t_frac
                 wy = oy + ny * dist * t_frac
-                wx = max(1.5, min(stage.width - 1.5, wx))
-                wy = max(1.5, min(stage.depth - 1.5, wy))
+
+                # Sposta fuori dal perimetro se necessario
+                wx, wy = self._push_outside_perimeter(
+                    wx, wy, self._perimeter_poly, min_dist=0.3)
+
+                wx = max(margin, min(stage.width - margin, wx))
+                wy = max(margin, min(stage.depth - margin, wy))
 
                 angle_to_target = math.degrees(math.atan2(dy, dx))
                 rotation = angle_to_target + random.choice([-90, 90])
@@ -482,13 +723,11 @@ class StageGenerator:
                                  base_width(), base_height,
                                  rotation, color, label)
 
-                # OBB: non deve intersecare l'area di tiro
                 item_obb_geom = item_obb(item)
                 if item_obb_geom is not None and area_poly is not None:
                     if shapely_intersects(item_obb_geom, area_poly):
                         continue
 
-                # OBB: non deve sovrapporsi ad altre barriere/muri esistenti
                 if item_obb_geom is not None:
                     from shapely import intersects as sh_intersect
                     overlaps_obstacle = False
@@ -502,11 +741,9 @@ class StageGenerator:
                     if overlaps_obstacle:
                         continue
 
-                # NON deve bloccare l'ingresso all'area di tiro
                 if self._blocks_entrance_corridor(item, stage.width):
                     continue
 
-                # Deve bloccare ALMENO 1 bersaglio
                 blocks_any = False
                 for t2 in targets:
                     for ox2, oy2 in self._interior_samples:
@@ -530,29 +767,43 @@ class StageGenerator:
                 visible_now = sum(1 for t2 in targets
                                   if self._is_target_visible(t2, test_blockers))
                 if visible_now >= min_visible:
-                    item.properties["protected"] = True  # non rimuovere in ensure_visibility
+                    item.properties["protected"] = True
                     items.append(item)
                     placed = True
                     break
 
-            # Passata 2 (fallback): cerca posizione che blocchi ALMENO 1 bersaglio
+            # Passata 2 (fallback): posiziona al bordo del perimetro
             if not placed:
                 for _ in range(100):
-                    if not targets or not self._interior_samples:
+                    if not targets or not self._perimeter_poly:
                         break
                     t = random.choice(targets)
-                    ox, oy = random.choice(self._interior_samples)
-                    dx = t.x - ox
-                    dy = t.y - oy
-                    dist = math.hypot(dx, dy)
-                    if dist < 2.0:
+                    # Scegli un lato del poligono
+                    poly = self._perimeter_poly
+                    n = len(poly)
+                    edge_idx = random.randint(0, n - 1)
+                    x1, y1 = poly[edge_idx]
+                    x2, y2 = poly[(edge_idx + 1) % n]
+                    # Posizione lungo il lato
+                    t_frac = random.uniform(0.2, 0.8)
+                    wx = x1 + (x2 - x1) * t_frac
+                    wy = y1 + (y2 - y1) * t_frac
+                    # Sposta verso l'esterno
+                    seg_len = math.hypot(x2 - x1, y2 - y1)
+                    if seg_len < 0.3:
                         continue
-                    nx, ny = dx / dist, dy / dist
-                    t_frac = random.uniform(0.3, 0.7)
-                    wx = ox + nx * dist * t_frac
-                    wy = oy + ny * dist * t_frac
-                    wx = max(1.5, min(stage.width - 1.5, wx))
-                    wy = max(1.5, min(stage.depth - 1.5, wy))
+                    nx = (y2 - y1) / seg_len
+                    ny = -(x2 - x1) / seg_len
+                    out_dist = random.uniform(0.3, 1.5)
+                    wx += nx * out_dist
+                    wy += ny * out_dist
+
+                    wx = max(margin, min(stage.width - margin, wx))
+                    wy = max(margin, min(stage.depth - margin, wy))
+
+                    # Orientamento perpendicolare alla linea area→bersaglio
+                    dx = t.x - wx
+                    dy = t.y - wy
                     angle_to_target = math.degrees(math.atan2(dy, dx))
                     rotation = angle_to_target + random.choice([-90, 90])
 
@@ -560,17 +811,14 @@ class StageGenerator:
                                      base_width(), base_height,
                                      rotation, color, label)
 
-                    # OBB: non deve intersecare area di tiro
                     item_obb_geom = item_obb(item)
                     if item_obb_geom is not None and area_poly is not None:
                         if shapely_intersects(item_obb_geom, area_poly):
                             continue
 
-                    # NON deve bloccare l'ingresso all'area di tiro
                     if self._blocks_entrance_corridor(item, stage.width):
                         continue
 
-                    # Deve bloccare ALMENO 1 bersaglio (nessuna barriera inutile)
                     blocks_any = False
                     for t2 in targets:
                         for o2x, o2y in self._interior_samples:

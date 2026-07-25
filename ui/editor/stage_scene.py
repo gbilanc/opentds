@@ -103,6 +103,70 @@ def _build_polygon_from_fault_lines(items: list[StageItem]) -> list[tuple[float,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  ShootingPositionMarker — marker per posizione di tiro
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ShootingPositionMarker(QGraphicsItem):
+    """Marker circolare per una shooting position.
+
+    Usato durante la Fase 2 per visualizzare le posizioni di tiro
+    impostate dall'utente.
+    - Start: cerchio verde con "S"
+    - Intermedie: cerchio blu con numero
+    """
+
+    def __init__(self, x: float, y: float, scale: float,
+                 label: str = "S", is_start: bool = True,
+                 index: int = 1, parent=None):
+        super().__init__(parent)
+        self._x = x
+        self._y = y
+        self._scale = scale
+        self._label = label
+        self._is_start = is_start
+        self._index = index
+        self.setPos(x * scale, y * scale)
+        self.setZValue(10)  # sopra tutti
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+
+    def boundingRect(self):
+        s = 18
+        return QRectF(-9, -9, s, s)
+
+    def paint(self, painter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Cerchio
+        color = QColor("#22c55e") if self._is_start else QColor("#3b82f6")
+        painter.setBrush(QBrush(color))
+        if self.isSelected():
+            painter.setPen(QPen(QColor("#ffffff"), 3))
+        else:
+            painter.setPen(QPen(QColor("#0f172a"), 2))
+        painter.drawEllipse(-8, -8, 16, 16)
+        # Etichetta
+        painter.setPen(QPen(QColor("white"), 1))
+        f = painter.font()
+        f.setPointSize(8)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.drawText(self.boundingRect(),
+                         Qt.AlignmentFlag.AlignCenter, self._label)
+        painter.restore()
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._x = self.pos().x() / self._scale
+            self._y = self.pos().y() / self._scale
+        return super().itemChange(change, value)
+
+    @property
+    def pos_m(self) -> tuple[float, float]:
+        """Posizione in metri."""
+        return (self._x, self._y)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  ShootingAreaItem — evidenziazione area di tiro
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1037,15 +1101,24 @@ class StageScene(QGraphicsScene):
         self.itemUpdated.connect(lambda i: self._update_shooting_area())
 
     def _setup_grid(self):
-        # Rimuovi grid e shooting area precedenti
+        # Rimuovi grid e shooting area precedenti (se ancora validi)
         if hasattr(self, 'grid') and self.grid is not None:
-            self.removeItem(self.grid)
+            try:
+                self.removeItem(self.grid)
+            except RuntimeError:
+                pass  # C++ object già eliminato (es. dopo scene.clear())
         if self._shooting_area is not None:
-            self.removeItem(self._shooting_area)
+            try:
+                self.removeItem(self._shooting_area)
+            except RuntimeError:
+                pass
         self._shooting_area = None
         # Rimuovi vecchi stage item grafici dalla scena
-        for g in self._items.values():
-            self.removeItem(g)
+        for g in list(self._items.values()):
+            try:
+                self.removeItem(g)
+            except RuntimeError:
+                pass
         self._items.clear()
 
         self.grid = GridItem(self.stage.width, self.stage.depth, self.scale)
@@ -1360,3 +1433,38 @@ class StageScene(QGraphicsScene):
             if g and hasattr(g, 'update_from_model'):
                 g.update_from_model()
             self.itemUpdated.emit(item_id)
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Shooting position markers (Fase 2)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def add_shooting_position_marker(self, x: float, y: float,
+                                      is_start: bool = True,
+                                      index: int = 1) -> ShootingPositionMarker:
+        """Aggiunge un marker visivo per una shooting position.
+
+        Returns:
+            Il marker creato (può essere rimosso con removeItem).
+        """
+        label = "S" if is_start else str(index)
+        marker = ShootingPositionMarker(
+            x, y, self.scale,
+            label=label, is_start=is_start, index=index,
+        )
+        marker.setParentItem(self.grid)
+        self.addItem(marker)
+        return marker
+
+    def clear_shooting_position_markers(self):
+        """Rimuove tutti i marker di shooting position dalla scena."""
+        for item in list(self.items()):
+            if isinstance(item, ShootingPositionMarker):
+                self.removeItem(item)
+
+    def sync_shooting_positions(self):
+        """Sincronizza i marker con stage.shooting_positions."""
+        self.clear_shooting_position_markers()
+        for i, sp in enumerate(self.stage.shooting_positions):
+            self.add_shooting_position_marker(
+                sp.x, sp.y, is_start=sp.is_start, index=i + 1,
+            )

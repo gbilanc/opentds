@@ -254,6 +254,8 @@ def generate_perimeter_polygon(
 def perimeter_to_items(
     poly: List[Tuple[float, float]],
     style: str = "fault_lines",
+    stage_width: float = 20.0,
+    stage_depth: float = 15.0,
 ) -> List[StageItem]:
     """Converte il poligono del perimetro in item Stage.
 
@@ -265,6 +267,12 @@ def perimeter_to_items(
     Tutti gli item perimetrali ricevono `properties["perimeter"] = True`
     e `properties["closed_chain"] = True` per indicare che formano un
     ciclo chiuso.
+
+    Args:
+        poly: Lista di vertici (x, y) in senso antiorario.
+        style: Tipo di delimitazione (fault_lines, barriers, walls, mixed).
+        stage_width: Larghezza dello stage (usata per stile mixed).
+        stage_depth: Profondità dello stage (usata per stile mixed).
     """
     items: List[StageItem] = []
     n = len(poly)
@@ -339,7 +347,7 @@ def perimeter_to_items(
         angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
 
         if style == "mixed":
-            if abs(cy - stage.depth / 2) > abs(cx - stage.width / 2):
+            if abs(cy - stage_depth / 2) > abs(cx - stage_width / 2):
                 itype, thick, color, label = ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"
             else:
                 itype, thick, color, label = ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"

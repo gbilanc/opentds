@@ -11,13 +11,13 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import Stage, ItemType
-from core.generator import GeneratorConfig, GeneratorResult
+from core.generator import GeneratorConfig, Phase1Config, Phase2Config, GeneratorResult, StageGenerator
 from ui.editor.stage_scene import StageScene, StageItemWrapper
 from ui.editor.stage_view import StageView
 from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
 from ui.editor.stage_info import StageInfoPanel
-from ui.workers.generator_worker import GeneratorWorker
+from ui.workers.generator_worker import GeneratorWorker, Phase2Worker
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
 from services.openscad_exporter import (
@@ -240,8 +240,11 @@ class MainWindow(QMainWindow):
         self._scene.itemRemoved.connect(self._on_item_removed)
         self._scene.selectionChangedWrapper.connect(self._prop_dock.set_item)
         self._prop_dock.propertyChanged.connect(self._on_property_changed)
-        self._gen_panel.generateRequested.connect(self._on_generate_requested)
+        self._gen_panel.phase1Requested.connect(self._on_phase1_requested)
+        self._gen_panel.phase2Requested.connect(self._on_phase2_requested)
         self._gen_panel.stopRequested.connect(self._on_stop_requested)
+        self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
+        self._gen_panel.placeModeToggled.connect(self._view.set_placing_position_mode)
         # Sincronizzazione → Info
         self._scene.itemAdded.connect(self._refresh_info)
         self._scene.itemUpdated.connect(self._refresh_info)
@@ -407,6 +410,40 @@ class MainWindow(QMainWindow):
             if scad_path.exists():
                 scad_path.unlink()
 
+    @Slot(Phase1Config)
+    def _on_phase1_requested(self, phase1: Phase1Config):
+        """Esegue la Fase 1: generazione area di tiro (sul thread principale)."""
+        self._status.showMessage("Generazione area di tiro...")
+        try:
+            stage, poly = StageGenerator.generate_perimeter(phase1)
+            self._replace_stage(stage)
+            self._current_poly = poly
+            self._gen_panel.on_phase1_complete(stage.name)
+            self._status.showMessage("\u2705 Area di tiro generata")
+        except Exception as e:
+            self._gen_panel.on_phase1_error(str(e))
+            self._status.showMessage(f"\u274c Errore Fase 1: {e}")
+
+    @Slot(Phase2Config)
+    def _on_phase2_requested(self, phase2: Phase2Config):
+        """Esegue la Fase 2: posizionamento bersagli/ostacoli (in thread separato)."""
+        poly = getattr(self, '_current_poly', None)
+        if not poly:
+            poly = self._stage.properties.get("perimeter_poly")
+            if not poly:
+                self._gen_panel.on_phase2_error(
+                    "Nessuna area di tiro definita. Torna alla Fase 1.")
+                return
+            self._current_poly = poly
+
+        self._status.showMessage("Posizionamento bersagli e barriere...")
+        self._show_generating_dialog()
+        worker = Phase2Worker(self._stage, phase2, self._current_poly)
+        worker.signals.finished.connect(self._on_phase2_finished)
+        worker.signals.error.connect(self._on_phase2_error)
+        self._current_worker = worker
+        QThreadPool.globalInstance().start(worker)
+
     @Slot(GeneratorConfig)
     def _on_generate_requested(self, config: GeneratorConfig):
         self._status.showMessage("Generazione stage in corso\u2026")
@@ -448,7 +485,8 @@ class MainWindow(QMainWindow):
     def _on_stop_requested(self):
         self._status.showMessage("Generazione interrotta")
         self._hide_generating_dialog()
-        self._gen_panel.on_generation_finished()
+        self._gen_panel.on_phase1_complete()
+        self._current_worker = None
 
     @Slot(object)
     def _on_generation_finished(self, result: object):
@@ -462,15 +500,50 @@ class MainWindow(QMainWindow):
         )
         self._status.showMessage(msg)
         self._replace_stage(result.stage)
-        self._gen_panel.on_generation_finished()
+        self._gen_panel.on_phase1_complete()
+        self._current_worker = None
+
+    @Slot(object)
+    def _on_phase2_finished(self, result: object):
+        """Callback per completamento Fase 2."""
+        result: GeneratorResult = result
+        self._hide_generating_dialog()
+        msg = (
+            f"\u2705 Stage completo! "
+            f"Score: {result.score} | "
+            f"Tentativi: {result.attempts} | "
+            f"Item: {len(result.stage.items)}"
+        )
+        self._status.showMessage(msg)
+        self._replace_stage(result.stage)
+        self._gen_panel.on_phase2_complete()
+        poly = result.stage.properties.get("perimeter_poly")
+        if poly:
+            self._current_poly = poly
+        self._current_worker = None
+
+    @Slot(str)
+    def _on_phase2_error(self, message: str):
+        self._hide_generating_dialog()
+        self._status.showMessage(f"Errore Fase 2: {message}")
+        self._gen_panel.on_phase2_error(message)
         self._current_worker = None
 
     @Slot(str)
     def _on_generation_error(self, message: str):
         self._hide_generating_dialog()
         self._status.showMessage(f"Errore generazione: {message}")
-        self._gen_panel.on_generation_error(message)
+        self._gen_panel.on_phase1_error(message)
         self._current_worker = None
+
+    @Slot(float, float, bool)
+    def _on_shooting_position_placed(self, x: float, y: float, is_start: bool):
+        """Aggiunge una shooting position dalla view al wizard."""
+        self._gen_panel.add_shooting_position(x, y, is_start)
+        # Aggiunge marker visivo nella scena
+        index = len(self._gen_panel.get_shooting_positions())
+        self._scene.add_shooting_position_marker(x, y, is_start=is_start, index=index)
+        self._status.showMessage(f"Posizione di tiro aggiunta: ({x:.1f}, {y:.1f})")
 
     @Slot()
     def _refresh_info(self):
@@ -478,25 +551,33 @@ class MainWindow(QMainWindow):
         self._info_panel.set_stage(self._stage)
 
     def _replace_stage(self, new_stage: Stage):
-        """Sostituisce lo stage nell'editor 2D, 3D e Info."""
-        self._stage.name = new_stage.name
-        self._stage.width = new_stage.width
-        self._stage.depth = new_stage.depth
-        self._stage.course_type = new_stage.course_type
-        self._stage.division = new_stage.division
-        self._stage.properties = dict(new_stage.properties)
-        self._stage.shooting_positions = list(new_stage.shooting_positions)
-        self._stage.items.clear()
-        self._stage._next_id = new_stage._next_id
-        for it in new_stage.items:
-            self._stage.items.append(it)
+        """Sostituisce lo stage nell'editor e ricostruisce la scena.
+
+        Nota: se new_stage è lo stesso oggetto di self._stage (es. dopo
+        Phase2Worker che modifica in-place), salta la copia dati per
+        evitare di cancellare items prima di averli letti.
+        """
+        if new_stage is not self._stage:
+            self._stage.name = new_stage.name
+            self._stage.width = new_stage.width
+            self._stage.depth = new_stage.depth
+            self._stage.course_type = new_stage.course_type
+            self._stage.division = new_stage.division
+            self._stage.properties = dict(new_stage.properties)
+            self._stage.shooting_positions = list(new_stage.shooting_positions)
+            self._stage._next_id = new_stage._next_id
+            self._stage.items.clear()
+            for it in new_stage.items:
+                self._stage.items.append(it)
+        # Ricostruisce la scena da capo
         self._scene.stage = self._stage
+        self._scene.clear()
+        self._scene.grid = None
+        self._scene._shooting_area = None
         self._scene._items.clear()
         self._scene._setup_grid()
         self._scene._sync_from_model()
         self._scene._update_shooting_area()
-        # Adatta la vista per mostrare tutto lo stage
         self._view.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self._prop_dock.set_item(None)
-        # Aggiorna Info
         self._refresh_info()
