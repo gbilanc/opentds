@@ -27,12 +27,14 @@ _TARGET_TYPES = {
 class PropertyDock(QDockWidget):
     """Dock laterale per editing proprietà oggetto stage."""
     propertyChanged = Signal(int, dict)  # item_id, {field: value}
+    markerChanged = Signal(dict)  # {field: value}, per marker scene
 
     def __init__(self, parent=None):
         super().__init__("Proprietà", parent)
         self.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable |
                          QDockWidget.DockWidgetFeature.DockWidgetFloatable)
         self._wrapper: Optional[StageItemWrapper] = None
+        self._marker_ref: object = None
 
         container = QWidget()
         self.setWidget(container)
@@ -204,15 +206,80 @@ class PropertyDock(QDockWidget):
                 self._fall_spin.parentWidget().setVisible(it.item_type == ItemType.DROP_TURNER)
         self._block_signals = False
 
+    @Slot(object, object)
+    def set_marker(self, props, marker_ref):
+        """Mostra proprietà di un marker (posizione/ostacolo)."""
+        self._wrapper = None
+        self._block_signals = True
+        self._marker_ref = marker_ref
+
+        if props is None:
+            self.setEnabled(False)
+            self._title.setText("Nessuna selezione")
+            self._type_label.setText("—")
+            self._id_label.setText("—")
+            self._label_edit.clear()
+            self._x_spin.setValue(0)
+            self._y_spin.setValue(0)
+            self._w_spin.setValue(1)
+            self._h_spin.setValue(1)
+            self._rot_spin.setValue(0)
+            self._mobility_group.setVisible(False)
+        else:
+            self.setEnabled(True)
+            marker_type = props['type']
+            if marker_type == 'shooting_position':
+                self._title.setText(f"Posizione #{props.get('label', '?')}")
+                self._type_label.setText("Posizione di tiro")
+                self._id_label.setText("#" + props.get('label', '?'))
+                self._label_edit.setText(f"Pos #{props.get('label', '?')}")
+                self._x_spin.setValue(props['x'])
+                self._y_spin.setValue(props['y'])
+                self._w_spin.setEnabled(False)
+                self._w_spin.setValue(0.5)
+                self._h_spin.setEnabled(False)
+                self._h_spin.setValue(0.5)
+                self._rot_spin.setEnabled(False)
+                self._rot_spin.setValue(0)
+                self._color_btn.setEnabled(False)
+                self._color_btn.setStyleSheet(
+                    "background-color: #22c55e; border-radius: 4px;"
+                    if props.get('is_start') else
+                    "background-color: #3b82f6; border-radius: 4px;"
+                )
+                self._mobility_group.setVisible(False)
+            elif marker_type == 'obstacle':
+                tipo = "Muro" if props.get('is_wall') else "Barriera"
+                self._title.setText(f"{tipo} {props.get('label', '')}")
+                self._type_label.setText(tipo)
+                self._id_label.setText("—")
+                self._label_edit.setText(tipo)
+                self._x_spin.setValue(props['x'])
+                self._y_spin.setValue(props['y'])
+                self._w_spin.setEnabled(True)
+                self._w_spin.setValue(props.get('width', 3.0))
+                self._h_spin.setEnabled(False)
+                self._h_spin.setValue(0.2)
+                self._rot_spin.setEnabled(True)
+                self._rot_spin.setValue(props.get('rotation', 0.0))
+                self._color_btn.setEnabled(False)
+                bg = "#475569" if props.get('is_wall') else "#fbbf24"
+                self._color_btn.setStyleSheet(f"background-color: {bg}; border-radius: 4px;")
+                self._mobility_group.setVisible(False)
+        self._block_signals = False
+
     def _update_color_btn(self, color: str):
         self._color_btn.setStyleSheet(
             f"background-color: {color}; border-radius: 4px; border: 1px solid #e2e8f0;"
         )
 
     def _emit(self, **kwargs):
-        if self._block_signals or self._wrapper is None:
+        if self._block_signals:
             return
-        self.propertyChanged.emit(self._wrapper.item.id, kwargs)
+        if self._wrapper is not None:
+            self.propertyChanged.emit(self._wrapper.item.id, kwargs)
+        elif hasattr(self, '_marker_ref') and self._marker_ref is not None:
+            self.markerChanged.emit(kwargs)
 
     def _on_label_changed(self):
         text = self._label_edit.text()

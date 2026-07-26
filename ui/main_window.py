@@ -100,7 +100,11 @@ class MainWindow(QMainWindow):
         def _btn(text, tip, callback):
             b = QPushButton(text)
             b.setToolTip(tip)
-            b.clicked.connect(callback)
+            # Wrapper che chiama il callback e poi aggiorna info stage
+            def _wrapper():
+                callback()
+                self._refresh_info()
+            b.clicked.connect(_wrapper)
             return b
 
         cx, cy = self._stage.width / 2, self._stage.depth / 2
@@ -130,7 +134,10 @@ class MainWindow(QMainWindow):
 
         btn_del = QPushButton("\U0001f5d1 Elimina")
         btn_del.setToolTip("Elimina oggetti selezionati")
-        btn_del.clicked.connect(self._scene.push_remove_selected)
+        btn_del.clicked.connect(lambda: (
+            self._scene.push_remove_selected(),
+            self._refresh_info(),
+        ))
         toolbar.addWidget(btn_del)
 
         toolbar.addSeparator()
@@ -144,12 +151,18 @@ class MainWindow(QMainWindow):
 
         btn_undo = QPushButton("\u21a9\ufe0f Undo")
         btn_undo.setToolTip("Annulla (Ctrl+Z)")
-        btn_undo.clicked.connect(self._scene.undo_stack.undo)
+        btn_undo.clicked.connect(lambda: (
+            self._scene.undo_stack.undo(),
+            self._refresh_info(),
+        ))
         toolbar.addWidget(btn_undo)
 
         btn_redo = QPushButton("\u21aa\ufe0f Redo")
         btn_redo.setToolTip("Ripeti (Ctrl+Shift+Z)")
-        btn_redo.clicked.connect(self._scene.undo_stack.redo)
+        btn_redo.clicked.connect(lambda: (
+            self._scene.undo_stack.redo(),
+            self._refresh_info(),
+        ))
         toolbar.addWidget(btn_redo)
 
     def _setup_menu(self):
@@ -225,19 +238,28 @@ class MainWindow(QMainWindow):
 
         undo_action = QAction("&Undo", self)
         undo_action.setShortcut(QKeySequence("Ctrl+Z"))
-        undo_action.triggered.connect(self._scene.undo_stack.undo)
+        undo_action.triggered.connect(lambda: (
+            self._scene.undo_stack.undo(),
+            self._refresh_info(),
+        ))
         edit_menu.addAction(undo_action)
 
         redo_action = QAction("&Redo", self)
         redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
-        redo_action.triggered.connect(self._scene.undo_stack.redo)
+        redo_action.triggered.connect(lambda: (
+            self._scene.undo_stack.redo(),
+            self._refresh_info(),
+        ))
         edit_menu.addAction(redo_action)
 
         edit_menu.addSeparator()
 
         del_action = QAction("&Elimina selezionati", self)
         del_action.setShortcut(QKeySequence.Delete)
-        del_action.triggered.connect(self._scene.push_remove_selected)
+        del_action.triggered.connect(lambda: (
+            self._scene.push_remove_selected(),
+            self._refresh_info(),
+        ))
         edit_menu.addAction(del_action)
 
         # ── Configurazione ──
@@ -259,7 +281,9 @@ class MainWindow(QMainWindow):
         self._scene.itemUpdated.connect(self._on_item_updated)
         self._scene.itemRemoved.connect(self._on_item_removed)
         self._scene.selectionChangedWrapper.connect(self._prop_dock.set_item)
+        self._scene.markerSelected.connect(self._prop_dock.set_marker)
         self._prop_dock.propertyChanged.connect(self._on_property_changed)
+        self._prop_dock.markerChanged.connect(self._on_marker_changed)
         self._gen_panel.phase1Requested.connect(self._on_phase1_requested)
         self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
         self._view.obstaclePlaced.connect(self._on_obstacle_placed)
@@ -291,6 +315,27 @@ class MainWindow(QMainWindow):
     @Slot(int, dict)
     def _on_property_changed(self, item_id: int, props: dict):
         self._scene.update_item_from_properties(item_id, **props)
+
+    @Slot(dict)
+    def _on_marker_changed(self, props: dict):
+        """Aggiorna un marker sulla scena quando l'utente modifica le proprietà nel dock."""
+        dock = self._prop_dock
+        marker = getattr(dock, '_marker_ref', None)
+        if marker is None:
+            return
+        scale = self._scene.scale
+        if 'x' in props:
+            marker.setPos(props['x'] * scale, marker.pos().y())
+        if 'y' in props:
+            marker.setPos(marker.pos().x(), props['y'] * scale)
+        if 'rotation' in props and hasattr(marker, 'setRotation'):
+            marker.setRotation(props['rotation'])
+        if 'width' in props and hasattr(marker, '_width'):
+            marker._width = props['width']
+        marker.update()
+        # Notifica il cambiamento per aggiornare la lista
+        if hasattr(marker, '_on_changed') and marker._on_changed:
+            marker._on_changed(marker)
 
     def _on_target_config(self):
         """Apre il dialog di configurazione aspetto bersagli."""

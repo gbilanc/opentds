@@ -1279,6 +1279,7 @@ class StageScene(QGraphicsScene):
     itemRemoved = Signal(int)
     itemUpdated = Signal(int)
     selectionChangedWrapper = Signal(object)
+    markerSelected = Signal(object, object)  # {props} dict or None, marker_ref
     violationsChanged = Signal()  # emesso quando cambiano le violazioni
 
     def __init__(self, stage: Stage, parent=None):
@@ -1409,13 +1410,38 @@ class StageScene(QGraphicsScene):
 
     def _on_selection_changed(self):
         sel = self.selectedItems()
-        if len(sel) == 1 and hasattr(sel[0], 'wrapper'):
-            self.selectionChangedWrapper.emit(sel[0].wrapper)
-        elif len(sel) > 1:
-            self.selectionChangedWrapper.emit(None)
+        if len(sel) == 1:
+            g = sel[0]
+            if hasattr(g, 'wrapper'):
+                self.selectionChangedWrapper.emit(g.wrapper)
+                self.markerSelected.emit(None, None)
+            elif isinstance(g, ShootingPositionMarker):
+                self.selectionChangedWrapper.emit(None)
+                self.markerSelected.emit({
+                    'type': 'shooting_position',
+                    'x': g.pos_m[0],
+                    'y': g.pos_m[1],
+                    'is_start': g._is_start,
+                    'label': g._label,
+                }, g)
+            elif isinstance(g, ObstacleMarker):
+                self.selectionChangedWrapper.emit(None)
+                self.markerSelected.emit({
+                    'type': 'obstacle',
+                    'x': g.pos_m[0],
+                    'y': g.pos_m[1],
+                    'width': g.width_m,
+                    'rotation': g.rotation_deg,
+                    'is_wall': g._is_wall,
+                    'label': g._label,
+                }, g)
+            else:
+                self.selectionChangedWrapper.emit(None)
+                self.markerSelected.emit(None, None)
         else:
             self.selectionChangedWrapper.emit(None)
-        # Forza repaint per aggiornare handle di selezione e bounding box
+            self.markerSelected.emit(None, None)
+        # Forza repaint per aggiornare handle e bounding box
         self.invalidate()
         for g in self._items.values():
             if hasattr(g, 'update'):
