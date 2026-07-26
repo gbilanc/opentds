@@ -11,13 +11,13 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import Stage, ItemType
-from core.generator import GeneratorConfig, Phase1Config, Phase2Config, GeneratorResult, StageGenerator
+from core.generator import GeneratorConfig, Phase1Config, GeneratorResult, StageGenerator
 from ui.editor.stage_scene import StageScene, StageItemWrapper
 from ui.editor.stage_view import StageView
 from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
 from ui.editor.stage_info import StageInfoPanel
-from ui.workers.generator_worker import GeneratorWorker, Phase2Worker
+from ui.workers.generator_worker import GeneratorWorker
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
 from services.openscad_exporter import (
@@ -49,7 +49,6 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self._setup_status_bar()
         self._connect_signals()
-        self._current_worker: GeneratorWorker | None = None
 
     def _setup_ui(self):
         central = QWidget()
@@ -262,8 +261,6 @@ class MainWindow(QMainWindow):
         self._scene.selectionChangedWrapper.connect(self._prop_dock.set_item)
         self._prop_dock.propertyChanged.connect(self._on_property_changed)
         self._gen_panel.phase1Requested.connect(self._on_phase1_requested)
-        self._gen_panel.phase2Requested.connect(self._on_phase2_requested)
-        self._gen_panel.stopRequested.connect(self._on_stop_requested)
         self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
         self._view.obstaclePlaced.connect(self._on_obstacle_placed)
         self._gen_panel.placeModeToggled.connect(self._view.set_placing_position_mode)
@@ -495,118 +492,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._gen_panel.on_phase1_error(str(e))
             self._status.showMessage(f"\u274c Errore Fase 1: {e}")
-
-    @Slot(Phase2Config)
-    def _on_phase2_requested(self, phase2: Phase2Config):
-        """Esegue la Fase 2: posizionamento bersagli/ostacoli (in thread separato)."""
-        poly = getattr(self, '_current_poly', None)
-        if not poly:
-            poly = self._stage.properties.get("perimeter_poly")
-            if not poly:
-                self._gen_panel.on_phase2_error(
-                    "Nessuna area di tiro definita. Torna alla Fase 1.")
-                return
-            self._current_poly = poly
-
-        self._status.showMessage("Posizionamento bersagli e barriere...")
-        self._show_generating_dialog()
-        worker = Phase2Worker(self._stage, phase2, self._current_poly)
-        worker.signals.finished.connect(self._on_phase2_finished)
-        worker.signals.error.connect(self._on_phase2_error)
-        self._current_worker = worker
-        QThreadPool.globalInstance().start(worker)
-
-    @Slot(GeneratorConfig)
-    def _on_generate_requested(self, config: GeneratorConfig):
-        self._status.showMessage("Generazione stage in corso\u2026")
-        self._show_generating_dialog()
-        worker = GeneratorWorker(config)
-        worker.signals.finished.connect(self._on_generation_finished)
-        worker.signals.error.connect(self._on_generation_error)
-        self._current_worker = worker
-        QThreadPool.globalInstance().start(worker)
-
-    def _show_generating_dialog(self):
-        """Mostra un dialog modale che indica la generazione in corso."""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Generazione Stage")
-        dlg.setFixedSize(320, 100)
-        dlg.setModal(True)
-        dlg.setWindowFlags(
-            dlg.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint
-        )
-        layout = QVBoxLayout(dlg)
-        layout.setSpacing(12)
-        lbl = QLabel("Generazione stage IPSC in corso...")
-        lbl.setStyleSheet("font-size: 13px; color: #0f172a;")
-        layout.addWidget(lbl)
-        progress = QProgressBar()
-        progress.setRange(0, 0)  # indeterminato
-        progress.setFixedHeight(20)
-        layout.addWidget(progress)
-        self._gen_dialog = dlg
-        dlg.show()
-
-    def _hide_generating_dialog(self):
-        if hasattr(self, '_gen_dialog') and self._gen_dialog is not None:
-            self._gen_dialog.close()
-            self._gen_dialog = None
-
-    @Slot()
-    def _on_stop_requested(self):
-        self._status.showMessage("Generazione interrotta")
-        self._hide_generating_dialog()
-        self._gen_panel.on_phase1_complete()
-        self._current_worker = None
-
-    @Slot(object)
-    def _on_generation_finished(self, result: object):
-        result: GeneratorResult = result
-        self._hide_generating_dialog()
-        msg = (
-            f"\u2705 Stage generato! "
-            f"Score: {result.score} | "
-            f"Tentativi: {result.attempts} | "
-            f"Bersagli: {len(result.stage.items)}"
-        )
-        self._status.showMessage(msg)
-        self._replace_stage(result.stage)
-        self._gen_panel.on_phase1_complete()
-        self._current_worker = None
-
-    @Slot(object)
-    def _on_phase2_finished(self, result: object):
-        """Callback per completamento Fase 2."""
-        result: GeneratorResult = result
-        self._hide_generating_dialog()
-        msg = (
-            f"\u2705 Stage completo! "
-            f"Score: {result.score} | "
-            f"Tentativi: {result.attempts} | "
-            f"Item: {len(result.stage.items)}"
-        )
-        self._status.showMessage(msg)
-        self._replace_stage(result.stage)
-        self._gen_panel.on_phase2_complete()
-        poly = result.stage.properties.get("perimeter_poly")
-        if poly:
-            self._current_poly = poly
-        self._current_worker = None
-
-    @Slot(str)
-    def _on_phase2_error(self, message: str):
-        self._hide_generating_dialog()
-        self._status.showMessage(f"Errore Fase 2: {message}")
-        self._gen_panel.on_phase2_error(message)
-        self._current_worker = None
-
-    @Slot(str)
-    def _on_generation_error(self, message: str):
-        self._hide_generating_dialog()
-        self._status.showMessage(f"Errore generazione: {message}")
-        self._gen_panel.on_phase1_error(message)
-        self._current_worker = None
 
     @Slot(float, float, bool)
     def _on_shooting_position_placed(self, x: float, y: float, is_start: bool):

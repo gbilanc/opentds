@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QSlider, QSizePolicy,
 )
 
-from core.generator import GeneratorConfig, Phase1Config, Phase2Config
+from core.generator import GeneratorConfig, Phase1Config
 
 
 class StageWizard(QWidget):
@@ -24,7 +24,6 @@ class StageWizard(QWidget):
 
     # Segnali
     phase1Requested = Signal(Phase1Config)
-    phase2Requested = Signal(Phase2Config)
     stopRequested = Signal()
     placeModeToggled = Signal(bool)  # True = attivo, False = disattivo
     placeObstacleModeToggled = Signal(bool, bool)  # active, is_wall
@@ -381,99 +380,7 @@ class StageWizard(QWidget):
 
         layout.addWidget(obs_place_group)
 
-        # ── Bersagli ──
-        tgt_group = QGroupBox("Bersagli")
-        tgt_form = QFormLayout(tgt_group)
-        tgt_form.setSpacing(8)
-
-        self._p2_paper = QSpinBox()
-        self._p2_paper.setRange(2, 30)
-        self._p2_paper.setValue(8)
-        tgt_form.addRow("Paper targets:", self._p2_paper)
-
-        self._p2_poppers = QSpinBox()
-        self._p2_poppers.setRange(0, 10)
-        self._p2_poppers.setValue(1)
-        tgt_form.addRow("Popper:", self._p2_poppers)
-
-        self._p2_plates = QSpinBox()
-        self._p2_plates.setRange(0, 10)
-        self._p2_plates.setValue(1)
-        tgt_form.addRow("Metal plates:", self._p2_plates)
-
-        self._p2_mini = QSpinBox()
-        self._p2_mini.setRange(0, 5)
-        self._p2_mini.setValue(0)
-        tgt_form.addRow("Mini target:", self._p2_mini)
-
-        self._p2_moving = QSpinBox()
-        self._p2_moving.setRange(0, 5)
-        self._p2_moving.setValue(1)
-        tgt_form.addRow("Mobili:", self._p2_moving)
-
-        self._p2_noshoot = QCheckBox("Includi No-Shoot")
-        self._p2_noshoot.setChecked(True)
-        tgt_form.addRow(self._p2_noshoot)
-
-        self._p2_activators = QCheckBox("Attivatori (popper→bersagli)")
-        self._p2_activators.setChecked(True)
-        tgt_form.addRow(self._p2_activators)
-
-        layout.addWidget(tgt_group)
-
-        # ── Ostacoli ──
-        obs_group = QGroupBox("Ostacoli")
-        obs_form = QFormLayout(obs_group)
-        obs_form.setSpacing(8)
-
-        self._p2_walls = QSpinBox()
-        self._p2_walls.setRange(0, 15)
-        self._p2_walls.setValue(1)
-        obs_form.addRow("Muri:", self._p2_walls)
-
-        self._p2_barriers = QSpinBox()
-        self._p2_barriers.setRange(0, 10)
-        self._p2_barriers.setValue(4)
-        obs_form.addRow("Barriere:", self._p2_barriers)
-
-        layout.addWidget(obs_group)
-
-        # ── Difficoltà ──
-        diff_group = QGroupBox("Parametri")
-        diff_form = QFormLayout(diff_group)
-        diff_form.setSpacing(8)
-
-        self._p2_diff = QComboBox()
-        self._p2_diff.addItems(["Facile", "Medio", "Difficile"])
-        self._p2_diff.setCurrentIndex(1)
-        diff_form.addRow("Difficoltà:", self._p2_diff)
-
-        self._p2_course = QComboBox()
-        self._p2_course.addItems(
-            ["Non specificato", "Short Course", "Medium Course", "Long Course"]
-        )
-        self._p2_course.setCurrentIndex(0)
-        diff_form.addRow("Tipo corso:", self._p2_course)
-
-        layout.addWidget(diff_group)
-
-        # ── Bottone Auto-Place ──
-        self._btn_autoplace = QPushButton("🤖 Auto-Place: Posiziona Bersagli e Barriere")
-        self._btn_autoplace.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px; font-size: 14px; font-weight: 600;
-                background-color: #3b82f6; color: white;
-                border: none; border-radius: 8px;
-            }
-            QPushButton:hover { background-color: #2563eb; }
-            QPushButton:disabled { background-color: #94a3b8; }
-        """)
-        self._btn_autoplace.clicked.connect(self._on_generate_phase2)
-        layout.addWidget(self._btn_autoplace)
-
-        self._p2_status = QLabel("")
-        self._p2_status.setStyleSheet("font-size: 12px; color: #64748b;")
-        layout.addWidget(self._p2_status)
+        layout.addWidget(obs_place_group)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -527,102 +434,6 @@ class StageWizard(QWidget):
             pass
         return None
 
-    def _on_generate_phase2(self):
-        diff_map = {0: "easy", 1: "medium", 2: "hard"}
-        course_map = {"Non specificato": "", "Short Course": "short",
-                       "Medium Course": "medium", "Long Course": "long"}
-
-        # Raccogli shooting positions dalla lista
-        positions: list[tuple[float, float, bool]] = []
-        for i in range(self._pos_list.count()):
-            item = self._pos_list.item(i)
-            if item is None:
-                continue
-            parsed = self._parse_list_item(item.text())
-            if parsed:
-                positions.append(parsed)
-
-        # Raccogli ostacoli posizionati dall'utente
-        placed_walls: list[dict] = []
-        for i in range(self._walls_list.count()):
-            item = self._walls_list.item(i)
-            if item is None:
-                continue
-            parsed = self._parse_obstacle_item(item.text())
-            if parsed:
-                placed_walls.append({
-                    "x": parsed[0], "y": parsed[1],
-                    "width": parsed[2], "rotation": parsed[3],
-                })
-
-        placed_barriers: list[dict] = []
-        for i in range(self._barriers_list.count()):
-            item = self._barriers_list.item(i)
-            if item is None:
-                continue
-            parsed = self._parse_obstacle_item(item.text())
-            if parsed:
-                placed_barriers.append({
-                    "x": parsed[0], "y": parsed[1],
-                    "width": parsed[2], "rotation": parsed[3],
-                })
-
-        # Sottrai ostacoli posizionati dal conteggio auto-generati
-        num_walls = max(0, self._p2_walls.value() - len(placed_walls))
-        num_barriers = max(0, self._p2_barriers.value() - len(placed_barriers))
-
-        config = Phase2Config(
-            shooting_positions=positions,
-            num_targets=self._p2_paper.value(),
-            num_poppers=self._p2_poppers.value(),
-            num_plates=self._p2_plates.value(),
-            num_mini=self._p2_mini.value(),
-            num_moving=self._p2_moving.value(),
-            num_walls=num_walls,
-            num_barriers=num_barriers,
-            include_no_shoots=self._p2_noshoot.isChecked(),
-            include_activators=self._p2_activators.isChecked(),
-            difficulty=diff_map[self._p2_diff.currentIndex()],
-            course_type=course_map[self._p2_course.currentText()],
-            placed_walls=placed_walls,
-            placed_barriers=placed_barriers,
-        )
-
-        self._btn_autoplace.setEnabled(False)
-        self._btn_autoplace.setText("⏳ Posizionamento in corso...")
-        self._p2_status.setText("Posizionamento bersagli e barriere in corso...")
-        self._progress.setVisible(True)
-        self.phase2Requested.emit(config)
-
-    def on_phase2_complete(self):
-        self._btn_autoplace.setEnabled(True)
-        self._btn_autoplace.setText("✅ Completato — Rigenera")
-        self._btn_autoplace.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px; font-size: 14px; font-weight: 600;
-                background-color: #22c55e; color: white;
-                border: none; border-radius: 8px;
-            }
-            QPushButton:hover { background-color: #16a34a; }
-        """)
-        self._p2_status.setText("✅ Stage completo! Bersagli e barriere posizionati.")
-        self._progress.setVisible(False)
-
-    def on_phase2_error(self, message: str):
-        self._btn_autoplace.setEnabled(True)
-        self._btn_autoplace.setText("🤖 Auto-Place: Posiziona Bersagli e Barriere")
-        self._btn_autoplace.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px; font-size: 14px; font-weight: 600;
-                background-color: #3b82f6; color: white;
-                border: none; border-radius: 8px;
-            }
-            QPushButton:hover { background-color: #2563eb; }
-        """)
-        self._p2_status.setText(f"❌ Errore: {message}")
-        self._p2_status.setStyleSheet("font-size: 12px; color: #dc2626;")
-        self._progress.setVisible(False)
-
     # ── Navigazione ───────────────────────────────────────────────────
 
     def _go_forward(self):
@@ -630,7 +441,7 @@ class StageWizard(QWidget):
             self._stack.setCurrentIndex(1)
             self._btn_back.setEnabled(True)
             self._btn_next.setEnabled(False)
-            self._step_label.setText("Passo 2 di 2: Bersagli e posizioni")
+            self._step_label.setText("Passo 2 di 2: Posizioni e ostacoli")
 
     def _go_back(self):
         if self._stack.currentIndex() == 1:
@@ -941,26 +752,23 @@ class StageWizard(QWidget):
         self._btn_gen_area.setEnabled(True)
         self._btn_gen_area.setText("▶ Genera Area di Tiro")
         self._p1_status.setText("")
-        self._p2_status.setText("")
-        self._progress.setVisible(False)
         self._pos_list.clear()
+        self._walls_list.clear()
+        self._barriers_list.clear()
 
 
 # ── Compatibilità: alias GeneratorPanel per retrocompatibilità ──────────
 
 class GeneratorPanel(StageWizard):
-    """Alias per retrocompatibilità. Nuovo codice usi StageWizard."""
+    """Alias per retrocompatibilità."""
     generateRequested = Signal(GeneratorConfig)
     stopRequested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Collega i nuovi segnali a quelli vecchi per compatibilità
         self.phase1Requested.connect(self._on_phase1_legacy)
-        self.phase2Requested.connect(self._on_phase2_legacy)
 
     def _on_phase1_legacy(self, phase1: Phase1Config):
-        # Converte in GeneratorConfig ed emette segnale legacy
         from core.generator import GeneratorConfig as GC
         cfg = GC(
             stage_width=phase1.stage_width,
@@ -969,9 +777,6 @@ class GeneratorPanel(StageWizard):
             delimitation=phase1.delimitation,
         )
         self.generateRequested.emit(cfg)
-
-    def _on_phase2_legacy(self, phase2: Phase2Config):
-        pass
 
     def on_generation_finished(self):
         self.on_phase1_complete()
