@@ -180,6 +180,7 @@ class PropertyDock(QDockWidget):
             self._w_spin.setEnabled(True)
             self._h_spin.setValue(it.height)
             self._h_spin.setEnabled(True)
+            self._rot_spin.setEnabled(True)
             self._rot_spin.setValue(it.rotation)
             self._update_color_btn(it.color)
             self._color_btn.setEnabled(True)
