@@ -190,6 +190,140 @@ class ShootingPositionMarker(QGraphicsItem):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  EngagementAreaItem — area di ingaggio 90° per posizione di tiro
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class EngagementAreaItem(QGraphicsItem):
+    """Mostra l'area di ingaggio di 90° da una posizione di tiro.
+
+    Visualizza un cono di 90° (45° per lato) dalla posizione di tiro
+    verso il fondo dello stage. Le barriere/muri che intersecano il cono
+    generano zone d'ombra (aree non visibili).
+    """
+
+    def __init__(self, pos_x: float, pos_y: float, scale: float,
+                 angle: float = 90.0, range_m: float = 30.0,
+                 obstacles: list = None, parent=None):
+        super().__init__(parent)
+        self._px = pos_x
+        self._py = pos_y
+        self._scale = scale
+        self._angle = angle  # direzione di ingaggio in gradi (0=destra, 90=su/y+)  
+        self._range = range_m
+        self._obstacles = obstacles or []
+        self.setZValue(5)  # sopra shooting area, sotto marker
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+
+    def set_obstacles(self, obstacles: list):
+        """Aggiorna la lista di ostacoli (x, y, w, h, rot) per il calcolo ombre."""
+        self._obstacles = obstacles
+        self.update()
+
+    def set_position(self, x: float, y: float):
+        self._px = x
+        self._py = y
+        self.update()
+
+    def boundingRect(self):
+        r = self._range * self._scale
+        cx = self._px * self._scale
+        cy = self._py * self._scale
+        return QRectF(cx - r, cy - r, r * 2, r * 2)
+
+    def paint(self, painter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        scale = self._scale
+        cx = self._px * scale
+        cy = self._py * scale
+        r = self._range * scale
+
+        # Direzione di ingaggio: default verso Y+ (down-range)
+        # angle=90 significa verso Y positivo (in IPSC: verso il backstop)
+        angle_rad = math.radians(self._angle - 90)  # 0=destra → 90=su
+
+        # Cono di 90°: 45° per lato
+        half_cone = math.radians(45)
+
+        # Vertici del cono
+        start_a = angle_rad - half_cone
+        end_a = angle_rad + half_cone
+
+        # Costruisci il path del cono
+        path = QPainterPath()
+        path.moveTo(cx, cy)
+
+        steps = 40
+        for i in range(steps + 1):
+            t = start_a + (end_a - start_a) * i / steps
+            px = cx + r * math.cos(t)
+            py = cy + r * math.sin(t)
+            path.lineTo(px, py)
+        path.closeSubpath()
+
+        # Disegna il cono pieno (area visibile)
+        visible_brush = QBrush(QColor(0, 200, 80, 30))  # verde trasp
+        visible_pen = QPen(QColor(0, 180, 60, 80), 1.5, Qt.PenStyle.DashLine)
+        painter.setBrush(visible_brush)
+        painter.setPen(visible_pen)
+        painter.drawPath(path)
+
+        # Linee dei bordi del cono
+        edge_pen = QPen(QColor(0, 180, 60, 120), 2)
+        painter.setPen(edge_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawLine(cx, cy, cx + r * math.cos(start_a), cy + r * math.sin(start_a))
+        painter.drawLine(cx, cy, cx + r * math.cos(end_a), cy + r * math.sin(end_a))
+
+        # ── Calcola ombre proiettate da ostacoli ──
+        for obs in self._obstacles:
+            ox, oy, ow, oh, orot = obs
+            # Centro ostacolo in coordinate scena
+            ocx = ox * scale
+            ocy = oy * scale
+            o_scale_x = ow * scale / 2
+            o_scale_y = oh * scale / 2
+
+            # Verifica se l'ostacolo è nel cono (distanza + angolo)
+            dx = ocx - cx
+            dy = ocy - cy
+            dist = math.hypot(dx, dy)
+            if dist < 1:
+                continue
+            # Angolo dell'ostacolo rispetto alla posizione
+            obs_angle = math.atan2(dy, dx)
+            # Normalizza nel range del cono
+            if start_a <= obs_angle <= end_a:
+                # Proietta ombra: disegna un trapezio dalla posizione
+                # oltre l'ostacolo fino al bordo del cono
+                half_w = o_scale_x * 1.5
+                shadow_ratio = r / max(dist, 1)
+
+                # Punti di proiezione
+                p1 = (ocx - half_w, ocy)
+                p2 = (ocx + half_w, ocy)
+                p3 = (cx + (ocx + half_w - cx) * shadow_ratio,
+                      cy + (ocy - cy) * shadow_ratio)
+                p4 = (cx + (ocx - half_w - cx) * shadow_ratio,
+                      cy + (ocy - cy) * shadow_ratio)
+
+                shadow = QPainterPath()
+                shadow.moveTo(*p1)
+                shadow.lineTo(*p2)
+                shadow.lineTo(*p3)
+                shadow.lineTo(*p4)
+                shadow.closeSubpath()
+
+                shadow_brush = QBrush(QColor(80, 80, 80, 60))  # grigio trasp
+                painter.setBrush(shadow_brush)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawPath(shadow)
+
+        painter.restore()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  ObstacleMarker — marker per ostacoli posizionati dall'utente
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1291,6 +1425,7 @@ class StageScene(QGraphicsScene):
         self._last_violations: list[str] = []
         self.undo_stack = QUndoStack(self)
         self._shooting_area: ShootingAreaItem | None = None
+        self._engagement_area: EngagementAreaItem | None = None
         self._setup_grid()
         self._sync_from_model()
         self._update_shooting_area()
@@ -1413,8 +1548,8 @@ class StageScene(QGraphicsScene):
         if len(sel) == 1:
             g = sel[0]
             if hasattr(g, 'wrapper'):
-                # Item stage normale (target, muro, ecc.)
                 self.selectionChangedWrapper.emit(g.wrapper)
+                self._hide_engagement_area()
             elif isinstance(g, ShootingPositionMarker):
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit({
@@ -1424,6 +1559,7 @@ class StageScene(QGraphicsScene):
                     'is_start': g._is_start,
                     'label': g._label,
                 }, g)
+                self._show_engagement_area(g)
             elif isinstance(g, ObstacleMarker):
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit({
@@ -1435,14 +1571,15 @@ class StageScene(QGraphicsScene):
                     'is_wall': g._is_wall,
                     'label': g._label,
                 }, g)
+                self._hide_engagement_area()
             else:
-                # Altro (griglia, shooting area, ecc.) — pulisci dock
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit(None, None)
+                self._hide_engagement_area()
         else:
-            # Nessuna selezione o selezione multipla
             self.selectionChangedWrapper.emit(None)
             self.markerSelected.emit(None, None)
+            self._hide_engagement_area()
         # Forza repaint per aggiornare handle e bounding box
         self.invalidate()
         for g in self._items.values():
@@ -1520,6 +1657,40 @@ class StageScene(QGraphicsScene):
         for g in self._items.values():
             if hasattr(g, 'update'):
                 g.update()
+
+    # ── Area di ingaggio (per shooting position) ───────────────────────
+
+    def _show_engagement_area(self, marker: ShootingPositionMarker):
+        """Mostra l'area di ingaggio di 90° per una posizione di tiro."""
+        if self._engagement_area:
+            self.removeItem(self._engagement_area)
+            self._engagement_area = None
+
+        # Raccogli ostacoli (muri, barriere, coperture) dallo stage
+        obstacles = []
+        for it in self.stage.items:
+            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.HARD_COVER):
+                obstacles.append((it.x, it.y, it.width, it.height, it.rotation))
+
+        # Direzione di ingaggio: usa l'angolo della posizione o default 90° (verso backstop)
+        sp_angle = 90.0
+        for sp in self.stage.shooting_positions:
+            if abs(sp.x - marker.pos_m[0]) < 1.0 and abs(sp.y - marker.pos_m[1]) < 1.0:
+                sp_angle = sp.angle
+                break
+
+        self._engagement_area = EngagementAreaItem(
+            marker.pos_m[0], marker.pos_m[1], self.scale,
+            angle=sp_angle, range_m=max(self.stage.width, self.stage.depth) * 1.2,
+            obstacles=obstacles,
+        )
+        self.addItem(self._engagement_area)
+
+    def _hide_engagement_area(self):
+        """Nasconde l'area di ingaggio."""
+        if self._engagement_area:
+            self.removeItem(self._engagement_area)
+            self._engagement_area = None
 
     def push_add_item(self, item: StageItem):
         self.undo_stack.push(AddItemCommand(self, item))
