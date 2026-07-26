@@ -1413,8 +1413,8 @@ class StageScene(QGraphicsScene):
         if len(sel) == 1:
             g = sel[0]
             if hasattr(g, 'wrapper'):
+                # Item stage normale (target, muro, ecc.)
                 self.selectionChangedWrapper.emit(g.wrapper)
-                self.markerSelected.emit(None, None)
             elif isinstance(g, ShootingPositionMarker):
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit({
@@ -1436,9 +1436,11 @@ class StageScene(QGraphicsScene):
                     'label': g._label,
                 }, g)
             else:
+                # Altro (griglia, shooting area, ecc.) — pulisci dock
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit(None, None)
         else:
+            # Nessuna selezione o selezione multipla
             self.selectionChangedWrapper.emit(None)
             self.markerSelected.emit(None, None)
         # Forza repaint per aggiornare handle e bounding box

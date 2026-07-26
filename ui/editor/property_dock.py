@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 
 from core.models import StageItem, ItemType
 from ui.editor.stage_scene import StageItemWrapper
-from ui.editor.target_images import TargetSvgManager
 import math
 
 # Tipi bersaglio: colore e forma sono definiti centralmente, non modificabili per item
@@ -178,20 +177,13 @@ class PropertyDock(QDockWidget):
             self._x_spin.setValue(it.x)
             self._y_spin.setValue(it.y)
             self._w_spin.setValue(it.width)
-            self._w_spin.setEnabled(not is_target)
+            self._w_spin.setEnabled(True)
             self._h_spin.setValue(it.height)
-            self._h_spin.setEnabled(not is_target)
+            self._h_spin.setEnabled(True)
             self._rot_spin.setValue(it.rotation)
-            # Per i bersagli: colore dal TargetSvgManager (centralizzato)
-            if is_target:
-                svg_color = TargetSvgManager.instance().get_color(it.item_type)
-                self._update_color_btn(svg_color.name())
-                self._color_btn.setEnabled(False)
-                self._color_btn.setToolTip("Colore definito per tipo bersaglio (non modificabile)")
-            else:
-                self._update_color_btn(it.color)
-                self._color_btn.setEnabled(True)
-                self._color_btn.setToolTip("Clicca per cambiare colore")
+            self._update_color_btn(it.color)
+            self._color_btn.setEnabled(True)
+            self._color_btn.setToolTip("Clicca per cambiare colore")
             # Mostra/nascondi parametri mobili
             is_mobile = it.item_type in (ItemType.SWINGER, ItemType.MOVER, ItemType.DROP_TURNER)
             self._mobility_group.setVisible(is_mobile)
