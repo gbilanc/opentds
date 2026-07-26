@@ -504,6 +504,22 @@ class MainWindow(QMainWindow):
             self._gen_panel.on_phase1_error(str(e))
             self._status.showMessage(f"\u274c Errore Fase 1: {e}")
 
+    # ── Helper: sincronizza stage.shooting_positions dalla lista wizard ──
+
+    def _sync_shooting_positions(self):
+        """Ricostruisce stage.shooting_positions dalla lista del wizard."""
+        positions = self._gen_panel.get_shooting_positions()
+        from core.models import ShootingPosition
+        self._stage.shooting_positions = [
+            ShootingPosition(
+                id=i + 1, x=x, y=y,
+                label="Start" if is_start else f"Pos {i + 1}",
+                is_start=is_start, angle=90.0,
+            )
+            for i, (x, y, is_start) in enumerate(positions)
+        ]
+        self._refresh_info()
+
     @Slot(float, float, bool)
     def _on_shooting_position_placed(self, x: float, y: float, is_start: bool):
         """Aggiunge una shooting position dalla view al wizard."""
@@ -518,6 +534,7 @@ class MainWindow(QMainWindow):
                     if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
                         self._scene.removeItem(gi)
                         break
+            self._sync_shooting_positions()
 
         # Callback per aggiornare i marker dopo rinumerazione lista
         def _renumber_markers(labels: list[str]):
@@ -525,7 +542,7 @@ class MainWindow(QMainWindow):
             lst = self._gen_panel._pos_list
             for gi in self._scene.items():
                 if not hasattr(gi, 'pos_m') or not hasattr(gi, '_is_start'):
-                    continue  # solo ShootingPositionMarker
+                    continue
                 pm = gi.pos_m
                 for j in range(lst.count()):
                     item = lst.item(j)
@@ -547,6 +564,7 @@ class MainWindow(QMainWindow):
                                 break
                     except (ValueError, IndexError):
                         continue
+            self._sync_shooting_positions()
 
         self._gen_panel.add_shooting_position(
             saved_x, saved_y, is_start,
@@ -555,7 +573,7 @@ class MainWindow(QMainWindow):
         )
         index = len(self._gen_panel.get_shooting_positions())
 
-        # Callback quando la posizione viene spostata (aggiorna la label nella lista)
+        # Callback quando la posizione viene spostata (aggiorna label lista e stage)
         def _on_pos_changed(marker):
             nonlocal saved_x, saved_y
             mx, my = marker.pos_m
@@ -581,6 +599,7 @@ class MainWindow(QMainWindow):
                                 if label:
                                     label.setText(new_text)
                             saved_x, saved_y = mx, my
+                            self._sync_shooting_positions()
                             break
                 except (ValueError, IndexError):
                     continue
@@ -591,6 +610,7 @@ class MainWindow(QMainWindow):
             on_changed=_on_pos_changed,
         )
         self._status.showMessage(f"Posizione di tiro #{index} aggiunta: ({saved_x:.1f}, {saved_y:.1f})")
+        self._sync_shooting_positions()
 
         # Auto-disattiva la modalità posizionamento dopo aver piazzato
         self._gen_panel._btn_place_pos.setChecked(False)
