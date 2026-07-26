@@ -113,11 +113,18 @@ class ShootingPositionMarker(QGraphicsItem):
     impostate dall'utente.
     - Start: cerchio verde con "S"
     - Intermedie: cerchio blu con numero
+
+    Supporta:
+    - Drag per spostamento (snap a griglia)
+    - Callback on_changed per sincronizzare la lista
+    - Callback on_deleted per rimuovere dalla lista
     """
 
     def __init__(self, x: float, y: float, scale: float,
                  label: str = "S", is_start: bool = True,
-                 index: int = 1, parent=None):
+                 index: int = 1, parent=None,
+                 on_changed: callable = None,
+                 on_deleted: callable = None):
         super().__init__(parent)
         self._x = x
         self._y = y
@@ -125,45 +132,237 @@ class ShootingPositionMarker(QGraphicsItem):
         self._label = label
         self._is_start = is_start
         self._index = index
+        self._on_changed = on_changed
+        self._on_deleted = on_deleted
         self.setPos(x * scale, y * scale)
-        self.setZValue(10)  # sopra tutti
+        self.setZValue(10)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
 
     def boundingRect(self):
-        s = 18
-        return QRectF(-9, -9, s, s)
+        s = 22
+        return QRectF(-s / 2, -s / 2, s, s)
 
     def paint(self, painter, option, widget=None):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Cerchio
         color = QColor("#22c55e") if self._is_start else QColor("#3b82f6")
         painter.setBrush(QBrush(color))
         if self.isSelected():
             painter.setPen(QPen(QColor("#ffffff"), 3))
         else:
             painter.setPen(QPen(QColor("#0f172a"), 2))
-        painter.drawEllipse(-8, -8, 16, 16)
+        painter.drawEllipse(-9, -9, 18, 18)
+        # Etichetta
+        painter.setPen(QPen(QColor("white"), 1))
+        f = painter.font()
+        f.setPointSize(9)
+        f.setBold(True)
+        painter.setFont(f)
+        s = 18
+        br = QRectF(-s / 2, -s / 2, s, s)
+        painter.drawText(br, Qt.AlignmentFlag.AlignCenter, self._label)
+        painter.restore()
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            snapped = _snap_pos(value, self._scale)
+            return super().itemChange(change, snapped)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._x = self.pos().x() / self._scale
+            self._y = self.pos().y() / self._scale
+            if self._on_changed:
+                self._on_changed(self)
+        return super().itemChange(change, value)
+
+    @property
+    def pos_m(self) -> tuple[float, float]:
+        return (self._x, self._y)
+
+    @property
+    def is_start(self) -> bool:
+        return self._is_start
+
+    @property
+    def label_text(self) -> str:
+        return self._label
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ObstacleMarker — marker per ostacoli posizionati dall'utente
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ObstacleMarker(QGraphicsItem):
+    """Marker per ostacoli (muri/barriere) posizionati dall'utente.
+
+    Supporta:
+    - Drag per spostamento (snap a griglia)
+    - Rotazione tramite handle circolare
+    - Callback on_changed per sincronizzare la lista
+    """
+
+    def __init__(self, x: float, y: float, scale: float,
+                 width: float = 3.0, rotation: float = 0.0,
+                 is_wall: bool = True, label: str = "",
+                 on_changed: callable = None,
+                 on_deleted: callable = None, parent=None):
+        super().__init__(parent)
+        self._x = x
+        self._y = y
+        self._scale = scale
+        self._width = width
+        self._rotation = rotation
+        self._is_wall = is_wall
+        self._label = label
+        self._on_changed = on_changed
+        self._on_deleted = on_deleted
+        self._is_rotating = False
+        self._start_scene_angle = 0.0
+        self._start_rotation = 0.0
+
+        self.setPos(x * scale, y * scale)
+        self.setRotation(rotation)
+        self.setZValue(9)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
+        self.setAcceptHoverEvents(True)
+
+    def boundingRect(self):
+        w = max(self._width * self._scale, 24)
+        margin = 16
+        # L'area include l'handle di rotazione che sta sopra (y negativo)
+        top = -42  # spazio per handle rotazione
+        bottom = 28
+        return QRectF(-w / 2 - margin, top, w + margin * 2, bottom - top)
+
+    def paint(self, painter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = max(self._width * self._scale, 24)
+        h = 10
+
+        if self._is_wall:
+            color = QColor("#475569")
+            pen_color = QColor("#0f172a")
+        else:
+            color = QColor("#fbbf24")
+            color.setAlpha(180)
+            pen_color = QColor("#f59e0b")
+
+        painter.setBrush(QBrush(color))
+        if self.isSelected():
+            painter.setPen(QPen(QColor("#ffffff"), 3))
+        else:
+            if self._is_wall:
+                painter.setPen(QPen(pen_color, 2))
+            else:
+                painter.setPen(QPen(pen_color, 2, Qt.PenStyle.DashLine))
+
+        painter.drawRoundedRect(-w / 2, -h / 2, w, h, 3, 3)
+
         # Etichetta
         painter.setPen(QPen(QColor("white"), 1))
         f = painter.font()
         f.setPointSize(8)
         f.setBold(True)
         painter.setFont(f)
-        painter.drawText(self.boundingRect(),
-                         Qt.AlignmentFlag.AlignCenter, self._label)
+        label = self._label or ("M" if self._is_wall else "B")
+        br = QRectF(-w / 2, -h / 2, w, h)
+        painter.drawText(br, Qt.AlignmentFlag.AlignCenter, label)
+
+        # Handle di rotazione (solo se selezionato)
+        if self.isSelected():
+            painter.setPen(QPen(QColor("#2563eb"), 2))
+            painter.setBrush(QBrush(QColor("#2563eb")))
+            handle_rect = self._rotation_handle_rect()
+            painter.drawLine(0, -h / 2, handle_rect.center().x(), handle_rect.center().y())
+            painter.drawEllipse(handle_rect)
+            painter.setPen(QPen(QColor("white"), 1))
+            painter.drawText(handle_rect, Qt.AlignmentFlag.AlignCenter, "↻")
+
         painter.restore()
 
+    def _rotation_handle_rect(self) -> QRectF:
+        """Rettangolo dell'handle di rotazione sopra il marker."""
+        s = 14
+        return QRectF(-s / 2, -22 - s, s, s)
+
+    # ── Intercettazione eventi per rotazione ──
+
+    def hoverMoveEvent(self, event):
+        if self.isSelected() and self._rotation_handle_rect().contains(event.pos()):
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if self._rotation_handle_rect().contains(event.pos()):
+            self._is_rotating = True
+            origin = self.scenePos()
+            mouse_scene = self.mapToScene(event.pos())
+            self._start_scene_angle = math.atan2(
+                mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x())
+            self._start_rotation = self.rotation()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._is_rotating:
+            origin = self.scenePos()
+            mouse_scene = self.mapToScene(event.pos())
+            current_angle = math.atan2(
+                mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x())
+            delta = math.degrees(current_angle - self._start_scene_angle)
+            new_rotation = (self._start_rotation + delta) % 360
+            self.setRotation(new_rotation)
+            self._rotation = new_rotation
+            self._notify_changed()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._is_rotating:
+            self._is_rotating = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
     def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            # Snap alla griglia durante il drag
+            snapped = _snap_pos(value, self._scale)
+            return snapped
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self._x = self.pos().x() / self._scale
             self._y = self.pos().y() / self._scale
+            self._notify_changed()
+        if change == QGraphicsItem.GraphicsItemChange.ItemRotationHasChanged:
+            self._rotation = self.rotation()
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.update()  # ridisegna handle
         return super().itemChange(change, value)
+
+    def _notify_changed(self):
+        """Chiama il callback se registrato."""
+        if self._on_changed:
+            self._on_changed(self)
 
     @property
     def pos_m(self) -> tuple[float, float]:
-        """Posizione in metri."""
         return (self._x, self._y)
+
+    @property
+    def width_m(self) -> float:
+        return self._width
+
+    @property
+    def rotation_deg(self) -> float:
+        return self._rotation
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1301,11 +1500,36 @@ class StageScene(QGraphicsScene):
         self.undo_stack.push(RemoveItemCommand(self, item_id))
 
     def push_remove_selected(self):
-        for g in list(self.selectedItems()):
-            for gid, gi in list(self._items.items()):
-                if gi is g:
-                    self.push_remove_item(gid)
-                    break
+        """Rimuove tutti gli oggetti selezionati.
+
+        Scansiona TUTTI gli item della scena (non solo selectedItems())
+        perché i marker figli del grid potrebbero non essere rilevati
+        da selectedItems() in alcuni contesti Qt.
+        """
+        for g in list(self.items()):
+            if not g.isSelected():
+                continue
+            if isinstance(g, (ShootingPositionMarker, ObstacleMarker)):
+                self._remove_marker(g)
+            else:
+                # Item stage normale
+                for gid, gi in list(self._items.items()):
+                    if gi is g:
+                        self.push_remove_item(gid)
+                        break
+
+    def _remove_marker(self, g):
+        """Rimuove un marker e notifica il callback."""
+        self.removeItem(g)
+        if hasattr(g, '_on_deleted') and g._on_deleted:
+            g._on_deleted(g)
+
+    def remove_marker_by_item(self, g):
+        """Rimuove un marker specifico (chiamato da view)."""
+        if isinstance(g, (ShootingPositionMarker, ObstacleMarker)):
+            self._remove_marker(g)
+            return True
+        return False
 
     # ── Factory helpers ──────────────────────────────────────────────────────
 
@@ -1440,19 +1664,22 @@ class StageScene(QGraphicsScene):
 
     def add_shooting_position_marker(self, x: float, y: float,
                                       is_start: bool = True,
-                                      index: int = 1) -> ShootingPositionMarker:
+                                      index: int = 1,
+                                      on_changed: callable = None,
+                                      on_deleted: callable = None,
+                                      ) -> ShootingPositionMarker:
         """Aggiunge un marker visivo per una shooting position.
-
-        Returns:
-            Il marker creato (può essere rimosso con removeItem).
+        Mostra il numero progressivo (1, 2, 3...).
+        Il colore verde indica la posizione di partenza (Start).
         """
-        label = "S" if is_start else str(index)
+        label = str(index)
         marker = ShootingPositionMarker(
             x, y, self.scale,
             label=label, is_start=is_start, index=index,
+            on_changed=on_changed,
+            on_deleted=on_deleted,
         )
-        marker.setParentItem(self.grid)
-        self.addItem(marker)
+        marker.setParentItem(self.grid)  # aggiunge automaticamente alla scena
         return marker
 
     def clear_shooting_position_markers(self):
@@ -1468,3 +1695,46 @@ class StageScene(QGraphicsScene):
             self.add_shooting_position_marker(
                 sp.x, sp.y, is_start=sp.is_start, index=i + 1,
             )
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Obstacle markers (Fase 2)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def add_obstacle_marker(self, x: float, y: float,
+                             width: float = 3.0, rotation: float = 0.0,
+                             is_wall: bool = True,
+                             label: str = "",
+                             on_changed: callable = None,
+                             on_deleted: callable = None) -> ObstacleMarker:
+        """Aggiunge un marker visivo per un ostacolo posizionato dall'utente."""
+        marker = ObstacleMarker(
+            x, y, self.scale,
+            width=width, rotation=rotation,
+            is_wall=is_wall, label=label,
+            on_changed=on_changed,
+            on_deleted=on_deleted,
+        )
+        marker.setParentItem(self.grid)  # aggiunge automaticamente alla scena
+        return marker
+
+    def clear_obstacle_markers(self):
+        """Rimuove tutti i marker di ostacoli dalla scena."""
+        for item in list(self.items()):
+            if isinstance(item, ObstacleMarker):
+                self.removeItem(item)
+
+    def sync_obstacles_from_items(self):
+        """Sincronizza i marker con gli ostacoli nello stage.
+        Mostra marker solo per ostacoli con properties["user_placed"] = True.
+        """
+        self.clear_obstacle_markers()
+        for it in self.stage.items:
+            if it.properties.get("user_placed"):
+                is_wall = it.item_type == ItemType.WALL
+                self.add_obstacle_marker(
+                    it.x, it.y,
+                    width=it.width,
+                    rotation=it.rotation,
+                    is_wall=is_wall,
+                    label=it.label or ("M" if is_wall else "B"),
+                )

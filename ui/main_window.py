@@ -28,6 +28,12 @@ from services.openscad_exporter import (
     openscad_available,
     ScadExportOptions,
 )
+from services.blender_exporter import (
+    export_via_subprocess,
+    export_via_subprocess_and_open,
+    blender_available,
+    get_blender_path,
+)
 from ui.dialogs.target_config_dialog import TargetConfigDialog
 
 
@@ -194,6 +200,21 @@ class MainWindow(QMainWindow):
             export_3mf_action.triggered.connect(self._on_export_3mf)
             file_menu.addAction(export_3mf_action)
 
+        # ── Blender Export ──
+        file_menu.addSeparator()
+
+        export_blend_action = QAction("Blender (&.blend)…", self)
+        export_blend_action.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        export_blend_action.triggered.connect(self._on_export_blend)
+        file_menu.addAction(export_blend_action)
+
+        self._has_blender = blender_available()
+        if self._has_blender:
+            open_blender_action = QAction("&Apri in Blender…", self)
+            open_blender_action.setShortcut(QKeySequence("Ctrl+B"))
+            open_blender_action.triggered.connect(self._on_open_in_blender)
+            file_menu.addAction(open_blender_action)
+
         file_menu.addSeparator()
 
         exit_action = QAction("&Esci", self)
@@ -244,7 +265,9 @@ class MainWindow(QMainWindow):
         self._gen_panel.phase2Requested.connect(self._on_phase2_requested)
         self._gen_panel.stopRequested.connect(self._on_stop_requested)
         self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
+        self._view.obstaclePlaced.connect(self._on_obstacle_placed)
         self._gen_panel.placeModeToggled.connect(self._view.set_placing_position_mode)
+        self._gen_panel.placeObstacleModeToggled.connect(self._on_obstacle_mode_toggled)
         # Sincronizzazione → Info
         self._scene.itemAdded.connect(self._refresh_info)
         self._scene.itemUpdated.connect(self._refresh_info)
@@ -410,6 +433,55 @@ class MainWindow(QMainWindow):
             if scad_path.exists():
                 scad_path.unlink()
 
+    # ── Blender Export ──────────────────────────────────────────────────
+
+    @Slot()
+    def _on_export_blend(self):
+        """Esporta lo stage in un file .blend."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        if not get_blender_path():
+            QMessageBox.warning(
+                self, "Blender non trovato",
+                "Blender non è installato o non è nel PATH.\n"
+                "Installa Blender 5.2+ per esportare in .blend."
+            )
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Esporta in Blender", "stage.blend", "Blender (*.blend)"
+        )
+        if path:
+            self._status.showMessage("Esportazione in Blender in corso...")
+            try:
+                export_via_subprocess(self._stage, Path(path))
+                self._status.showMessage(f"✅ Blender esportato: {path}")
+            except Exception as e:
+                self._status.showMessage(f"❌ Errore esportazione Blender: {e}")
+                QMessageBox.critical(self, "Errore", str(e))
+
+    @Slot()
+    def _on_open_in_blender(self):
+        """Esporta lo stage in un file .blend temporaneo e lo apre in Blender."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if not get_blender_path():
+            QMessageBox.warning(
+                self, "Blender non trovato",
+                "Blender non è installato o non è nel PATH.\n"
+                "Installa Blender 5.2+ per aprire in Blender."
+            )
+            return
+
+        self._status.showMessage("Avvio Blender in corso...")
+        try:
+            output = Path("__opentds_blender_export.blend")
+            export_via_subprocess_and_open(self._stage, output)
+            self._status.showMessage(f"✅ Blender avviato con stage esportato")
+        except Exception as e:
+            self._status.showMessage(f"❌ Errore apertura Blender: {e}")
+            QMessageBox.critical(self, "Errore", str(e))
+
     @Slot(Phase1Config)
     def _on_phase1_requested(self, phase1: Phase1Config):
         """Esegue la Fase 1: generazione area di tiro (sul thread principale)."""
@@ -539,11 +611,211 @@ class MainWindow(QMainWindow):
     @Slot(float, float, bool)
     def _on_shooting_position_placed(self, x: float, y: float, is_start: bool):
         """Aggiunge una shooting position dalla view al wizard."""
-        self._gen_panel.add_shooting_position(x, y, is_start)
-        # Aggiunge marker visivo nella scena
+        saved_x, saved_y = x, y
+
+        # Callback quando l'utente clicca ✕ sulla riga della lista
+        def _on_pos_deleted(item):
+            """Rimuove il marker corrispondente dalla scena."""
+            for gi in list(self._scene.items()):
+                if hasattr(gi, 'pos_m') and hasattr(gi, '_label'):
+                    pm = gi.pos_m
+                    if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
+                        self._scene.removeItem(gi)
+                        break
+
+        # Callback per aggiornare i marker dopo rinumerazione lista
+        def _renumber_markers(labels: list[str]):
+            """Aggiorna le etichette dei marker sulla scena dopo cancellazione."""
+            lst = self._gen_panel._pos_list
+            for gi in self._scene.items():
+                if not hasattr(gi, 'pos_m') or not hasattr(gi, '_is_start'):
+                    continue  # solo ShootingPositionMarker
+                pm = gi.pos_m
+                for j in range(lst.count()):
+                    item = lst.item(j)
+                    text = self._gen_panel._find_item_text(item)
+                    if not text:
+                        continue
+                    try:
+                        rest = text.split(" ", 1)[1] if " " in text else ""
+                        rest = rest.strip("()")
+                        parts = rest.split(",")
+                        if len(parts) >= 2:
+                            ix = float(parts[0].strip())
+                            iy = float(parts[1].strip())
+                            if abs(ix - pm[0]) < 0.5 and abs(iy - pm[1]) < 0.5:
+                                if j < len(labels):
+                                    new_num = labels[j].lstrip("#")
+                                    gi._label = new_num
+                                    gi.update()
+                                break
+                    except (ValueError, IndexError):
+                        continue
+
+        self._gen_panel.add_shooting_position(
+            saved_x, saved_y, is_start,
+            on_delete_clicked=_on_pos_deleted,
+            on_renumbered=_renumber_markers,
+        )
         index = len(self._gen_panel.get_shooting_positions())
-        self._scene.add_shooting_position_marker(x, y, is_start=is_start, index=index)
-        self._status.showMessage(f"Posizione di tiro aggiunta: ({x:.1f}, {y:.1f})")
+
+        # Callback quando la posizione viene spostata (aggiorna la label nella lista)
+        def _on_pos_changed(marker):
+            nonlocal saved_x, saved_y
+            mx, my = marker.pos_m
+            lst = self._gen_panel._pos_list
+            for i in range(lst.count()):
+                item = lst.item(i)
+                text = self._gen_panel._find_item_text(item)
+                if not text:
+                    continue
+                try:
+                    rest = text.split(" ", 1)[1] if " " in text else ""
+                    rest = rest.strip("()")
+                    parts = rest.split(",")
+                    if len(parts) >= 2:
+                        ix = float(parts[0].strip())
+                        iy = float(parts[1].strip())
+                        if abs(ix - saved_x) < 0.5 and abs(iy - saved_y) < 0.5:
+                            num_part = text.split(" ")[0] if " " in text else "#?"
+                            new_text = f"{num_part} ({mx:.2f}, {my:.2f})"
+                            widget = lst.itemWidget(item)
+                            if widget:
+                                label = widget.findChild(QLabel)
+                                if label:
+                                    label.setText(new_text)
+                            saved_x, saved_y = mx, my
+                            break
+                except (ValueError, IndexError):
+                    continue
+
+        # Aggiunge marker visivo nella scena
+        self._scene.add_shooting_position_marker(
+            saved_x, saved_y, is_start=is_start, index=index,
+            on_changed=_on_pos_changed,
+        )
+        self._status.showMessage(f"Posizione di tiro #{index} aggiunta: ({saved_x:.1f}, {saved_y:.1f})")
+
+        # Auto-disattiva la modalità posizionamento dopo aver piazzato
+        self._gen_panel._btn_place_pos.setChecked(False)
+        self._gen_panel._btn_place_pos.setText("✏️ Posiziona")
+        self._view.set_placing_position_mode(False)
+
+    @Slot(float, float, float, float, bool)
+    def _on_obstacle_placed(self, x: float, y: float, width: float,
+                             rotation: float, is_wall: bool):
+        """Aggiunge un ostacolo posizionato dall'utente."""
+        saved_x, saved_y = x, y
+        prefix = "M" if is_wall else "B"
+
+        # Callback quando l'utente clicca ✕ sulla riga della lista
+        def _on_obstacle_deleted(item):
+            """Rimuove il marker corrispondente dalla scena."""
+            for gi in list(self._scene.items()):
+                if hasattr(gi, 'pos_m') and hasattr(gi, '_is_wall'):
+                    pm = gi.pos_m
+                    if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
+                        self._scene.removeItem(gi)
+                        break
+
+        # Callback per aggiornare i marker dopo rinumerazione
+        def _renumber_obstacles(labels: list[str]):
+            """Aggiorna le etichette dei marker ostacoli sulla scena."""
+            lst = self._gen_panel._walls_list if is_wall else self._gen_panel._barriers_list
+            for gi in self._scene.items():
+                if not hasattr(gi, 'pos_m') or not hasattr(gi, '_is_wall'):
+                    continue
+                if gi._is_wall != is_wall:
+                    continue  # solo ostacoli dello stesso tipo
+                pm = gi.pos_m
+                for j in range(lst.count()):
+                    item = lst.item(j)
+                    text = self._gen_panel._find_item_text(item)
+                    if not text:
+                        continue
+                    try:
+                        rest = text.split(" ", 1)[1] if " " in text else ""
+                        if "(" in rest and ")" in rest:
+                            coords = rest[rest.find("(") + 1:rest.find(")")]
+                            parts = coords.split(",")
+                            if len(parts) >= 2:
+                                ix = float(parts[0].strip())
+                                iy = float(parts[1].strip())
+                                if abs(ix - pm[0]) < 0.5 and abs(iy - pm[1]) < 0.5:
+                                    if j < len(labels):
+                                        gi._label = labels[j]
+                                        gi.update()
+                                    break
+                    except (ValueError, IndexError):
+                        continue
+
+        self._gen_panel.add_obstacle(
+            saved_x, saved_y, width, rotation, is_wall,
+            on_delete_clicked=_on_obstacle_deleted,
+            on_renumbered=_renumber_obstacles,
+        )
+
+        # Callback per aggiornare la label quando l'utente sposta/ruota
+        def _on_obstacle_changed(marker):
+            nonlocal saved_x, saved_y
+            mx, my = marker.pos_m
+            lst = self._gen_panel._walls_list if marker._is_wall else self._gen_panel._barriers_list
+            for i in range(lst.count()):
+                item = lst.item(i)
+                text = self._gen_panel._find_item_text(item)
+                if not text:
+                    continue
+                # Cerca per coordinate
+                try:
+                    rest = text.split(" ", 1)[1] if " " in text else ""
+                    if "(" in rest and ")" in rest:
+                        coords = rest[rest.find("(") + 1:rest.find(")")]
+                        parts = coords.split(",")
+                        if len(parts) >= 2:
+                            ix = float(parts[0].strip())
+                            iy = float(parts[1].strip())
+                            if abs(ix - saved_x) < 0.5 and abs(iy - saved_y) < 0.5:
+                                num_part = text.split(" ")[0] if " " in text else "#?"
+                                new_text = f"{num_part} ({mx:.2f}, {my:.2f}) " \
+                                           f"w={marker.width_m:.1f} rot={marker.rotation_deg:.0f}°"
+                                widget = lst.itemWidget(item)
+                                if widget:
+                                    label_w = widget.findChild(QLabel)
+                                    if label_w:
+                                        label_w.setText(new_text)
+                                saved_x, saved_y = mx, my
+                                break
+                except (ValueError, IndexError):
+                    continue
+
+        # Calcola il numero progressivo per il marker
+        lst = self._gen_panel._walls_list if is_wall else self._gen_panel._barriers_list
+        marker_number = lst.count()
+        label_text = f"#{marker_number}{prefix}"
+
+        self._scene.add_obstacle_marker(
+            saved_x, saved_y, width=width, rotation=rotation,
+            is_wall=is_wall, label=label_text,
+            on_changed=_on_obstacle_changed,
+        )
+        tipo = "muro" if is_wall else "barriera"
+        self._status.showMessage(f"{tipo} #{marker_number} posizionato: ({saved_x:.1f}, {saved_y:.1f})")
+
+        # Auto-disattiva la modalità posizionamento
+        if is_wall:
+            self._gen_panel._btn_place_wall.setChecked(False)
+            self._gen_panel._btn_place_wall.setText("🧱 Muro")
+        else:
+            self._gen_panel._btn_place_barrier.setChecked(False)
+            self._gen_panel._btn_place_barrier.setText("🛡️ Barriera")
+        self._view.set_placing_obstacle_mode(False, is_wall)
+
+    @Slot(bool, bool)
+    def _on_obstacle_mode_toggled(self, active: bool, is_wall: bool):
+        """Attiva/disattiva la modalità posizionamento ostacoli."""
+        width = self._gen_panel._obs_width.value()
+        rotation = self._gen_panel._obs_rotation.value()
+        self._view.set_placing_obstacle_mode(active, is_wall, width, rotation)
 
     @Slot()
     def _refresh_info(self):

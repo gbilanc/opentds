@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QPushButton, QProgressBar, QGroupBox,
     QFrame, QScrollArea, QStackedWidget, QListWidget,
     QListWidgetItem, QAbstractItemView, QMessageBox,
-    QSlider,
+    QSlider, QSizePolicy,
 )
 
 from core.generator import GeneratorConfig, Phase1Config, Phase2Config
@@ -27,6 +27,7 @@ class StageWizard(QWidget):
     phase2Requested = Signal(Phase2Config)
     stopRequested = Signal()
     placeModeToggled = Signal(bool)  # True = attivo, False = disattivo
+    placeObstacleModeToggled = Signal(bool, bool)  # active, is_wall
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -288,6 +289,98 @@ class StageWizard(QWidget):
 
         layout.addWidget(pos_group)
 
+        # ── Ostacoli posizionabili dall'utente ──
+        obs_place_group = QGroupBox("Posiziona Ostacoli (opzionale)")
+        obs_place_layout = QVBoxLayout(obs_place_group)
+        obs_place_layout.setSpacing(8)
+
+        obs_place_help = QLabel(
+            "🖱️ Attiva la modalità e clicca sulla mappa per posizionare\n"
+            "muri e barriere. Utile per definire ostacoli specifici;\n"
+            "quelli non posizionati verranno generati automaticamente."
+        )
+        obs_place_help.setWordWrap(True)
+        obs_place_help.setStyleSheet("font-size: 11px; color: #64748b; padding: 4px;")
+        obs_place_layout.addWidget(obs_place_help)
+
+        # Liste ostacoli
+        list_row = QHBoxLayout()
+
+        # Lista muri
+        wall_layout = QVBoxLayout()
+        wall_layout.addWidget(QLabel("Muri:"))
+        self._walls_list = QListWidget()
+        self._walls_list.setAlternatingRowColors(True)
+        self._walls_list.setMaximumHeight(90)
+        wall_layout.addWidget(self._walls_list)
+
+        wall_btn_row = QHBoxLayout()
+        self._btn_place_wall = QPushButton("🧱 Muro")
+        self._btn_place_wall.setCheckable(True)
+        self._btn_place_wall.setToolTip("Clicca sulla mappa per posizionare un muro")
+        self._btn_place_wall.clicked.connect(lambda: self._toggle_obstacle_mode(True))
+        wall_btn_row.addWidget(self._btn_place_wall)
+
+        self._btn_clear_walls = QPushButton("🗑️")
+        self._btn_clear_walls.setToolTip("Cancella tutti i muri posizionati")
+        self._btn_clear_walls.setFixedWidth(36)
+        self._btn_clear_walls.clicked.connect(lambda: self._clear_obstacles(True))
+        wall_btn_row.addWidget(self._btn_clear_walls)
+        wall_layout.addLayout(wall_btn_row)
+
+        list_row.addLayout(wall_layout)
+
+        # Lista barriere
+        barrier_layout = QVBoxLayout()
+        barrier_layout.addWidget(QLabel("Barriere:"))
+        self._barriers_list = QListWidget()
+        self._barriers_list.setAlternatingRowColors(True)
+        self._barriers_list.setMaximumHeight(90)
+        barrier_layout.addWidget(self._barriers_list)
+
+        barrier_btn_row = QHBoxLayout()
+        self._btn_place_barrier = QPushButton("🛡️ Barriera")
+        self._btn_place_barrier.setCheckable(True)
+        self._btn_place_barrier.setToolTip("Clicca sulla mappa per posizionare una barriera")
+        self._btn_place_barrier.clicked.connect(lambda: self._toggle_obstacle_mode(False))
+        barrier_btn_row.addWidget(self._btn_place_barrier)
+
+        self._btn_clear_barriers = QPushButton("🗑️")
+        self._btn_clear_barriers.setToolTip("Cancella tutte le barriere posizionate")
+        self._btn_clear_barriers.setFixedWidth(36)
+        self._btn_clear_barriers.clicked.connect(lambda: self._clear_obstacles(False))
+        barrier_btn_row.addWidget(self._btn_clear_barriers)
+        barrier_layout.addLayout(barrier_btn_row)
+
+        list_row.addLayout(barrier_layout)
+        obs_place_layout.addLayout(list_row)
+
+        # Opzioni ostacolo (larghezza, rotazione)
+        obs_opts_row = QHBoxLayout()
+        obs_opts_row.addWidget(QLabel("Lunghezza:"))
+        self._obs_width = QDoubleSpinBox()
+        self._obs_width.setRange(0.5, 20.0)
+        self._obs_width.setDecimals(1)
+        self._obs_width.setValue(3.0)
+        self._obs_width.setSuffix(" m")
+        self._obs_width.setFixedWidth(80)
+        self._obs_width.valueChanged.connect(self._on_obstacle_width_changed)
+        obs_opts_row.addWidget(self._obs_width)
+
+        obs_opts_row.addSpacing(12)
+        obs_opts_row.addWidget(QLabel("Rotazione:"))
+        self._obs_rotation = QSpinBox()
+        self._obs_rotation.setRange(0, 359)
+        self._obs_rotation.setValue(0)
+        self._obs_rotation.setSuffix("°")
+        self._obs_rotation.setFixedWidth(70)
+        obs_opts_row.addWidget(self._obs_rotation)
+
+        obs_opts_row.addStretch()
+        obs_place_layout.addLayout(obs_opts_row)
+
+        layout.addWidget(obs_place_group)
+
         # ── Bersagli ──
         tgt_group = QGroupBox("Bersagli")
         tgt_form = QFormLayout(tgt_group)
@@ -386,6 +479,54 @@ class StageWizard(QWidget):
         scroll.setWidget(content)
         return scroll
 
+    def _parse_list_item(self, text: str) -> tuple[float, float, bool] | None:
+        """Estrae (x, y, is_start) da una riga della lista.
+
+        Formato: "#N (x, y)" dove N=1 è la posizione di partenza (Start).
+        """
+        try:
+            rest = text.split(" ", 1)[1] if " " in text else ""
+            rest = rest.strip("()")
+            parts = rest.split(",")
+            if len(parts) >= 2:
+                x = float(parts[0].strip())
+                y = float(parts[1].strip())
+                # Numero 1 = Start, tutti gli altri = intermedie
+                is_start = text.startswith("#1 ")
+                return (x, y, is_start)
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    def _parse_obstacle_item(self, text: str) -> tuple[float, float, float, float] | None:
+        """Estrae (x, y, width, rotation) da una riga della lista ostacoli.
+
+        Formato: "#1M (x, y) w=3.0 rot=0°" o "#2B (x, y) w=2.0 rot=90°"
+        """
+        try:
+            # Rimuovi il prefisso "#NM" o "#NB"
+            rest = text
+            if " " in text:
+                rest = text.split(" ", 1)[1] if len(text.split(" ", 1)) > 1 else ""
+            if "(" in rest and ")" in rest:
+                coords = rest[rest.find("(") + 1:rest.find(")")]
+                parts = coords.split(",")
+                if len(parts) >= 2:
+                    x = float(parts[0].strip())
+                    y = float(parts[1].strip())
+                    w = 3.0
+                    rot = 0.0
+                    if "w=" in rest:
+                        w_str = rest.split("w=")[1].split()[0]
+                        w = float(w_str)
+                    if "rot=" in rest:
+                        rot_str = rest.split("rot=")[1].split()[0].replace("°", "")
+                        rot = float(rot_str)
+                    return (x, y, w, rot)
+        except (ValueError, IndexError):
+            pass
+        return None
+
     def _on_generate_phase2(self):
         diff_map = {0: "easy", 1: "medium", 2: "hard"}
         course_map = {"Non specificato": "", "Short Course": "short",
@@ -397,19 +538,38 @@ class StageWizard(QWidget):
             item = self._pos_list.item(i)
             if item is None:
                 continue
-            text = item.text()
-            try:
-                # Formato: "S (x, y)" o "1 (x, y)"
-                rest = text.split(" ", 1)[1] if " " in text else ""
-                rest = rest.strip("()")
-                parts = rest.split(",")
-                if len(parts) >= 2:
-                    x = float(parts[0].strip())
-                    y = float(parts[1].strip())
-                    is_start = text.startswith("S")
-                    positions.append((x, y, is_start))
-            except (ValueError, IndexError):
+            parsed = self._parse_list_item(item.text())
+            if parsed:
+                positions.append(parsed)
+
+        # Raccogli ostacoli posizionati dall'utente
+        placed_walls: list[dict] = []
+        for i in range(self._walls_list.count()):
+            item = self._walls_list.item(i)
+            if item is None:
                 continue
+            parsed = self._parse_obstacle_item(item.text())
+            if parsed:
+                placed_walls.append({
+                    "x": parsed[0], "y": parsed[1],
+                    "width": parsed[2], "rotation": parsed[3],
+                })
+
+        placed_barriers: list[dict] = []
+        for i in range(self._barriers_list.count()):
+            item = self._barriers_list.item(i)
+            if item is None:
+                continue
+            parsed = self._parse_obstacle_item(item.text())
+            if parsed:
+                placed_barriers.append({
+                    "x": parsed[0], "y": parsed[1],
+                    "width": parsed[2], "rotation": parsed[3],
+                })
+
+        # Sottrai ostacoli posizionati dal conteggio auto-generati
+        num_walls = max(0, self._p2_walls.value() - len(placed_walls))
+        num_barriers = max(0, self._p2_barriers.value() - len(placed_barriers))
 
         config = Phase2Config(
             shooting_positions=positions,
@@ -418,12 +578,14 @@ class StageWizard(QWidget):
             num_plates=self._p2_plates.value(),
             num_mini=self._p2_mini.value(),
             num_moving=self._p2_moving.value(),
-            num_walls=self._p2_walls.value(),
-            num_barriers=self._p2_barriers.value(),
+            num_walls=num_walls,
+            num_barriers=num_barriers,
             include_no_shoots=self._p2_noshoot.isChecked(),
             include_activators=self._p2_activators.isChecked(),
             difficulty=diff_map[self._p2_diff.currentIndex()],
             course_type=course_map[self._p2_course.currentText()],
+            placed_walls=placed_walls,
+            placed_barriers=placed_barriers,
         )
 
         self._btn_autoplace.setEnabled(False)
@@ -477,35 +639,109 @@ class StageWizard(QWidget):
             self._btn_next.setEnabled(self._phase1_done)
             self._step_label.setText("Passo 1 di 2: Area di tiro")
 
+    # ── Helper: lista con bottone elimina ────────────────────────────
+
+    @staticmethod
+    def _make_list_item_widget(text: str, on_delete: callable) -> QWidget:
+        """Crea un widget per riga della lista con etichetta e bottone elimina."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(4, 1, 4, 1)
+        layout.setSpacing(4)
+
+        label = QLabel(text)
+        label.setStyleSheet("font-size: 10px; color: #0f172a;")
+        layout.addWidget(label, 1)
+
+        btn_del = QPushButton("✕")
+        btn_del.setFixedSize(20, 20)
+        btn_del.setStyleSheet("""
+            QPushButton {
+                font-size: 10px; font-weight: bold; color: #dc2626;
+                background: transparent; border: none; padding: 0;
+            }
+            QPushButton:hover { color: #b91c1c; }
+        """)
+        btn_del.clicked.connect(lambda: on_delete(widget))
+        layout.addWidget(btn_del)
+
+        return widget
+
+    def _find_item_text(self, item) -> str:
+        """Recupera il testo dalla riga della lista."""
+        if item is None:
+            return ""
+        widget = None
+        for lst in [self._pos_list, self._walls_list, self._barriers_list]:
+            w = lst.itemWidget(item)
+            if w is not None:
+                widget = w
+                break
+        if widget is None:
+            return ""
+        label = widget.findChild(QLabel)
+        return label.text() if label else ""
+
+    def _add_item_with_delete(self, lst: QListWidget, text: str,
+                               on_delete_clicked: callable) -> None:
+        """Aggiunge una riga con bottone elimina a una lista."""
+        item = QListWidgetItem()
+        widget = self._make_list_item_widget(text, lambda w: on_delete_clicked(item))
+        item.setSizeHint(widget.sizeHint())
+        lst.addItem(item)
+        lst.setItemWidget(item, widget)
+
     # ── Gestione posizioni di tiro ────────────────────────────────────
 
-    def add_shooting_position(self, x: float, y: float, is_start: bool = False):
-        """Aggiunge una posizione di tiro alla lista."""
-        label = "S" if is_start else str(self._pos_list.count() + 1)
-        text = f"{label} ({x:.2f}, {y:.2f})"
-        item = QListWidgetItem(text)
-        item.setIcon(self._icon_for_position(is_start))
-        if is_start:
-            # Inserisci all'inizio
-            self._pos_list.insertItem(0, item)
-        else:
-            self._pos_list.addItem(item)
+    def add_shooting_position(self, x: float, y: float, is_start: bool = False,
+                               on_delete_clicked: callable = None,
+                               on_renumbered: callable = None):
+        """Aggiunge una posizione di tiro numerata alla lista con bottone elimina.
 
-    def remove_shooting_position(self, index: int):
-        """Rimuove una posizione di tiro dalla lista."""
-        if 0 <= index < self._pos_list.count():
-            self._pos_list.takeItem(index)
+        Args:
+            on_delete_clicked: Callable(item) prima di rimuovere dalla lista.
+            on_renumbered: Callable(list[str]) dopo la rinumerazione, con le
+                          nuove etichette "#1", "#2", ... per aggiornare i marker.
+        """
+        numero = self._pos_list.count() + 1
+        text = f"#{numero} ({x:.2f}, {y:.2f})"
+
+        def _on_del(item):
+            if on_delete_clicked:
+                on_delete_clicked(item)
+            row = self._pos_list.row(item)
+            self._pos_list.takeItem(row)
+            # Rinumerazione progressiva dopo eliminazione
+            labels = []
+            for j in range(self._pos_list.count()):
+                it = self._pos_list.item(j)
+                t = self._find_item_text(it)
+                if t and t.startswith("#"):
+                    new_num = f"#{j + 1}"
+                    new_text = new_num + t[t.index(" "):]
+                    labels.append(new_num)
+                    w = self._pos_list.itemWidget(it)
+                    if w:
+                        lbl = w.findChild(QLabel)
+                        if lbl:
+                            lbl.setText(new_text)
+            if on_renumbered:
+                on_renumbered(labels)
+
+        self._add_item_with_delete(self._pos_list, text, _on_del)
 
     def _toggle_place_mode(self, active: bool):
         self.placeModeToggled.emit(active)
         if active:
+            self._btn_place_wall.setChecked(False)
+            self._btn_place_barrier.setChecked(False)
+            self.placeObstacleModeToggled.emit(False, True)
             self._btn_place_pos.setText("⏹️ Ferma")
         else:
             self._btn_place_pos.setText("✏️ Posiziona")
 
     def _clear_positions(self):
         self._pos_list.clear()
-        # Resetta anche il contatore nella view
         self.placeModeToggled.emit(False)
 
     def get_shooting_positions(self) -> list[tuple[float, float, bool]]:
@@ -513,21 +749,171 @@ class StageWizard(QWidget):
         positions: list[tuple[float, float, bool]] = []
         for i in range(self._pos_list.count()):
             item = self._pos_list.item(i)
+            text = self._find_item_text(item)
+            if not text:
+                continue
+            parsed = self._parse_list_item(text)
+            if parsed:
+                positions.append(parsed)
+        return positions
+
+    # ── Gestione ostacoli posizionati ────────────────────────────────
+
+    def add_obstacle(self, x: float, y: float, width: float, rotation: float,
+                      is_wall: bool = True,
+                      on_delete_clicked: callable = None,
+                      on_renumbered: callable = None):
+        """Aggiunge un ostacolo numerato alla lista con bottone elimina.
+
+        Args:
+            on_delete_clicked: Callable(item) prima di rimuovere dalla lista.
+            on_renumbered: Callable(list[str]) dopo la rinumerazione.
+        """
+        lst = self._walls_list if is_wall else self._barriers_list
+        prefix = "M" if is_wall else "B"
+        numero = lst.count() + 1
+        text = f"#{numero}{prefix} ({x:.2f}, {y:.2f}) w={width:.1f} rot={rotation:.0f}°"
+
+        def _on_del(item):
+            if on_delete_clicked:
+                on_delete_clicked(item)
+            row = lst.row(item)
+            lst.takeItem(row)
+            # Rinumerazione progressiva
+            labels = []
+            for j in range(lst.count()):
+                it = lst.item(j)
+                t = self._find_item_text(it)
+                if t and (t.startswith("#") and len(t) > 1 and t[1].isdigit()):
+                    new_prefix = "M" if t[2:].startswith("M") else "B"
+                    new_num = f"#{j + 1}{new_prefix}"
+                    labels.append(new_num)
+                    resto = t[t.index("("):] if "(" in t else ""
+                    new_text = f"{new_num} {resto}"
+                    w = lst.itemWidget(it)
+                    if w:
+                        lbl = w.findChild(QLabel)
+                        if lbl:
+                            lbl.setText(new_text)
+            if on_renumbered:
+                on_renumbered(labels)
+
+        self._add_item_with_delete(lst, text, _on_del)
+
+    def _toggle_obstacle_mode(self, is_wall: bool):
+        if is_wall:
+            active = self._btn_place_wall.isChecked()
+            self._btn_place_barrier.setChecked(False)
+        else:
+            active = self._btn_place_barrier.isChecked()
+            self._btn_place_wall.setChecked(False)
+
+        if active:
+            self._btn_place_pos.setChecked(False)
+            self._btn_place_pos.setText("✏️ Posiziona")
+            self.placeModeToggled.emit(False)
+
+        self.placeObstacleModeToggled.emit(active, is_wall)
+        if active:
+            btn = self._btn_place_wall if is_wall else self._btn_place_barrier
+            btn.setText("⏹️ Ferma")
+        else:
+            self._btn_place_wall.setText("🧱 Muro")
+            self._btn_place_barrier.setText("🛡️ Barriera")
+
+    def _clear_obstacles(self, is_wall: bool):
+        lst = self._walls_list if is_wall else self._barriers_list
+        lst.clear()
+
+    def _on_obstacle_width_changed(self, width: float):
+        pass
+
+    def get_placed_walls(self) -> list[dict]:
+        result: list[dict] = []
+        for i in range(self._walls_list.count()):
+            item = self._walls_list.item(i)
+            text = self._find_item_text(item)
+            if not text:
+                continue
+            parsed = self._parse_obstacle_item(text)
+            if parsed:
+                result.append({"x": parsed[0], "y": parsed[1],
+                               "width": parsed[2], "rotation": parsed[3]})
+        return result
+
+    def get_placed_barriers(self) -> list[dict]:
+        result: list[dict] = []
+        for i in range(self._barriers_list.count()):
+            item = self._barriers_list.item(i)
+            text = self._find_item_text(item)
+            if not text:
+                continue
+            parsed = self._parse_obstacle_item(text)
+            if parsed:
+                result.append({"x": parsed[0], "y": parsed[1],
+                               "width": parsed[2], "rotation": parsed[3]})
+        return result
+
+    def _toggle_obstacle_mode(self, is_wall: bool):
+        """Attiva/disattiva la modalità posizionamento ostacoli."""
+        if is_wall:
+            active = self._btn_place_wall.isChecked()
+            self._btn_place_barrier.setChecked(False)
+        else:
+            active = self._btn_place_barrier.isChecked()
+            self._btn_place_wall.setChecked(False)
+
+        if active:
+            self._btn_place_pos.setChecked(False)
+            self._btn_place_pos.setText("✏️ Posiziona")
+            self.placeModeToggled.emit(False)
+
+        self.placeObstacleModeToggled.emit(active, is_wall)
+        if active:
+            btn = self._btn_place_wall if is_wall else self._btn_place_barrier
+            btn.setText("⏹️ Ferma")
+        else:
+            self._btn_place_wall.setText("🧱 Muro")
+            self._btn_place_barrier.setText("🛡️ Barriera")
+
+    def _clear_obstacles(self, is_wall: bool):
+        lst = self._walls_list if is_wall else self._barriers_list
+        lst.clear()
+
+    def _on_obstacle_width_changed(self, width: float):
+        pass
+
+    def get_placed_walls(self) -> list[dict]:
+        result: list[dict] = []
+        for i in range(self._walls_list.count()):
+            item = self._walls_list.item(i)
             if item is None:
                 continue
-            text = item.text()
-            try:
-                rest = text.split(" ", 1)[1] if " " in text else ""
-                rest = rest.strip("()")
-                parts = rest.split(",")
-                if len(parts) >= 2:
-                    x = float(parts[0].strip())
-                    y = float(parts[1].strip())
-                    is_start = text.startswith("S")
-                    positions.append((x, y, is_start))
-            except (ValueError, IndexError):
+            widget = self._walls_list.itemWidget(item)
+            text = self._find_item_text(widget) if widget else ""
+            if not text:
                 continue
-        return positions
+            parsed = self._parse_obstacle_item(text)
+            if parsed:
+                result.append({"x": parsed[0], "y": parsed[1],
+                               "width": parsed[2], "rotation": parsed[3]})
+        return result
+
+    def get_placed_barriers(self) -> list[dict]:
+        result: list[dict] = []
+        for i in range(self._barriers_list.count()):
+            item = self._barriers_list.item(i)
+            if item is None:
+                continue
+            widget = self._barriers_list.itemWidget(item)
+            text = self._find_item_text(widget) if widget else ""
+            if not text:
+                continue
+            parsed = self._parse_obstacle_item(text)
+            if parsed:
+                result.append({"x": parsed[0], "y": parsed[1],
+                               "width": parsed[2], "rotation": parsed[3]})
+        return result
 
     @staticmethod
     def _icon_for_position(is_start: bool):

@@ -151,10 +151,16 @@ class Phase2Config:
     auto_distribution: bool = True
     seed: Optional[int] = None
     max_attempts: int = 500
+    placed_walls: list[dict] = None  # [{x, y, width, rotation}, ...]
+    placed_barriers: list[dict] = None  # [{x, y, width, rotation}, ...]
 
     def __post_init__(self):
         if self.shooting_positions is None:
             self.shooting_positions = []
+        if self.placed_walls is None:
+            self.placed_walls = []
+        if self.placed_barriers is None:
+            self.placed_barriers = []
 
 
 @dataclass
@@ -281,10 +287,19 @@ class StageGenerator:
         items = list(stage.items)
         attempts = 0
 
+        # Se l'utente ha specificato conteggi espliciti, usa quelli
+        # senza auto-distribution. auto_distribution scatta solo quando
+        # i conteggi sono a zero e c'è un course_type.
+        has_explicit_counts = (
+            cfg.num_targets > 0 or cfg.num_poppers > 0 or cfg.num_plates > 0
+            or cfg.num_mini > 0 or cfg.num_moving > 0
+        )
+        use_auto = cfg.auto_distribution and cfg.course_type and not has_explicit_counts
+
         resolved = _resolve_target_counts(
             cfg.num_targets, 0, cfg.num_poppers, cfg.num_plates,
             cfg.num_mini, cfg.num_moving,
-            cfg.auto_distribution, cfg.course_type,
+            use_auto, cfg.course_type if use_auto else "",
         )
         num_paper = resolved["paper"]
         num_poppers = resolved["poppers"]
@@ -298,47 +313,124 @@ class StageGenerator:
              f"mini={num_mini}, moving={num_moving}, walls={cfg.num_walls}, "
              f"barriers={cfg.num_barriers}, noshoot={cfg.include_no_shoots}")
 
-        # 1. Paper targets + mini targets
-        combined_paper = num_paper + num_mini
-        paper_placed = 0
-        for _ in range(combined_paper * 3):
-            if paper_placed >= combined_paper:
+        # 1a. Mini targets (prima, separati)
+        mini_placed = 0
+        for _ in range(max(num_mini * 5, 20)):
+            if mini_placed >= num_mini:
                 break
-            if paper_placed < num_mini:
-                ttype = ItemType.MINI_TARGET if paper_placed % 2 == 0 else ItemType.PAPER_TARGET
-            else:
-                ttype = ItemType.PAPER_TARGET
-            it = gen._place_target_around(stage, items, ttype, engine)
+            it = gen._place_target_around(stage, items, ItemType.MINI_TARGET, engine)
+            if it:
+                items.append(it)
+                mini_placed += 1
+            attempts += 1
+        _dbg(f"  Placed mini: {mini_placed}/{num_mini}")
+
+        # 1b. Paper targets
+        paper_placed = 0
+        for _ in range(max(num_paper * 5, 30)):
+            if paper_placed >= num_paper:
+                break
+            it = gen._place_target_around(stage, items, ItemType.PAPER_TARGET, engine)
             if it:
                 items.append(it)
                 paper_placed += 1
             attempts += 1
-        _dbg(f"  Placed paper/mini: {paper_placed}/{combined_paper}")
+        _dbg(f"  Placed paper: {paper_placed}/{num_paper}")
 
-        # 2. Poppers
+        # 2. Poppers — tentativi estesi
         poppers_placed = 0
-        for _ in range(num_poppers * 3):
+        popper_attempts = max(num_poppers * 5, 30)
+        for _ in range(popper_attempts):
             if poppers_placed >= num_poppers:
                 break
-            it = gen._place_target_around(stage, items, ItemType.POPPER, engine)
+            it = gen._place_target_around(
+                stage, items, ItemType.POPPER, engine,
+                override_min_dist=MIN_STEEL_PLACEMENT_DISTANCE,
+            )
             if it:
                 it.properties["calibrated"] = True
                 it.properties["calibration_pf"] = 125
                 items.append(it)
                 poppers_placed += 1
             attempts += 1
+        # Fallback: distanza ridotta, poi edge placement
+        if poppers_placed < num_poppers:
+            for reduced in [5.0, 3.0]:
+                if poppers_placed >= num_poppers:
+                    break
+                for _ in range(30):
+                    if poppers_placed >= num_poppers:
+                        break
+                    it = gen._place_target_around(
+                        stage, items, ItemType.POPPER, engine,
+                        override_min_dist=reduced,
+                    )
+                    if it:
+                        it.properties["calibrated"] = True
+                        it.properties["calibration_pf"] = 125
+                        items.append(it)
+                        poppers_placed += 1
+                    attempts += 1
+        # Fallback estremo: bordi dello stage
+        if poppers_placed < num_poppers:
+            for _ in range(50):
+                if poppers_placed >= num_poppers:
+                    break
+                it = gen._place_steel_fallback(
+                    stage, items, ItemType.POPPER, engine,
+                    min_dist_from_shooter=7.0,
+                )
+                if it:
+                    it.properties["calibrated"] = True
+                    it.properties["calibration_pf"] = 125
+                    items.append(it)
+                    poppers_placed += 1
+                attempts += 1
         _dbg(f"  Placed poppers: {poppers_placed}/{num_poppers}")
 
-        # 3. Metal plates
+        # 3. Metal plates — tentativi estesi
         plates_placed = 0
-        for _ in range(num_plates * 3):
+        plate_attempts = max(num_plates * 5, 30)
+        for _ in range(plate_attempts):
             if plates_placed >= num_plates:
                 break
-            it = gen._place_target_around(stage, items, ItemType.METAL_PLATE, engine)
+            it = gen._place_target_around(
+                stage, items, ItemType.METAL_PLATE, engine,
+                override_min_dist=MIN_STEEL_PLACEMENT_DISTANCE,
+            )
             if it:
                 items.append(it)
                 plates_placed += 1
             attempts += 1
+        # Fallback: distanza ridotta, poi edge placement
+        if plates_placed < num_plates:
+            for reduced in [5.0, 3.0]:
+                if plates_placed >= num_plates:
+                    break
+                for _ in range(30):
+                    if plates_placed >= num_plates:
+                        break
+                    it = gen._place_target_around(
+                        stage, items, ItemType.METAL_PLATE, engine,
+                        override_min_dist=reduced,
+                    )
+                    if it:
+                        items.append(it)
+                        plates_placed += 1
+                    attempts += 1
+        # Fallback estremo: bordi dello stage
+        if plates_placed < num_plates:
+            for _ in range(50):
+                if plates_placed >= num_plates:
+                    break
+                it = gen._place_steel_fallback(
+                    stage, items, ItemType.METAL_PLATE, engine,
+                    min_dist_from_shooter=7.0,
+                )
+                if it:
+                    items.append(it)
+                    plates_placed += 1
+                attempts += 1
         _dbg(f"  Placed plates: {plates_placed}/{num_plates}")
 
         # 4. Reg. 4.3.3.3
@@ -373,21 +465,52 @@ class StageGenerator:
             if activator_items:
                 _create_activator_relationships(stage, items, activator_items, poly)
 
-        # 7. Bersagli mobili
+        # 7. Bersagli mobili — più tentativi
         moving_types_list = [ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER]
-        for i in range(num_moving):
-            mtype = moving_types_list[i % len(moving_types_list)]
+        moving_placed = 0
+        for _ in range(max(num_moving * 5, 25)):
+            if moving_placed >= num_moving:
+                break
+            mtype = moving_types_list[moving_placed % len(moving_types_list)]
             it = gen._place_target_around(stage, items, mtype, engine, is_moving=True)
             if it:
                 items.append(it)
+                moving_placed += 1
             attempts += 1
         _dbg(f"  Placed moving: {sum(1 for x in items if x.item_type in moving_types_list)}/{num_moving}")
 
-        # 8. Muri/barriere
+        # 8. Muri/barriere posizionati dall'utente (Fase 2 UI)
+        for w_data in cfg.placed_walls:
+            w_item = StageItem(
+                0, ItemType.WALL,
+                w_data["x"], w_data["y"],
+                width=w_data.get("width", 3.0),
+                height=0.2,
+                rotation=w_data.get("rotation", 0.0),
+                color=TARGET_COLORS["wall"],
+                label="Muro (utente)",
+                properties={"user_placed": True},
+            )
+            items.append(w_item)
+
+        for b_data in cfg.placed_barriers:
+            b_item = StageItem(
+                0, ItemType.BARRIER,
+                b_data["x"], b_data["y"],
+                width=b_data.get("width", 2.0),
+                height=0.15,
+                rotation=b_data.get("rotation", 0.0),
+                color=TARGET_COLORS["barrier"],
+                label="Barriera (utente)",
+                properties={"user_placed": True},
+            )
+            items.append(b_item)
+
+        # 8b. Muri/barriere auto-generati (solo il residuo)
         walls_before = len(items)
         items.extend(gen._generate_walls(stage, items))
         items.extend(gen._generate_barriers(stage, items))
-        _dbg(f"  Walls+barriers placed: {len(items) - walls_before}")
+        _dbg(f"  Walls+barriers placed (auto): {len(items) - walls_before}")
 
         # 9. Muri restrittivi
         items.extend(gen._add_restrictive_walls(stage, items, engine))
@@ -846,7 +969,8 @@ class StageGenerator:
 
     def _place_target_around(self, stage: Stage, existing: List[StageItem],
                               ttype: ItemType, engine: IPSCRulesEngine,
-                              is_moving: bool = False) -> Optional[StageItem]:
+                              is_moving: bool = False,
+                              override_min_dist: float | None = None) -> Optional[StageItem]:
         """Posiziona un bersaglio INTORNO all'area di tiro.
         
         Regole:
@@ -891,6 +1015,10 @@ class StageGenerator:
             w, h = 0.23, 0.23; label = "Micro"; min_dist_from_edge = 1.0
         else:
             w, h = 0.45, 0.45; label = "Paper"; min_dist_from_edge = 1.0
+
+        # override_min_dist sovrascrive per fallback con distanze ridotte
+        if override_min_dist is not None:
+            min_dist_from_edge = override_min_dist
 
         color = tcolor
 
@@ -1090,6 +1218,72 @@ class StageGenerator:
                                 ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
                             if it_is_paper and other_is_paper:
                                 continue
+                            o_obb = item_obb(other)
+                            if o_obb and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05:
+                                ok = False
+                                break
+                if ok:
+                    return it
+        return None
+
+    def _place_steel_fallback(self, stage: Stage, existing: List[StageItem],
+                               ttype: ItemType, engine: IPSCRulesEngine,
+                               min_dist_from_shooter: float = 7.0
+                               ) -> Optional[StageItem]:
+        """Posiziona un bersaglio metallico come fallback ai bordi dello stage.
+
+        Quando il posizionamento standard (dietro il perimetro) fallisce,
+        questo metodo posiziona il metallico lungo i bordi dello stage,
+        mantenendo la distanza di sicurezza dal centro dell'area di tiro.
+        """
+        if not self._perimeter_poly:
+            return None
+
+        poly = self._perimeter_poly
+        cx = sum(p[0] for p in poly) / len(poly)
+        cy = sum(p[1] for p in poly) / len(poly)
+
+        margin = engine.MIN_TARGET_TO_EDGE
+        tcolor = TARGET_COLORS.get(
+            "popper" if ttype == ItemType.POPPER else "metal_plate", "#d1d5db")
+        w, h = (0.30, 0.30) if ttype == ItemType.POPPER else (0.20, 0.20)
+        label = "Popper" if ttype == ItemType.POPPER else "Plate"
+
+        # Genera posizioni candidate lungo i 4 bordi dello stage
+        edge_positions = []
+        # Bordo fondo
+        step = 0.5
+        for x in [i * step for i in range(int(margin // step), int((stage.width - margin) // step))]:
+            edge_positions.append((x, stage.depth - margin))
+        # Bordo sinistro
+        for y in [i * step for i in range(int(margin // step), int((stage.depth - margin) // step))]:
+            edge_positions.append((margin, y))
+        # Bordo destro
+        for y in [i * step for i in range(int(margin // step), int((stage.depth - margin) // step))]:
+            edge_positions.append((stage.width - margin, y))
+
+        random.shuffle(edge_positions)
+
+        for px, py in edge_positions:
+            from core.geometry import point_in_polygon
+            if point_in_polygon(px, py, poly):
+                continue
+
+            dist = math.hypot(px - cx, py - cy)
+            if dist < min_dist_from_shooter:
+                continue
+
+            rot = self._compute_target_rotation(px, py, cx, cy, w, h)
+            props = {"mount_height": 1.0} if ttype == ItemType.METAL_PLATE else {}
+            it = StageItem(0, ttype, px, py, w, h, rot, tcolor, label, properties=props)
+
+            if engine.is_valid_position(it, existing):
+                it_obb = item_obb(it)
+                ok = True
+                if it_obb:
+                    for other in existing:
+                        if other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
+                                               ItemType.NO_SHOOT):
                             o_obb = item_obb(other)
                             if o_obb and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05:
                                 ok = False
