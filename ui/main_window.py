@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QApplication, QDockWidget
 )
 
-from core.models import Stage, ItemType
+from core.models import Stage
 from core.generator import GeneratorConfig, Phase1Config, GeneratorResult, StageGenerator
 from ui.editor.stage_scene import StageScene, StageItemWrapper
 from ui.editor.stage_view import StageView
@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
 
         # Generator dock (raggruppato con info a sinistra)
         self._gen_panel = GeneratorPanel(self)
+        self._gen_panel.scene_ref = self._scene  # per Fase 3
         self._gen_dock = QDockWidget("Generazione", self)
         self._gen_dock.setWidget(self._gen_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._gen_dock)
@@ -97,40 +98,7 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        def _btn(text, tip, callback):
-            b = QPushButton(text)
-            b.setToolTip(tip)
-            # Wrapper che chiama il callback e poi aggiorna info stage
-            def _wrapper():
-                callback()
-                self._refresh_info()
-            b.clicked.connect(_wrapper)
-            return b
-
         cx, cy = self._stage.width / 2, self._stage.depth / 2
-
-        toolbar.addWidget(_btn("+ Muro", "Aggiungi muro",
-            lambda: self._scene.add_wall(cx, cy, 3.0, 0.2)))
-        toolbar.addWidget(_btn("+ Paper", "Aggiungi bersaglio cartaceo",
-            lambda: self._scene.add_target(cx + 1, cy, 0.45, 0.45, ItemType.PAPER_TARGET)))
-        toolbar.addWidget(_btn("+ Steel", "Aggiungi bersaglio metallico",
-            lambda: self._scene.add_target(cx - 1, cy, 0.30, 0.30, ItemType.STEEL_TARGET)))
-        toolbar.addWidget(_btn("+ Fault", "Aggiungi fault line",
-            lambda: self._scene.add_fault_line(cx, cy + 2, 3.0)))
-        toolbar.addWidget(_btn("+ NS", "Aggiungi no-shoot",
-            lambda: self._scene.add_no_shoot(cx + 0.5, cy + 0.5, 0.45, 0.45)))
-        toolbar.addWidget(_btn("+ Barriera", "Aggiungi barriera",
-            lambda: self._scene.add_barrier(cx, cy - 1, 2.0, 0.15)))
-        toolbar.addWidget(_btn("+ Porta", "Aggiungi porta",
-            lambda: self._scene.add_door(cx, cy - 2, 0.9, 0.05)))
-        toolbar.addWidget(_btn("+ Swinger", "Aggiungi swinger",
-            lambda: self._scene.add_swinger(cx + 1.5, cy)))
-        toolbar.addWidget(_btn("+ Drop", "Aggiungi drop turner",
-            lambda: self._scene.add_drop_turner(cx - 1.5, cy)))
-        toolbar.addWidget(_btn("+ Mover", "Aggiungi mover",
-            lambda: self._scene.add_mover(cx, cy + 2.5)))
-
-        toolbar.addSeparator()
 
         btn_del = QPushButton("\U0001f5d1 Elimina")
         btn_del.setToolTip("Elimina oggetti selezionati")
@@ -286,9 +254,7 @@ class MainWindow(QMainWindow):
         self._prop_dock.markerChanged.connect(self._on_marker_changed)
         self._gen_panel.phase1Requested.connect(self._on_phase1_requested)
         self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
-        self._view.obstaclePlaced.connect(self._on_obstacle_placed)
         self._gen_panel.placeModeToggled.connect(self._view.set_placing_position_mode)
-        self._gen_panel.placeObstacleModeToggled.connect(self._on_obstacle_mode_toggled)
         # Sincronizzazione → Info
         self._scene.itemAdded.connect(self._refresh_info)
         self._scene.itemUpdated.connect(self._refresh_info)
@@ -632,121 +598,6 @@ class MainWindow(QMainWindow):
         self._view.set_placing_position_mode(False)
 
     @Slot(float, float, float, float, bool)
-    def _on_obstacle_placed(self, x: float, y: float, width: float,
-                             rotation: float, is_wall: bool):
-        """Aggiunge un ostacolo posizionato dall'utente."""
-        saved_x, saved_y = x, y
-        prefix = "M" if is_wall else "B"
-
-        # Callback quando l'utente clicca ✕ sulla riga della lista
-        def _on_obstacle_deleted(item):
-            """Rimuove il marker corrispondente dalla scena."""
-            for gi in list(self._scene.items()):
-                if hasattr(gi, 'pos_m') and hasattr(gi, '_is_wall'):
-                    pm = gi.pos_m
-                    if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
-                        self._scene.removeItem(gi)
-                        break
-
-        # Callback per aggiornare i marker dopo rinumerazione
-        def _renumber_obstacles(labels: list[str]):
-            """Aggiorna le etichette dei marker ostacoli sulla scena."""
-            lst = self._gen_panel._walls_list if is_wall else self._gen_panel._barriers_list
-            for gi in self._scene.items():
-                if not hasattr(gi, 'pos_m') or not hasattr(gi, '_is_wall'):
-                    continue
-                if gi._is_wall != is_wall:
-                    continue  # solo ostacoli dello stesso tipo
-                pm = gi.pos_m
-                for j in range(lst.count()):
-                    item = lst.item(j)
-                    text = self._gen_panel._find_item_text(item)
-                    if not text:
-                        continue
-                    try:
-                        rest = text.split(" ", 1)[1] if " " in text else ""
-                        if "(" in rest and ")" in rest:
-                            coords = rest[rest.find("(") + 1:rest.find(")")]
-                            parts = coords.split(",")
-                            if len(parts) >= 2:
-                                ix = float(parts[0].strip())
-                                iy = float(parts[1].strip())
-                                if abs(ix - pm[0]) < 0.5 and abs(iy - pm[1]) < 0.5:
-                                    if j < len(labels):
-                                        gi._label = labels[j]
-                                        gi.update()
-                                    break
-                    except (ValueError, IndexError):
-                        continue
-
-        self._gen_panel.add_obstacle(
-            saved_x, saved_y, width, rotation, is_wall,
-            on_delete_clicked=_on_obstacle_deleted,
-            on_renumbered=_renumber_obstacles,
-        )
-
-        # Callback per aggiornare la label quando l'utente sposta/ruota
-        def _on_obstacle_changed(marker):
-            nonlocal saved_x, saved_y
-            mx, my = marker.pos_m
-            lst = self._gen_panel._walls_list if marker._is_wall else self._gen_panel._barriers_list
-            for i in range(lst.count()):
-                item = lst.item(i)
-                text = self._gen_panel._find_item_text(item)
-                if not text:
-                    continue
-                # Cerca per coordinate
-                try:
-                    rest = text.split(" ", 1)[1] if " " in text else ""
-                    if "(" in rest and ")" in rest:
-                        coords = rest[rest.find("(") + 1:rest.find(")")]
-                        parts = coords.split(",")
-                        if len(parts) >= 2:
-                            ix = float(parts[0].strip())
-                            iy = float(parts[1].strip())
-                            if abs(ix - saved_x) < 0.5 and abs(iy - saved_y) < 0.5:
-                                num_part = text.split(" ")[0] if " " in text else "#?"
-                                new_text = f"{num_part} ({mx:.2f}, {my:.2f}) " \
-                                           f"w={marker.width_m:.1f} rot={marker.rotation_deg:.0f}°"
-                                widget = lst.itemWidget(item)
-                                if widget:
-                                    label_w = widget.findChild(QLabel)
-                                    if label_w:
-                                        label_w.setText(new_text)
-                                saved_x, saved_y = mx, my
-                                break
-                except (ValueError, IndexError):
-                    continue
-
-        # Calcola il numero progressivo per il marker
-        lst = self._gen_panel._walls_list if is_wall else self._gen_panel._barriers_list
-        marker_number = lst.count()
-        label_text = f"#{marker_number}{prefix}"
-
-        self._scene.add_obstacle_marker(
-            saved_x, saved_y, width=width, rotation=rotation,
-            is_wall=is_wall, label=label_text,
-            on_changed=_on_obstacle_changed,
-        )
-        tipo = "muro" if is_wall else "barriera"
-        self._status.showMessage(f"{tipo} #{marker_number} posizionato: ({saved_x:.1f}, {saved_y:.1f})")
-
-        # Auto-disattiva la modalità posizionamento
-        if is_wall:
-            self._gen_panel._btn_place_wall.setChecked(False)
-            self._gen_panel._btn_place_wall.setText("🧱 Muro")
-        else:
-            self._gen_panel._btn_place_barrier.setChecked(False)
-            self._gen_panel._btn_place_barrier.setText("🛡️ Barriera")
-        self._view.set_placing_obstacle_mode(False, is_wall)
-
-    @Slot(bool, bool)
-    def _on_obstacle_mode_toggled(self, active: bool, is_wall: bool):
-        """Attiva/disattiva la modalità posizionamento ostacoli."""
-        width = self._gen_panel._obs_width.value()
-        rotation = self._gen_panel._obs_rotation.value()
-        self._view.set_placing_obstacle_mode(active, is_wall, width, rotation)
-
     @Slot()
     def _refresh_info(self):
         """Aggiorna il pannello Info Stage."""
