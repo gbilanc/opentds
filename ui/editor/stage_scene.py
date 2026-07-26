@@ -1034,6 +1034,14 @@ class StageItemMixin:
 #  Item grafici concreti (ciascuno eredita StageItemMixin + base Qt)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ── Helper: bounding rect esteso per includere handle rotazione ──
+
+def _with_rotation_handle(br: QRectF) -> QRectF:
+    """Estende un QRectF verso l'alto per includere l'handle di rotazione."""
+    top = br.top() - 24  # spazio per handle (12px) + margine
+    return QRectF(br.left(), top, br.width(), br.bottom() - top)
+
+
 class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
     """Classe base per item con forma rettangolare: muro, barriera, porta, bersagli mobili."""
 
@@ -1051,6 +1059,9 @@ class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
         self._rect_pen = QPen(QColor(pen_color), pen_width)
         self._rect_pen.setStyle(pen_style)
         self.update_from_model()
+
+    def boundingRect(self) -> QRectF:
+        return _with_rotation_handle(super().boundingRect())
 
     def update_from_model(self):
         it = self.wrapper.item
@@ -1076,6 +1087,9 @@ class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
 
 class EllipseGraphicsItem(StageItemMixin, QGraphicsEllipseItem):
     """Classe base per item con forma ellittica: bersagli carta/steel, no-shoot."""
+
+    def boundingRect(self) -> QRectF:
+        return _with_rotation_handle(super().boundingRect())
 
     def __init__(self, wrapper: StageItemWrapper, scale: float,
                  color: str, pen_color: str = "#0f172a", pen_width: int = 2,
@@ -1130,7 +1144,7 @@ class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
     def boundingRect(self):
         w = self.wrapper.item.width * self.scale
         pen_w = 8
-        return QRectF(-w / 2 - pen_w, -pen_w, w + pen_w * 2, pen_w * 2)
+        return _with_rotation_handle(QRectF(-w / 2 - pen_w, -pen_w, w + pen_w * 2, pen_w * 2))
 
     def paint(self, painter, option, widget=None):
         pen = QPen(QColor("#dc2626"), 3)
@@ -1273,7 +1287,7 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         it = self.wrapper.item
         w_px = it.width * self.scale
         h_px = it.height * self.scale
-        return QRectF(-w_px / 2, -h_px / 2, w_px, h_px)
+        return _with_rotation_handle(QRectF(-w_px / 2, -h_px / 2, w_px, h_px))
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         pixmap = self._get_pixmap()
