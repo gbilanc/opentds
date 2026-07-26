@@ -194,11 +194,11 @@ class ShootingPositionMarker(QGraphicsItem):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class EngagementAreaItem(QGraphicsItem):
-    """Mostra l'area di ingaggio di 90° da una posizione di tiro.
+    """Mostra l'area di ingaggio di 180° da una posizione di tiro.
 
-    Visualizza un cono di 90° (45° per lato) dalla posizione di tiro
-    verso il fondo dello stage. Le barriere/muri che intersecano il cono
-    generano zone d'ombra (aree non visibili).
+    Visualizza un cono di 180° (90° per lato, angoli sicurezza IPSC)
+    dalla posizione di tiro verso il fondo dello stage. Le barriere/muri
+    che intersecano il cono generano zone d'ombra (aree non visibili).
     """
 
     def __init__(self, pos_x: float, pos_y: float, scale: float,
@@ -243,8 +243,8 @@ class EngagementAreaItem(QGraphicsItem):
         # 0° = destra (+X), 90° = giù (+Y = backstop), 180° = sinistra
         angle_rad = math.radians(self._angle)
 
-        # Cono di 90°: 45° per lato
-        half_cone = math.radians(45)
+        # Cono di 180°: 90° per lato (angoli di sicurezza IPSC)
+        half_cone = math.radians(90)
 
         # Vertici del cono
         start_a = angle_rad - half_cone
