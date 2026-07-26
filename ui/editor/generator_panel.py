@@ -45,9 +45,13 @@ class StageWizard(QWidget):
         self._page1 = self._build_page1()
         self._stack.addWidget(self._page1)
 
-        # Pagina 2: Bersagli e posizioni
+        # Pagina 2: Posizioni e barriere
         self._page2 = self._build_page2()
         self._stack.addWidget(self._page2)
+
+        # Pagina 3: Aggiunta bersagli
+        self._page3 = self._build_page3()
+        self._stack.addWidget(self._page3)
 
         # Barra di navigazione
         nav = QHBoxLayout()
@@ -60,7 +64,7 @@ class StageWizard(QWidget):
 
         nav.addStretch()
 
-        self._step_label = QLabel("Passo 1 di 2: Area di tiro")
+        self._step_label = QLabel("Passo 1 di 3: Area di tiro")
         self._step_label.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 600;")
         nav.addWidget(self._step_label)
 
@@ -249,7 +253,7 @@ class StageWizard(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(14)
 
-        title = QLabel("🎯 Fase 2 — Bersagli e Posizioni")
+        title = QLabel("🎯 Fase 2 — Posizioni di Tiro e Barriere")
         title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
         layout.addWidget(title)
 
@@ -434,21 +438,75 @@ class StageWizard(QWidget):
             pass
         return None
 
-    # ── Navigazione ───────────────────────────────────────────────────
+    # ── Pagina 3: Aggiunta bersagli ───────────────────────────────────
+
+    def _build_page3(self) -> QWidget:
+        """Pagina 3: guida all'aggiunta manuale dei bersagli tramite toolbar."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(14)
+
+        title = QLabel("🎯 Fase 3 — Aggiunta Bersagli")
+        title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
+        layout.addWidget(title)
+
+        help_text = QLabel(
+            "Utilizza i pulsanti nella barra strumenti in alto\n"
+            "per aggiungere bersagli allo stage:\n\n"
+            "🧱 + Muro     — Aggiunge un muro\n"
+            "📄 + Paper    — Bersaglio cartaceo IPSC\n"
+            "⚙️  + Steel   — Bersaglio metallico generico\n"
+            "➖ + Fault    — Linea di fallo\n"
+            "🚫 + NS       — Bersaglio No-Shoot\n"
+            "🛡️ + Barriera — Barriera\n"
+            "🚪 + Porta    — Porta\n"
+            "🔄 + Swinger  — Bersaglio oscillante\n"
+            "⬇️  + Drop    — Bersaglio a caduta\n"
+            "➡️  + Mover   — Bersaglio su rotaia\n\n"
+            "Dopo aver aggiunto i bersagli, puoi:\n"
+            "  • Selezionarli e spostarli con il mouse\n"
+            "  • Modificare le proprietà nel pannello laterale\n"
+            "  • Usare Ctrl+Z per annullare"
+        )
+        help_text.setWordWrap(True)
+        help_text.setStyleSheet("font-size: 12px; color: #334155; line-height: 1.6;")
+        layout.addWidget(help_text)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        return scroll
+
+    # ── Navigazione (3 passi) ────────────────────────────────────────
 
     def _go_forward(self):
-        if self._stack.currentIndex() == 0:
+        idx = self._stack.currentIndex()
+        if idx == 0:
             self._stack.setCurrentIndex(1)
             self._btn_back.setEnabled(True)
+            self._btn_next.setEnabled(True)
+            self._step_label.setText("Passo 2 di 3: Posizioni di tiro e barriere")
+        elif idx == 1:
+            self._stack.setCurrentIndex(2)
             self._btn_next.setEnabled(False)
-            self._step_label.setText("Passo 2 di 2: Posizioni e ostacoli")
+            self._step_label.setText("Passo 3 di 3: Aggiunta bersagli")
 
     def _go_back(self):
-        if self._stack.currentIndex() == 1:
+        idx = self._stack.currentIndex()
+        if idx == 1:
             self._stack.setCurrentIndex(0)
             self._btn_back.setEnabled(False)
             self._btn_next.setEnabled(self._phase1_done)
-            self._step_label.setText("Passo 1 di 2: Area di tiro")
+            self._step_label.setText("Passo 1 di 3: Area di tiro")
+        elif idx == 2:
+            self._stack.setCurrentIndex(1)
+            self._btn_back.setEnabled(True)
+            self._btn_next.setEnabled(True)
+            self._step_label.setText("Passo 2 di 3: Posizioni di tiro e barriere")
 
     # ── Helper: lista con bottone elimina ────────────────────────────
 
@@ -748,7 +806,7 @@ class StageWizard(QWidget):
         self._phase1_done = False
         self._btn_back.setEnabled(False)
         self._btn_next.setEnabled(False)
-        self._step_label.setText("Passo 1 di 2: Area di tiro")
+        self._step_label.setText("Passo 1 di 3: Area di tiro")
         self._btn_gen_area.setEnabled(True)
         self._btn_gen_area.setText("▶ Genera Area di Tiro")
         self._p1_status.setText("")
