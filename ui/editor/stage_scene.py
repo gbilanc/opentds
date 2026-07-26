@@ -276,49 +276,100 @@ class EngagementAreaItem(QGraphicsItem):
         painter.drawLine(cx, cy, cx + r * math.cos(start_a), cy + r * math.sin(start_a))
         painter.drawLine(cx, cy, cx + r * math.cos(end_a), cy + r * math.sin(end_a))
 
-        # ── Calcola ombre proiettate da ostacoli ──
+        # ── Evidenzia ostacoli (muri/barriere) con OBB proiettata ──
+        block_brush = QBrush(QColor(160, 80, 80, 50))  # rosso-grigio trasp
+        block_pen = QPen(QColor(180, 60, 60, 100), 2, Qt.PenStyle.SolidLine)
+
         for obs in self._obstacles:
             ox, oy, ow, oh, orot = obs
-            # Centro ostacolo in coordinate scena
             ocx = ox * scale
             ocy = oy * scale
-            o_scale_x = ow * scale / 2
-            o_scale_y = oh * scale / 2
 
-            # Verifica se l'ostacolo è nel cono (distanza + angolo)
+            # Verifica se l'ostacolo è nel cono
             dx = ocx - cx
             dy = ocy - cy
             dist = math.hypot(dx, dy)
             if dist < 1:
                 continue
-            # Angolo dell'ostacolo rispetto alla posizione
+
+            # Angolo ostacolo rispetto alla posizione di tiro
             obs_angle = math.atan2(dy, dx)
-            # Normalizza nel range del cono
-            if start_a <= obs_angle <= end_a:
-                # Proietta ombra: disegna un trapezio dalla posizione
-                # oltre l'ostacolo fino al bordo del cono
-                half_w = o_scale_x * 1.5
-                shadow_ratio = r / max(dist, 1)
+            if not (start_a <= obs_angle <= end_a):
+                continue
 
-                # Punti di proiezione
-                p1 = (ocx - half_w, ocy)
-                p2 = (ocx + half_w, ocy)
-                p3 = (cx + (ocx + half_w - cx) * shadow_ratio,
-                      cy + (ocy - cy) * shadow_ratio)
-                p4 = (cx + (ocx - half_w - cx) * shadow_ratio,
-                      cy + (ocy - cy) * shadow_ratio)
+            # Calcola i 4 vertici dell'OBB dell'ostacolo
+            # Considera rotazione e dimensioni reali
+            rot_rad = math.radians(orot)
+            hw = ow * scale / 2  # mezza larghezza in pixel
+            hh = oh * scale / 2  # mezzo spessore in pixel
 
-                shadow = QPainterPath()
-                shadow.moveTo(*p1)
-                shadow.lineTo(*p2)
-                shadow.lineTo(*p3)
-                shadow.lineTo(*p4)
-                shadow.closeSubpath()
+            # Vertici locali (non ruotati)
+            corners_local = [
+                (-hw, -hh), (hw, -hh),
+                (hw, hh), (-hw, hh),
+            ]
+            # Ruota e trasla
+            corners = []
+            for lx, ly in corners_local:
+                rx = lx * math.cos(rot_rad) - ly * math.sin(rot_rad)
+                ry = lx * math.sin(rot_rad) + ly * math.cos(rot_rad)
+                corners.append((ocx + rx, ocy + ry))
 
-                shadow_brush = QBrush(QColor(80, 80, 80, 60))  # grigio trasp
-                painter.setBrush(shadow_brush)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawPath(shadow)
+            # Proietta i vertici dell'ostacolo radialmente dalla posizione
+            # di tiro fino al bordo del cono, creando un'area d'ombra
+            shadow_verts = []
+            for vx, vy in corners:
+                # Direzione dal punto di tiro al vertice
+                vdx = vx - cx
+                vdy = vy - cy
+                vdist = math.hypot(vdx, vdy)
+                if vdist < 1:
+                    continue
+                # Proietta oltre l'ostacolo fino al bordo del cono
+                ratio = (r + 10) / max(vdist, 1)
+                shadow_verts.append((vx, vy))
+                shadow_verts.append((cx + vdx * ratio, cy + vdy * ratio))
+
+            if len(shadow_verts) >= 4:
+                # Disegna l'ombra come poligono
+                shadow_path = QPainterPath()
+                # Alterna: vertice ostacolo → vertice proiettato → prossimo vertice
+                # Costruisci un poligono che connette tutti i vertici proiettati
+                # e i vertici originali dell'ostacolo
+                pts = list(corners)  # vertici ostacolo
+                # Vertici proiettati
+                proj = []
+                for vx, vy in pts:
+                    vdx = vx - cx
+                    vdy = vy - cy
+                    vdist = math.hypot(vdx, vdy)
+                    if vdist < 1:
+                        proj.append((vx, vy))
+                    else:
+                        ratio = (r + 10) / vdist
+                        proj.append((cx + vdx * ratio, cy + vdy * ratio))
+
+                # Poligono: ostacolo + proiezioni in ordine
+                shadow_path.moveTo(pts[0][0], pts[0][1])
+                for px, py in pts[1:]:
+                    shadow_path.lineTo(px, py)
+                for px, py in reversed(proj):
+                    shadow_path.lineTo(px, py)
+                shadow_path.closeSubpath()
+
+                painter.setBrush(block_brush)
+                painter.setPen(block_pen)
+                painter.drawPath(shadow_path)
+
+                # Disegna anche il perimetro dell'ostacolo stesso
+                obs_path = QPainterPath()
+                obs_path.moveTo(corners[0][0], corners[0][1])
+                for ox2, oy2 in corners[1:]:
+                    obs_path.lineTo(ox2, oy2)
+                obs_path.closeSubpath()
+                painter.setBrush(QBrush(QColor(180, 60, 60, 80)))
+                painter.setPen(QPen(QColor(200, 50, 50, 150), 2))
+                painter.drawPath(obs_path)
 
         painter.restore()
 
