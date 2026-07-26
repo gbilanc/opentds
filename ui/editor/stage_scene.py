@@ -239,9 +239,9 @@ class EngagementAreaItem(QGraphicsItem):
         cy = self._py * scale
         r = self._range * scale
 
-        # Direzione di ingaggio: default verso Y+ (down-range)
-        # angle=90 significa verso Y positivo (in IPSC: verso il backstop)
-        angle_rad = math.radians(self._angle - 90)  # 0=destra → 90=su
+        # Direzione di ingaggio: verso Y+ (down-range = backstop)
+        # 0° = destra (+X), 90° = giù (+Y = backstop), 180° = sinistra
+        angle_rad = math.radians(self._angle)
 
         # Cono di 90°: 45° per lato
         half_cone = math.radians(45)
