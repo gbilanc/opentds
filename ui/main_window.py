@@ -232,6 +232,13 @@ class MainWindow(QMainWindow):
         ))
         edit_menu.addAction(del_action)
 
+        # ── Strumenti ──
+        tools_menu = menubar.addMenu("&Strumenti")
+
+        svg_editor_action = QAction("✏️ Editor Bersagli &SVG…", self)
+        svg_editor_action.triggered.connect(self._on_svg_editor)
+        tools_menu.addAction(svg_editor_action)
+
         # ── Vista ──
         view_menu = menubar.addMenu("&Visualizza")
 
@@ -328,6 +335,12 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Tema {mode} attivato")
             # Re-render scena con colori aggiornati
             self._scene._update_shooting_area()
+
+    def _on_svg_editor(self):
+        """Apre l'editor bersagli SVG."""
+        from ui.dialogs.svg_editor_dialog import SvgEditorDialog
+        dialog = SvgEditorDialog(self)
+        dialog.exec()
 
     def _on_target_config(self):
         """Apre il dialog di configurazione aspetto bersagli."""

@@ -43,6 +43,9 @@ class TargetSvgManager:
         ItemType.NO_SHOOT:      "targets/ipsc_no_shoot.svg",
     }
 
+    # Cache per bersagli personalizzati caricati da file
+    _custom_renderers: dict[str, QSvgRenderer] = {}
+
     def __init__(self) -> None:
         self._renderers: dict[ItemType, QSvgRenderer] = {}
         self._cache: dict[tuple[ItemType, int, int], QPixmap] = {}
@@ -170,6 +173,47 @@ class TargetSvgManager:
 
         # Applica tinta colore via compositing SourceIn
         tint_color = self._colors.get(item_type)
+        if tint_color is not None:
+            tint_painter = QPainter(image)
+            tint_painter.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_SourceIn,
+            )
+            tint_painter.fillRect(image.rect(), tint_color)
+            tint_painter.end()
+
+        pixmap = QPixmap.fromImage(image)
+        self._cache[cache_key] = pixmap
+        return pixmap
+
+    def get_custom_pixmap(
+        self, filepath: str,
+        target_width: int, target_height: int,
+        tint_color: QColor | None = None,
+    ) -> QPixmap | None:
+        """Carica un SVG personalizzato da file e lo renderizza."""
+        if target_width <= 0 or target_height <= 0:
+            return None
+
+        cache_key = ("_custom_", filepath, target_width, target_height)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        # Carica renderer (con cache)
+        renderer = self._custom_renderers.get(filepath)
+        if renderer is None:
+            if not os.path.isfile(filepath):
+                return None
+            renderer = QSvgRenderer(filepath)
+            if not renderer.isValid():
+                return None
+            self._custom_renderers[filepath] = renderer
+
+        image = QImage(target_width, target_height, QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        renderer.render(painter, QRectF(0, 0, target_width, target_height))
+        painter.end()
+
         if tint_color is not None:
             tint_painter = QPainter(image)
             tint_painter.setCompositionMode(
