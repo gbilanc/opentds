@@ -454,7 +454,7 @@ class StageWizard(QWidget):
         # Posizione centrale di default
         if hasattr(self.scene_ref, 'stage'):
             cx = self.scene_ref.stage.width / 2
-            cy = self.scene_ref.stage.height / 2
+            cy = self.scene_ref.stage.depth / 2
         else:
             cx, cy = 10.0, 7.5
 
