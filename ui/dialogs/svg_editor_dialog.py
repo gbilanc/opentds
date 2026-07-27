@@ -346,7 +346,8 @@ class SvgEditorDialog(QDialog):
         )
         self._scale = 3.0
         self._zone_items: list[ZoneGraphicsItem] = []
-        self._setting_properties = False  # lock per evitare ricorsione
+        self._setting_properties = False  # lock per evitare ricorsione proprietà
+        self._setting_selection = False  # lock per evitare ricorsione selezione
 
         self.setWindowTitle(f"✏️ Editor Bersagli SVG — {self._design.name}")
         self.setMinimumSize(950, 650)
@@ -431,6 +432,7 @@ class SvgEditorDialog(QDialog):
 
         self._scene = SvgEditorScene(self)
         self._scene.editor = self
+        self._scene.selectionChanged.connect(self._on_scene_selection_changed)
         sr = self._design.width * self._scale + 40
         self._scene.setSceneRect(-20, -20, sr, sr)
 
@@ -673,6 +675,22 @@ class SvgEditorDialog(QDialog):
 
     # ── Zone properties ────────────────────────────────────────────────
 
+    def _on_scene_selection_changed(self):
+        """Sincronizza la lista zone quando la selezione cambia sul canvas."""
+        if self._setting_selection:
+            return
+        selected = [item for item in self._zone_items if item.isSelected()]
+        if len(selected) == 1:
+            zone = selected[0].zone
+            for i, z in enumerate(self._design.zones):
+                if z is zone:
+                    self._zone_list.blockSignals(True)
+                    self._zone_list.setCurrentRow(i)
+                    self._zone_list.blockSignals(False)
+                    # Aggiorna direttamente il pannello proprietà
+                    self._on_zone_selected(i)
+                    break
+
     def _on_zone_selected(self, row: int):
         if row < 0 or row >= len(self._design.zones):
             return
@@ -692,10 +710,12 @@ class SvgEditorDialog(QDialog):
         self._zone_shape.setText(SHAPE_NAMES.get(zone.shape_type, zone.shape_type))
         self._setting_properties = False
 
+        self._setting_selection = True
         for item in self._zone_items:
             item.setSelected(False)
         if row < len(self._zone_items):
             self._zone_items[row].setSelected(True)
+        self._setting_selection = False
 
     def _on_zone_prop_changed(self):
         if self._setting_properties:
