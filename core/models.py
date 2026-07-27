@@ -30,6 +30,7 @@ class ItemType(Enum):
     DOUBLET_OVERLAP_HOSTAGE = auto()  # due paper + no-shoot in mezzo
     BOBBER_PLATE = auto()      # piatto metallico che scompare
     DOUBLE_BOBBER = auto()     # due bobber affiancati
+    TARGET_PLUS_NOSHOOT = auto()  # paper + no-shoot sovrapposto
 
 
 class CourseType(Enum):

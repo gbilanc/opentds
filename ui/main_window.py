@@ -36,6 +36,8 @@ from services.blender_exporter import (
     get_blender_path,
 )
 from ui.dialogs.target_config_dialog import TargetConfigDialog
+from ui.dialogs.library_dialog import LibraryDialog
+from services.library import StageLibrary
 
 
 class MainWindow(QMainWindow):
@@ -45,6 +47,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 850)
 
         self._stage = Stage(name="Stage IPSC", width=20.0, depth=15.0)
+        self._library = StageLibrary()
         self._setup_ui()
         self._setup_toolbar()
         self._setup_menu()

@@ -26,7 +26,8 @@ def is_paper_like(t: ItemType) -> bool:
     """True per tipi bersaglio cartaceo."""
     return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
                   ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-                  ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE)
+                  ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
+                  ItemType.TARGET_PLUS_NOSHOOT)
 
 
 def is_steel_like(t: ItemType) -> bool:
@@ -97,6 +98,14 @@ COMPOSITE_TARGETS: dict[ItemType, dict] = {
         ],
         "props": {"bobber": True, "fall_time": 0.5},
         "description": "Doppio piatto bobber",
+    },
+    ItemType.TARGET_PLUS_NOSHOOT: {
+        "colpi": 2,
+        "sub_targets": [
+            (-0.08, 0, ItemType.PAPER_TARGET, "T"),
+            (0.15, 0, ItemType.NO_SHOOT, "NS"),
+        ],
+        "description": "Target + no-shoot (sovrapposto 40%)",
     },
 }
 

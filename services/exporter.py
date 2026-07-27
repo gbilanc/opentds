@@ -47,6 +47,7 @@ TYPE_COLORS: dict[ItemType, str] = {
     ItemType.DOUBLET_OVERLAP_HOSTAGE: "#8B4513",
     ItemType.BOBBER_PLATE: "#f97316",
     ItemType.DOUBLE_BOBBER: "#f97316",
+    ItemType.TARGET_PLUS_NOSHOOT: "#8B4513",
 }
 
 TYPE_LABELS: dict[ItemType, str] = {
@@ -73,6 +74,7 @@ TYPE_LABELS: dict[ItemType, str] = {
     ItemType.DOUBLET_OVERLAP_HOSTAGE: "Doppio + ostaggio (sovr.)",
     ItemType.BOBBER_PLATE: "Piatto bobber",
     ItemType.DOUBLE_BOBBER: "Doppio bobber",
+    ItemType.TARGET_PLUS_NOSHOOT: "Target + No-Shoot",
 }
 
 

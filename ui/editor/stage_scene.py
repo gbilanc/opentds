@@ -1702,6 +1702,7 @@ class StageScene(QGraphicsScene):
         ItemType.DOUBLET_OVERLAP_HOSTAGE:  (CompositeTargetGraphicsItem, None),
         ItemType.BOBBER_PLATE:             (CompositeTargetGraphicsItem, None),
         ItemType.DOUBLE_BOBBER:            (CompositeTargetGraphicsItem, None),
+        ItemType.TARGET_PLUS_NOSHOOT:        (CompositeTargetGraphicsItem, None),
     }
 
     def _make_graphics_item(self, item: StageItem) -> QGraphicsItem:

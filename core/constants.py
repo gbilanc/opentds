@@ -156,6 +156,7 @@ TARGET_DIMENSIONS: Final[dict[str, tuple[float, float]]] = {
     "doublet_overlap_hostage": (0.90, 0.75),
     "bobber_plate":  (0.20, 0.20),
     "double_bobber": (0.50, 0.20),
+    "target_plus_noshoot": (0.70, 0.75),
 }
 
 # Colori IPSC standard
@@ -180,6 +181,7 @@ TARGET_COLORS: Final[dict[str, str]] = {
     "doublet_overlap_hostage": "#8B4513",
     "bobber_plate":  "#f97316",  # arancione
     "double_bobber": "#f97316",
+    "target_plus_noshoot": "#8B4513",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

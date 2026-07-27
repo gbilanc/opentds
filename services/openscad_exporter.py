@@ -60,6 +60,7 @@ ITEM_COLORS: dict[ItemType, str] = {
     ItemType.DOUBLET_OVERLAP_HOSTAGE:  "#8B4513",
     ItemType.BOBBER_PLATE:  "#f97316",
     ItemType.DOUBLE_BOBBER: "#f97316",
+    ItemType.TARGET_PLUS_NOSHOOT: "#8B4513",
 }
 
 
@@ -96,6 +97,7 @@ TYPE_GEOM: dict[ItemType, ItemGeom3D] = {
     ItemType.DOUBLET_OVERLAP_HOSTAGE:  ItemGeom3D(sx=0.90, sy=0.02, sz=0.45, shape="cube"),
     ItemType.BOBBER_PLATE:  ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cylinder"),
     ItemType.DOUBLE_BOBBER: ItemGeom3D(sx=0.50, sy=0.02, sz=0.20, shape="cylinder"),
+    ItemType.TARGET_PLUS_NOSHOOT: ItemGeom3D(sx=0.70, sy=0.02, sz=0.75, shape="cube"),
     ItemType.SWINGER:        ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
     ItemType.DROP_TURNER:    ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
     ItemType.MOVER:          ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),

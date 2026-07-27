@@ -14,7 +14,7 @@ class TestItemType:
     """ItemType enum: 22 tipi (16 originali + 6 compositi)."""
 
     def test_all_types_present(self):
-        assert len(ItemType) == 22
+        assert len(ItemType) == 23  # 16 originali + 6 compositi + 1 target+noshoot
         assert ItemType.WALL in ItemType
         assert ItemType.PAPER_TARGET in ItemType
         assert ItemType.STEEL_TARGET in ItemType
@@ -38,6 +38,7 @@ class TestItemType:
         assert ItemType.DOUBLET_OVERLAP_HOSTAGE in ItemType
         assert ItemType.BOBBER_PLATE in ItemType
         assert ItemType.DOUBLE_BOBBER in ItemType
+        assert ItemType.TARGET_PLUS_NOSHOOT in ItemType
 
     def test_types_are_unique(self):
         names = [t.name for t in ItemType]

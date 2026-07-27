@@ -138,6 +138,7 @@ class PlacementEngine:
             ItemType.DOUBLET_OVERLAP_HOSTAGE: (0.90, 0.75, TARGET_COLORS.get("doublet_overlap_hostage", "#8B4513"), "Doppio+ost.s.", 1.0),
             ItemType.BOBBER_PLATE: (0.20, 0.20, TARGET_COLORS.get("bobber_plate", "#f97316"), "Bobber", MIN_STEEL_PLACEMENT_DISTANCE),
             ItemType.DOUBLE_BOBBER: (0.50, 0.20, TARGET_COLORS.get("double_bobber", "#f97316"), "Doppio bobber", MIN_STEEL_PLACEMENT_DISTANCE),
+            ItemType.TARGET_PLUS_NOSHOOT: (0.70, 0.75, TARGET_COLORS.get("target_plus_noshoot", "#8B4513"), "Target+NS", 1.0),
         }
         moving_labels = {
             ItemType.SWINGER: "Swinger",

@@ -71,6 +71,13 @@ class TestTypeHelpers:
         assert len(info["sub_targets"]) == 2
         assert is_composite(ItemType.DOUBLET_SIDE)
         assert not is_composite(ItemType.PAPER_TARGET)
+        # Target + NoShoot
+        assert is_paper_like(ItemType.TARGET_PLUS_NOSHOOT)
+        assert is_scoring_target(ItemType.TARGET_PLUS_NOSHOOT)
+        info = get_composite_info(ItemType.TARGET_PLUS_NOSHOOT)
+        assert info is not None
+        assert info["colpi"] == 2
+        assert len(info["sub_targets"]) == 2
 
 
 class TestResolveTargetCounts:
