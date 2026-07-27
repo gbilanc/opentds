@@ -4,19 +4,22 @@ SVG Target Editor — dialog per disegnare/modificare bersagli SVG personalizzat
 Caratteristiche:
 - Canvas interattivo: click per aggiungere zone, drag per spostare
 - Silhouette IPSC con griglia metrica e centro evidenziato
-- Tool: Seleziona / Rettangolo / Ellisse
+- Tool: Seleziona / Rettangolo / Ellisse / Esagono
 - Preset zone A/B/C/D con dimensioni e colori IPSC predefiniti
+- Redimensionamento zone dagli handle angolari (funzionante)
+- Sincronizzazione bidirezionale canvas ↔ pannello proprietà
 - Importa SVG esistente per modifica
 - Esporta in resources/targets/custom/
 """
 from __future__ import annotations
 
+import math
 import os
 
 from PySide6.QtCore import Qt, QRectF, QPointF, QSize
 from PySide6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QFont, QKeySequence,
-    QPainterPath,
+    QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QPolygonF,
+    QKeySequence,
 )
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
@@ -35,11 +38,26 @@ from core.target_designer import (
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SilhouetteItem — sagoma del bersaglio
+#  Costanti
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SHAPE_NAMES = {
+    "rect": "rettangolo",
+    "ellipse": "ellisse",
+    "hexagon": "esagono",
+}
+SHAPE_ICONS = {
+    "rect": "▭",
+    "ellipse": "⬭",
+    "hexagon": "⬡",
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  SilhouetteItem
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class SilhouetteItem(QGraphicsRectItem):
-    """Sfondo che rappresenta la silhouette del bersaglio."""
 
     def __init__(self, design: SvgTargetDesign, scale: float, parent=None):
         w = design.width * scale
@@ -47,31 +65,28 @@ class SilhouetteItem(QGraphicsRectItem):
         super().__init__(0, 0, w, h, parent)
         self._design = design
         self._scale = scale
-        self.setBrush(QBrush(QColor("#f1f5f9")))
+        self.setBrush(QBrush(QColor("#f8fafc")))
         self.setPen(QPen(QColor("#cbd5e1"), 2))
         self.setZValue(0)
         self.setAcceptHoverEvents(False)
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
-        painter.save()
         s = self._scale
         w = self._design.width * s
         h = self._design.height * s
+        painter.save()
 
-        # Bordo tratteggiato esterno
-        painter.setPen(QPen(QColor("#94a3b8"), 1, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(QColor("#cbd5e1"), 1, Qt.PenStyle.DashLine))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(0, 0, int(w), int(h))
 
-        # Croce centrale
         cx, cy = w / 2, h / 2
         painter.setPen(QPen(QColor("#e2e8f0"), 1))
         painter.drawLine(int(cx), 0, int(cx), int(h))
         painter.drawLine(0, int(cy), int(w), int(cy))
 
-        # Label "TOP" in alto
-        painter.setPen(QPen(QColor("#94a3b8"), 1))
+        painter.setPen(QColor("#94a3b8"))
         f = painter.font()
         f.setPointSize(8)
         painter.setFont(f)
@@ -81,20 +96,49 @@ class SilhouetteItem(QGraphicsRectItem):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  ZoneGraphicsItem — zona di punteggio (rettangolo o ellisse)
+#  Hexagon utility
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _hexagon_polygon(w: float, h: float) -> QPolygonF:
+    """Calcola i 6 vertici dell'esagono inscritto nel rettangolo w×h (flat-top)."""
+    cx, cy = w / 2, h / 2
+    rx, ry = w / 2, h / 2
+    return QPolygonF([
+        QPointF(cx + rx * math.cos(math.pi * 2 * i / 6 - math.pi / 2),
+                cy + ry * math.sin(math.pi * 2 * i / 6 - math.pi / 2))
+        for i in range(6)
+    ])
+
+
+def _build_shape_path(zone: SvgZone, w: float, h: float) -> QPainterPath:
+    """Crea il QPainterPath per la forma della zona."""
+    path = QPainterPath()
+    if zone.shape_type == "ellipse":
+        path.addEllipse(0, 0, w, h)
+    elif zone.shape_type == "hexagon":
+        path.addPolygon(_hexagon_polygon(w, h))
+    else:
+        path.addRoundedRect(QRectF(0, 0, w, h), 4, 4)
+    return path
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ZoneGraphicsItem
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class ZoneGraphicsItem(QGraphicsItem):
-    """Zona di punteggio interattiva sul canvas."""
+    """Zona interattiva: sposta, ridimensiona, seleziona."""
 
     HANDLE_SIZE = 8
 
-    def __init__(self, zone: SvgZone, scale: float, parent=None):
+    def __init__(self, zone: SvgZone, scale: float, parent=None, on_changed: callable = None):
         super().__init__(parent)
         self._zone = zone
         self._scale = scale
         self._resizing = False
         self._resize_corner = ""
+        self._drag_start_zone = None
+        self._on_changed = on_changed  # callback(zone) quando modificata  # snapshot all'avvio del resize
 
         self.setPos(zone.x * scale, zone.y * scale)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
@@ -114,16 +158,11 @@ class ZoneGraphicsItem(QGraphicsItem):
                        w + self.HANDLE_SIZE * 2, h + self.HANDLE_SIZE * 2)
 
     def shape(self):
-        w = self._zone.width * self._scale
-        h = self._zone.height * self._scale
-        path = QPainterPath()
-        if self._zone.shape_type == "ellipse":
-            path.addEllipse(0, 0, w, h)
-        elif self._zone.shape_type == "hexagon":
-            path.addPolygon(self._hexagon_points(w, h))
-        else:
-            path.addRect(0, 0, w, h)
-        return path
+        return _build_shape_path(
+            self._zone,
+            self._zone.width * self._scale,
+            self._zone.height * self._scale,
+        )
 
     def paint(self, painter, option, widget=None):
         w = self._zone.width * self._scale
@@ -131,7 +170,6 @@ class ZoneGraphicsItem(QGraphicsItem):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Colore di riempimento
         color = QColor(self._zone.color)
         painter.setBrush(QBrush(color))
         painter.setPen(QPen(QColor("#ffffff"), 2))
@@ -139,26 +177,24 @@ class ZoneGraphicsItem(QGraphicsItem):
         if self._zone.shape_type == "ellipse":
             painter.drawEllipse(QRectF(0, 0, w, h))
         elif self._zone.shape_type == "hexagon":
-            points = self._hexagon_points(w, h)
-            painter.drawPolygon(points)
+            painter.drawPolygon(_hexagon_polygon(w, h))
         else:
             painter.drawRoundedRect(QRectF(0, 0, w, h), 4, 4)
 
-        # Label al centro
-        painter.setPen(QPen(QColor("white"), 1))
+        # Label
+        painter.setPen(Qt.GlobalColor.white)
         f = painter.font()
-        f.setPointSize(max(8, int(min(w, h) / 4)))
+        f.setPointSize(max(8, min(int(min(w, h) / 4), 36)))
         f.setBold(True)
         painter.setFont(f)
         painter.drawText(QRectF(0, 0, w, h),
                          Qt.AlignmentFlag.AlignCenter, self._zone.label)
 
-        # Cornice di selezione
+        # Cornice selezione + handle
         if self.isSelected():
             painter.setPen(QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(-2, -2, w + 4, h + 4))
-            # Handle angolari
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QBrush(QColor("#2563eb")))
             hs = self.HANDLE_SIZE / 2
@@ -172,11 +208,12 @@ class ZoneGraphicsItem(QGraphicsItem):
             s = self._scale
             self._zone.x = self.pos().x() / s
             self._zone.y = self.pos().y() / s
+            if self._on_changed:
+                self._on_changed(self._zone)
         return super().itemChange(change, value)
 
     def mousePressEvent(self, event):
-        # Check resize handles
-        if self.isSelected() and event.button() == Qt.MouseButton.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             s = self._scale
             w = self._zone.width * s
             h = self._zone.height * s
@@ -190,24 +227,39 @@ class ZoneGraphicsItem(QGraphicsItem):
                 if abs(pos.x() - cx) <= hs and abs(pos.y() - cy) <= hs:
                     self._resizing = True
                     self._resize_corner = name
+                    self._drag_start_zone = {
+                        "x": self._zone.x, "y": self._zone.y,
+                        "w": self._zone.width, "h": self._zone.height,
+                    }
                     event.accept()
                     return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._resizing:
+        if self._resizing and self._drag_start_zone:
             s = self._scale
-            pos = event.pos()
-            w = max(10, pos.x() / s)
-            h = max(10, pos.y() / s)
-            if "l" in self._resize_corner:
-                self._zone.width = w
-            if "r" in self._resize_corner:
-                self._zone.width = w
-            if "t" in self._resize_corner:
-                self._zone.height = h
-            if "b" in self._resize_corner:
-                self._zone.height = h
+            ds = self._drag_start_zone
+            mx = max(10, event.pos().x()) / s
+            my = max(10, event.pos().y()) / s
+
+            if self._resize_corner == "br":
+                self._zone.width = mx
+                self._zone.height = my
+            elif self._resize_corner == "bl":
+                self._zone.width = ds["w"] + (ds["x"] - self._zone.x)
+                self._zone.height = my
+                self._zone.x = ds["x"] + ds["w"] - self._zone.width
+            elif self._resize_corner == "tr":
+                self._zone.width = mx
+                self._zone.height = ds["h"] + (ds["y"] - self._zone.y)
+                self._zone.y = ds["y"] + ds["h"] - self._zone.height
+            elif self._resize_corner == "tl":
+                self._zone.width = ds["w"] + (ds["x"] - self._zone.x)
+                self._zone.height = ds["h"] + (ds["y"] - self._zone.y)
+                self._zone.x = ds["x"] + ds["w"] - self._zone.width
+                self._zone.y = ds["y"] + ds["h"] - self._zone.height
+
+            self.setPos(self._zone.x * s, self._zone.y * s)
             self.prepareGeometryChange()
             self.update()
             event.accept()
@@ -216,22 +268,10 @@ class ZoneGraphicsItem(QGraphicsItem):
 
     def mouseReleaseEvent(self, event):
         self._resizing = False
+        self._drag_start_zone = None
         super().mouseReleaseEvent(event)
 
-    @staticmethod
-    def _hexagon_points(w: float, h: float):
-        """Calcola i 6 vertici dell'esagono inscritto nel rettangolo w×h."""
-        import math
-        from PySide6.QtGui import QPolygonF
-        cx, cy = w / 2, h / 2
-        rx, ry = w / 2, h / 2
-        pts = [QPointF(cx + rx * math.cos(3.14159 * 2 * i / 6 - 3.14159 / 2),
-                       cy + ry * math.sin(3.14159 * 2 * i / 6 - 3.14159 / 2))
-               for i in range(6)]
-        return QPolygonF(pts)
-
     def hoverMoveEvent(self, event):
-        """Cambia cursore sugli angoli per hint di resize."""
         s = self._scale
         w = self._zone.width * s
         h = self._zone.height * s
@@ -249,20 +289,18 @@ class ZoneGraphicsItem(QGraphicsItem):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Scene personalizzata per gestire i click di aggiunta zone
+#  SvgEditorScene
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class SvgEditorScene(QGraphicsScene):
-    """Scena che gestisce click per aggiungere zone in base allo strumento."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.editor: 'SvgEditorDialog | None' = None
+        self.editor: SvgEditorDialog | None = None
 
     def mousePressEvent(self, event):
         dialog = self.editor
         if dialog and dialog._current_tool in ("rect", "ellipse", "hexagon"):
-            # Aggiunge una zona nel punto cliccato
             pos = event.scenePos()
             s = dialog._scale
             x = max(0, pos.x() / s - 20)
@@ -278,7 +316,6 @@ class SvgEditorScene(QGraphicsScene):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class SvgEditorDialog(QDialog):
-    """Dialog per creare/modificare bersagli SVG personalizzati."""
 
     def __init__(self, parent=None, design: SvgTargetDesign | None = None):
         super().__init__(parent)
@@ -288,6 +325,7 @@ class SvgEditorDialog(QDialog):
         )
         self._scale = 3.0
         self._zone_items: list[ZoneGraphicsItem] = []
+        self._setting_properties = False  # lock per evitare ricorsione
 
         self.setWindowTitle(f"✏️ Editor Bersagli SVG — {self._design.name}")
         self.setMinimumSize(950, 650)
@@ -302,13 +340,12 @@ class SvgEditorDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
-        # ── Canvas (sinistra) ──
+        # ── Canvas ──
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(6)
 
-        # Toolbar
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
 
@@ -319,101 +356,91 @@ class SvgEditorDialog(QDialog):
         self._style_tool_btn(self._btn_select)
         toolbar.addWidget(self._btn_select)
 
-        self._btn_rect = QPushButton("▭ Rettangolo")
+        self._btn_rect = QPushButton("▭ Rett.")
         self._btn_rect.setCheckable(True)
         self._btn_rect.clicked.connect(lambda: self._set_tool("rect"))
         self._style_tool_btn(self._btn_rect)
         toolbar.addWidget(self._btn_rect)
 
-        self._btn_ellipse = QPushButton("⬭ Ellisse")
+        self._btn_ellipse = QPushButton("⬭ Ell.")
         self._btn_ellipse.setCheckable(True)
         self._btn_ellipse.clicked.connect(lambda: self._set_tool("ellipse"))
         self._style_tool_btn(self._btn_ellipse)
         toolbar.addWidget(self._btn_ellipse)
 
-        self._btn_hex = QPushButton("⬡ Esagono")
+        self._btn_hex = QPushButton("⬡ Esag.")
         self._btn_hex.setCheckable(True)
         self._btn_hex.clicked.connect(lambda: self._set_tool("hexagon"))
         self._style_tool_btn(self._btn_hex)
         toolbar.addWidget(self._btn_hex)
 
-        toolbar.addSpacing(12)
+        toolbar.addSpacing(8)
 
-        # Preset zone
-        for label, color, w, h in [("A", ZONE_COLORS["A"], 60, 40),
-                                     ("B", ZONE_COLORS["B"], 45, 30),
-                                     ("C", ZONE_COLORS["C"], 30, 20),
-                                     ("D", ZONE_COLORS["D"], 20, 15)]:
-            btn = QPushButton(label)
-            btn.setFixedSize(32, 28)
+        # Preset zone (rispettano il tool corrente)
+        for lbl, color, w, h in [
+            ("A", ZONE_COLORS["A"], 60, 40),
+            ("B", ZONE_COLORS["B"], 45, 30),
+            ("C", ZONE_COLORS["C"], 30, 20),
+            ("D", ZONE_COLORS["D"], 20, 15),
+        ]:
+            btn = QPushButton(lbl)
+            btn.setFixedSize(28, 26)
             btn.setStyleSheet(
-                f"background-color: {color}; color: white; "
-                f"font-weight: bold; border-radius: 4px; "
-                f"font-size: 12px; border: 1px solid rgba(0,0,0,0.2);"
+                f"background: {color}; color: white; font-weight: bold; "
+                f"border-radius: 4px; font-size: 11px; border: 1px solid rgba(0,0,0,0.2);"
             )
-            btn.setToolTip(f"Aggiungi zona {label} ({w}×{h})")
+            btn.setToolTip(f"Aggiungi zona {lbl} {w}×{h}")
             btn.clicked.connect(
-                lambda checked, l=label, c=color, w=w, h=h:
-                self._add_zone("rect", 20, 20, w, h, label=l, color=c)
+                lambda checked, l=lbl, c=color, w=w, h=h:
+                self._add_zone(
+                    self._current_tool if self._current_tool != "select" else "rect",
+                    20, 20, w, h, label=l, color=c,
+                )
             )
             toolbar.addWidget(btn)
 
-        toolbar.addSpacing(12)
-
+        toolbar.addSpacing(8)
         self._btn_delete = QPushButton("🗑")
         self._btn_delete.setToolTip("Elimina zona selezionata (Canc)")
         self._btn_delete.clicked.connect(self._delete_selected)
-        self._btn_delete.setFixedWidth(36)
+        self._btn_delete.setFixedWidth(32)
         toolbar.addWidget(self._btn_delete)
 
         left_layout.addLayout(toolbar)
 
-        # Canvas
         self._scene = SvgEditorScene(self)
         self._scene.editor = self
-        self._scene.setSceneRect(
-            -20, -20,
-            self._design.width * self._scale + 40,
-            self._design.height * self._scale + 40,
-        )
+        sr = self._design.width * self._scale + 40
+        self._scene.setSceneRect(-20, -20, sr, sr)
 
         self._view = QGraphicsView(self._scene)
         self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
         self._view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self._view.setStyleSheet("""
-            QGraphicsView {
-                background-color: #ffffff;
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-            }
-        """)
+        self._view.setStyleSheet(
+            "QGraphicsView { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; }"
+        )
         left_layout.addWidget(self._view, 1)
 
-        # Status bar
         status = QHBoxLayout()
         self._info_label = QLabel(
             f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
-            f"🖱 Click per zona  |  "
-            f"🔍 Zoom con rotellina"
+            f"Click per zona  |  Zoom rotella"
         )
-        self._info_label.setStyleSheet("font-size: 11px; color: #64748b; padding: 2px 4px;")
+        self._info_label.setStyleSheet("font-size: 11px; color: #64748b;")
         status.addWidget(self._info_label)
         status.addStretch()
-
         self._zone_count_label = QLabel("0 zone")
         self._zone_count_label.setStyleSheet("font-size: 11px; color: #64748b;")
         status.addWidget(self._zone_count_label)
         left_layout.addLayout(status)
-
         layout.addWidget(left, 1)
 
         # ── Pannello destro ──
         right = QWidget()
         right.setFixedWidth(280)
-        right_layout = QVBoxLayout(right)
-        right_layout.setSpacing(10)
+        rl = QVBoxLayout(right)
+        rl.setSpacing(10)
 
-        # Nome
         name_gb = QGroupBox("Bersaglio")
         nf = QFormLayout(name_gb)
         nf.setSpacing(4)
@@ -424,16 +451,14 @@ class SvgEditorDialog(QDialog):
         self._desc_input.setPlaceholderText("Opzionale")
         self._desc_input.textChanged.connect(self._on_desc_changed)
         nf.addRow("Descr.:", self._desc_input)
-        right_layout.addWidget(name_gb)
+        rl.addWidget(name_gb)
 
-        # Lista zone
-        right_layout.addWidget(QLabel("Zone (click per selezionare):"))
+        rl.addWidget(QLabel("Zone (click per selezionare):"))
         self._zone_list = QListWidget()
         self._zone_list.setMinimumHeight(100)
         self._zone_list.currentRowChanged.connect(self._on_zone_selected)
-        right_layout.addWidget(self._zone_list, 1)
+        rl.addWidget(self._zone_list, 1)
 
-        # Proprietà zona
         prop_gb = QGroupBox("Proprietà Zona")
         pf = QFormLayout(prop_gb)
         pf.setSpacing(3)
@@ -478,53 +503,42 @@ class SvgEditorDialog(QDialog):
         xy.addWidget(self._zone_y)
         pf.addRow("Pos.:", xy)
 
-        self._zone_shape = QLabel("rettangolo")
+        self._zone_shape = QLabel()
         self._zone_shape.setStyleSheet("color: #64748b; font-size: 11px;")
         pf.addRow("Tipo:", self._zone_shape)
 
-        right_layout.addWidget(prop_gb)
+        rl.addWidget(prop_gb)
 
-        # Pulsanti azione
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
-
         btn_load = QPushButton("📂 Carica")
         btn_load.setToolTip("Carica SVG esistente per modificarlo")
         btn_load.clicked.connect(self._load_svg)
         btn_layout.addWidget(btn_load)
-
         btn_save = QPushButton("💾 Salva")
-        btn_save.setStyleSheet("""
-            QPushButton {
-                background-color: #2563eb; color: white;
-                border: none; border-radius: 6px; padding: 8px 20px;
-                font-weight: 600;
-            }
-            QPushButton:hover { background-color: #1d4ed8; }
-        """)
+        btn_save.setStyleSheet(
+            "QPushButton { background: #2563eb; color: white; border: none; "
+            "border-radius: 6px; padding: 8px 20px; font-weight: 600; }"
+            "QPushButton:hover { background: #1d4ed8; }"
+        )
         btn_save.clicked.connect(self._save_svg)
         btn_layout.addWidget(btn_save)
-
-        right_layout.addLayout(btn_layout)
-        right_layout.addStretch()
+        rl.addLayout(btn_layout)
+        rl.addStretch()
         layout.addWidget(right)
 
     @staticmethod
     def _style_tool_btn(btn: QPushButton):
-        btn.setFixedHeight(32)
-        btn.setStyleSheet("""
-            QPushButton {
-                padding: 4px 12px; font-size: 12px; font-weight: 500;
-                border: 1px solid #e2e8f0; border-radius: 6px;
-                background: #ffffff; color: #0f172a;
-            }
-            QPushButton:hover { background: #f1f5f9; border-color: #94a3b8; }
-            QPushButton:checked {
-                background: #dbeafe; border-color: #2563eb; color: #2563eb;
-            }
-        """)
+        btn.setFixedHeight(30)
+        btn.setStyleSheet(
+            "QPushButton { padding: 3px 10px; font-size: 11px; font-weight: 500; "
+            "border: 1px solid #e2e8f0; border-radius: 5px; "
+            "background: #fff; color: #0f172a; }"
+            "QPushButton:hover { background: #f1f5f9; border-color: #94a3b8; }"
+            "QPushButton:checked { background: #dbeafe; border-color: #2563eb; color: #2563eb; }"
+        )
 
-    # ── Tool management ────────────────────────────────────────────────
+    # ── Tool ───────────────────────────────────────────────────────────
 
     _current_tool: str = "select"
 
@@ -538,15 +552,13 @@ class SvgEditorDialog(QDialog):
         if tool in ("rect", "ellipse", "hexagon"):
             self._view.setDragMode(QGraphicsView.DragMode.NoDrag)
             self._view.setCursor(Qt.CursorShape.CrossCursor)
-            self._info_label.setText(
-                f"✏️ Click sul canvas per aggiungere zona {tool}"
-            )
+            self._info_label.setText(f"✏️ Click sul canvas per aggiungere {SHAPE_NAMES.get(tool, tool)}")
         else:
             self._view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
             self._view.setCursor(Qt.CursorShape.ArrowCursor)
             self._info_label.setText(
                 f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
-                f"🖱 Seleziona e sposta zone"
+                f"Trascina per spostare"
             )
 
     # ── Scene ──────────────────────────────────────────────────────────
@@ -555,12 +567,7 @@ class SvgEditorDialog(QDialog):
         self._scene.clear()
         self._zone_items.clear()
         self._draw_grid()
-
-        # Silhouette
-        sil = SilhouetteItem(self._design, self._scale)
-        self._scene.addItem(sil)
-
-        # Zone
+        self._scene.addItem(SilhouetteItem(self._design, self._scale))
         for z in self._design.zones:
             self._add_zone_item(z)
         self._refresh_zone_list()
@@ -572,13 +579,13 @@ class SvgEditorDialog(QDialog):
         h = self._design.height * s
         pen = QPen(QColor("#f1f5f9"), 1)
         step = 10 * s
-        for i in range(0, int(w) + 1, int(step)):
-            self._scene.addLine(i, 0, i, h, pen)
-        for i in range(0, int(h) + 1, int(step)):
-            self._scene.addLine(0, i, w, i, pen)
+        for x in range(0, int(w) + 1, int(step)):
+            self._scene.addLine(x, 0, x, h, pen)
+        for y in range(0, int(h) + 1, int(step)):
+            self._scene.addLine(0, y, w, y, pen)
 
     def _add_zone_item(self, zone: SvgZone) -> ZoneGraphicsItem:
-        item = ZoneGraphicsItem(zone, self._scale)
+        item = ZoneGraphicsItem(zone, self._scale, on_changed=lambda z: self._sync_property_panel())
         self._scene.addItem(item)
         self._zone_items.append(item)
         return item
@@ -587,10 +594,8 @@ class SvgEditorDialog(QDialog):
         self._zone_list.blockSignals(True)
         self._zone_list.clear()
         for i, z in enumerate(self._design.zones):
-            shape = "⬭" if z.shape_type == "ellipse" else "▭"
-            item = QListWidgetItem(
-                f"{shape} {z.label}  {z.color}  ({z.points}pt)"
-            )
+            icon = SHAPE_ICONS.get(z.shape_type, "▭")
+            item = QListWidgetItem(f"{icon} {z.label}  {z.color}  ({z.points}pt)")
             item.setData(Qt.ItemDataRole.UserRole, i)
             self._zone_list.addItem(item)
         self._zone_list.blockSignals(False)
@@ -598,6 +603,19 @@ class SvgEditorDialog(QDialog):
 
     def _update_zone_count(self):
         self._zone_count_label.setText(f"{len(self._design.zones)} zone")
+
+    def _sync_property_panel(self):
+        """Aggiorna il pannello proprietà dopo uno spostamento su canvas."""
+        row = self._zone_list.currentRow()
+        if row < 0 or row >= len(self._design.zones):
+            return
+        zone = self._design.zones[row]
+        self._setting_properties = True
+        self._zone_x.setValue(int(zone.x))
+        self._zone_y.setValue(int(zone.y))
+        self._zone_w.setValue(int(zone.width))
+        self._zone_h.setValue(int(zone.height))
+        self._setting_properties = False
 
     # ── Zone ops ───────────────────────────────────────────────────────
 
@@ -627,23 +645,17 @@ class SvgEditorDialog(QDialog):
             self._zone_items.remove(item)
         self._refresh_zone_list()
 
-    def _clear_all(self):
-        for item in self._zone_items:
-            self._scene.removeItem(item)
-        self._design.zones.clear()
-        self._zone_items.clear()
-        self._refresh_zone_list()
-
     # ── Zone properties ────────────────────────────────────────────────
 
     def _on_zone_selected(self, row: int):
         if row < 0 or row >= len(self._design.zones):
             return
         zone = self._design.zones[row]
+        self._setting_properties = True
         self._zone_label.setText(zone.label)
         self._zone_color_btn.setText(f"  {zone.color}")
         self._zone_color_btn.setStyleSheet(
-            f"background-color: {zone.color}; color: white; "
+            f"background: {zone.color}; color: white; "
             f"border-radius: 4px; font-weight: 500; text-align: left;"
         )
         self._zone_points.setValue(zone.points)
@@ -651,35 +663,42 @@ class SvgEditorDialog(QDialog):
         self._zone_h.setValue(int(zone.height))
         self._zone_x.setValue(int(zone.x))
         self._zone_y.setValue(int(zone.y))
-        shape_names = {"rect": "rettangolo", "ellipse": "ellisse", "hexagon": "esagono"}
-        self._zone_shape.setText(shape_names.get(zone.shape_type, zone.shape_type))
+        self._zone_shape.setText(SHAPE_NAMES.get(zone.shape_type, zone.shape_type))
+        self._setting_properties = False
 
-        # Selezione scena
         for item in self._zone_items:
             item.setSelected(False)
         if row < len(self._zone_items):
             self._zone_items[row].setSelected(True)
 
     def _on_zone_prop_changed(self):
+        if self._setting_properties:
+            return
         row = self._zone_list.currentRow()
         if row < 0 or row >= len(self._design.zones):
             return
         zone = self._design.zones[row]
         zone.label = self._zone_label.text()[:3] or "?"
         zone.points = self._zone_points.value()
+        self._zone_items[row].update()
         self._refresh_zone_list()
 
     def _on_zone_size_changed(self):
+        if self._setting_properties:
+            return
         row = self._zone_list.currentRow()
         if row < 0 or row >= len(self._design.zones):
             return
         zone = self._design.zones[row]
         zone.width = float(self._zone_w.value())
         zone.height = float(self._zone_h.value())
+        self._zone_items[row].setPos(zone.x * self._scale, zone.y * self._scale)
         self._zone_items[row].prepareGeometryChange()
         self._zone_items[row].update()
 
     def _on_zone_pos_changed(self):
+        if self._setting_properties:
+            return
         row = self._zone_list.currentRow()
         if row < 0 or row >= len(self._design.zones):
             return
@@ -687,6 +706,7 @@ class SvgEditorDialog(QDialog):
         zone.x = float(self._zone_x.value())
         zone.y = float(self._zone_y.value())
         self._zone_items[row].setPos(zone.x * self._scale, zone.y * self._scale)
+        self._zone_items[row].update()
 
     def _pick_zone_color(self):
         row = self._zone_list.currentRow()
@@ -698,7 +718,7 @@ class SvgEditorDialog(QDialog):
             zone.color = color.name()
             self._zone_color_btn.setText(f"  {zone.color}")
             self._zone_color_btn.setStyleSheet(
-                f"background-color: {zone.color}; color: white; "
+                f"background: {zone.color}; color: white; "
                 f"border-radius: 4px; font-weight: 500;"
             )
             self._zone_items[row].update()
@@ -716,13 +736,9 @@ class SvgEditorDialog(QDialog):
     # ── Load / Save ────────────────────────────────────────────────────
 
     def _load_svg(self):
-        """Carica un SVG esistente per modificarlo."""
-        # Prima prova dalla cartella custom
-        custom_dir = CUSTOM_TARGETS_DIR
-        start_dir = custom_dir if os.path.isdir(custom_dir) else os.path.expanduser("~")
+        start_dir = CUSTOM_TARGETS_DIR if os.path.isdir(CUSTOM_TARGETS_DIR) else os.path.expanduser("~")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Carica SVG bersaglio", start_dir,
-            "SVG (*.svg);;Tutti i file (*)",
+            self, "Carica SVG bersaglio", start_dir, "SVG (*.svg);;Tutti i file (*)"
         )
         if not path:
             return
@@ -737,32 +753,26 @@ class SvgEditorDialog(QDialog):
         self.setWindowTitle(f"✏️ Editor Bersagli SVG — {design.name}")
 
     def _save_svg(self):
-        """Salva il bersaglio come SVG."""
         ensure_custom_dir()
         name = self._design.name.strip().lower().replace(" ", "_")
-        name = "".join(c for c in name if c.isalnum() or c in "_-")
-        if not name:
-            name = "bersaglio"
-        filename = f"{name}.svg"
-        filepath = os.path.join(CUSTOM_TARGETS_DIR, filename)
+        name = "".join(c for c in name if c.isalnum() or c in "_-") or "bersaglio"
+        filepath = os.path.join(CUSTOM_TARGETS_DIR, f"{name}.svg")
 
         if os.path.isfile(filepath):
             reply = QMessageBox.question(
                 self, "Sovrascrivere?",
-                f"'{filename}' esiste già. Sovrascrivere?",
+                f"'{name}.svg' esiste già. Sovrascrivere?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        svg = self._design.to_svg()
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(svg)
+            f.write(self._design.to_svg())
 
         QMessageBox.information(
             self, "✅ Salvato",
-            f"Bersaglio salvato:\n{filepath}\n\n"
-            f"Riavvia l'app per usarlo nell'editor.",
+            f"Bersaglio salvato:\n{filepath}\n\nRiavvia l'app per usarlo.",
         )
         self.accept()
 
