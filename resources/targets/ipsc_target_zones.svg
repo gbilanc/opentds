@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- IPSC target con zone di punteggio visibili -->
+  <path d="
+    M 50 2 C 65 2, 78 8, 85 18 C 92 28, 96 38, 98 46
+    L 98 64 C 96 72, 92 82, 85 90 C 80 95, 72 98, 65 98
+    L 35 98 C 28 98, 20 95, 15 90 C 8 82, 4 72, 2 64
+    L 2 46 C 4 38, 8 28, 15 18 C 22 8, 35 2, 50 2 Z
+  " fill="currentColor"/>
+  <!-- Zona A (head box) -->
+  <rect x="33" y="4" width="34" height="22" rx="3"
+        fill="none" stroke="#fff" stroke-width="1" opacity="0.5"/>
+  <!-- Zona C (body box) -->
+  <rect x="22" y="28" width="56" height="42" rx="2"
+        fill="none" stroke="#fff" stroke-width="1" opacity="0.5"/>
+  <!-- Zona D centrale -->
+  <rect x="28" y="30" width="44" height="38" rx="2"
+        fill="none" stroke="#fff" stroke-width="0.7" opacity="0.35"/>
+</svg>
