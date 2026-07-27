@@ -1426,6 +1426,7 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
                  parent: QGraphicsItem | None = None):
         QGraphicsItem.__init__(self, parent)
         self.stage_item_init(wrapper, scale)
+        self.update_from_model()
 
     def boundingRect(self):
         it = self.wrapper.item
@@ -1460,7 +1461,7 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
                 painter.setBrush(QBrush(color))
                 painter.setPen(QPen(QColor("#5c2e0d"), 1.5))
                 pw, ph = 0.45 * s, 0.75 * s
-                painter.drawRoundRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
+                painter.drawRoundedRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
                 # Label
                 painter.setPen(QPen(QColor("white"), 1))
                 painter.drawText(QRectF(cx - pw / 2, cy - ph / 2, pw, ph),
@@ -1472,7 +1473,7 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
                 painter.setBrush(QBrush(color))
                 painter.setPen(QPen(QColor("#a16207"), 1.5))
                 pw, ph = 0.45 * s, 0.75 * s
-                painter.drawRoundRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
+                painter.drawRoundedRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
                 # X rossa
                 pen = QPen(QColor("#dc2626"), 2)
                 painter.setPen(pen)
