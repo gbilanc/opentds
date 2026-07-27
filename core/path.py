@@ -72,20 +72,51 @@ class ShootingPath:
         self.waypoints = ordered
 
     @staticmethod
+    def _segment_in_polygon(
+        x1: float, y1: float, x2: float, y2: float,
+        poly: list[tuple[float, float]],
+    ) -> bool:
+        """True se il segmento (x1,y1)-(x2,y2) rimane dentro il poligono.
+
+        Controlla che entrambi gli estremi siano dentro e che il segmento
+        non intersechi i bordi del poligono.
+        """
+        from core.geometry import point_in_polygon, segments_intersect
+
+        # Entrambi gli estremi devono essere dentro il poligono
+        if not point_in_polygon(x1, y1, poly):
+            return False
+        if not point_in_polygon(x2, y2, poly):
+            return False
+
+        # Il segmento non deve intersecare i bordi del poligono
+        n = len(poly)
+        for i in range(n):
+            px1, py1 = poly[i]
+            px2, py2 = poly[(i + 1) % n]
+            if segments_intersect((x1, y1), (x2, y2), (px1, py1), (px2, py2)):
+                return False
+
+        return True
+
+    @staticmethod
     def from_shooting_positions(
         positions: list,
         targets: list | None = None,
         blockers: list | None = None,
+        perimeter_poly: list[tuple[float, float]] | None = None,
     ) -> ShootingPath:
         """Create a ShootingPath from Stage.shooting_positions.
 
         Ordina le posizioni con il percorso pi breve (algoritmo nearest-neighbor)
         ed evita l'attraversamento di barriere/muri.
+        Il percorso resta sempre dentro l'area di tiro (perimeter_poly).
 
         Args:
             positions: Lista di ShootingPosition
             targets: Lista di StageItem (bersagli) per calcolo visibilit
             blockers: Lista di StageItem (muri, barriere, hard cover) da evitare
+            perimeter_poly: Poligono dell'area di tiro [(x,y),...]
         """
         from core.geometry import line_intersects_rect
         from core.models import ItemType
@@ -111,23 +142,24 @@ class ShootingPath:
             ItemType.HARD_COVER,
         }
 
-        # Nearest-neighbor ordering con barrier avoidance
+        # Nearest-neighbor ordering con barrier + polygon avoidance
         ordered_sp = [start_pos]
         remaining = list(others)
 
         while remaining:
             last = ordered_sp[-1]
-            # Trova il pi vicino tra i rimanenti, evitando barriere
             nearest = None
             nearest_dist = float('inf')
-            nearest_path_ok = False
+            nearest_path_ok = False  # True = senza barriere E dentro poligono
 
             for sp in remaining:
                 dx = sp.x - last.x
                 dy = sp.y - last.y
                 dist = math.hypot(dx, dy)
+                if dist < 0.01:
+                    continue
 
-                # Verifica se il segmento last -> sp attraversa barriere
+                # 1. Verifica barriere
                 path_blocked = False
                 if blockers and dist > 0.5:
                     for wall in blockers:
@@ -140,27 +172,31 @@ class ShootingPath:
                                 path_blocked = True
                                 break
 
-                # Priorit percorso senza barriere, poi distanza
+                # 2. Verifica area di tiro
+                inside_area = True
+                if perimeter_poly and dist > 0.5:
+                    inside_area = ShootingPath._segment_in_polygon(
+                        last.x, last.y, sp.x, sp.y, perimeter_poly,
+                    )
+
+                path_ok = not path_blocked and inside_area
+
+                # Priorit percorso ok, poi distanza
                 if nearest is None:
                     nearest = sp
                     nearest_dist = dist
-                    nearest_path_ok = not path_blocked
-                elif path_blocked and not nearest_path_ok:
-                    # Entrambi bloccati: scegli il pi vicino
-                    if dist < nearest_dist:
-                        nearest = sp
-                        nearest_dist = dist
-                elif not path_blocked and nearest_path_ok:
-                    # Entrambi liberi: scegli il pi vicino
-                    if dist < nearest_dist:
-                        nearest = sp
-                        nearest_dist = dist
-                elif not path_blocked and nearest_path_ok is False:
-                    # Questo libero, nearest bloccato: scegli questo
+                    nearest_path_ok = path_ok
+                elif path_ok and not nearest_path_ok:
+                    # Questo ok, nearest no: scegli questo
                     nearest = sp
                     nearest_dist = dist
                     nearest_path_ok = True
-                # else: nearest libero, questo bloccato: tieni nearest
+                elif path_ok == nearest_path_ok:
+                    # Stesso livello: scegli il pi vicino
+                    if dist < nearest_dist:
+                        nearest = sp
+                        nearest_dist = dist
+                # else: nearest meglio di questo: tieni nearest
 
             if nearest:
                 ordered_sp.append(nearest)

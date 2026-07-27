@@ -282,16 +282,20 @@ class PathEditorPanel(QFrame):
     def _on_auto_generate(self):
         """Generate path from existing shooting positions.
         Ordina le posizioni con il percorso minimo
-        evitando barriere e muri."""
+        evitando barriere e muri.
+        Il percorso resta sempre dentro l'area di tiro."""
         if not self._stage:
             return
 
         targets = [it for it in self._stage.items if is_scoring_target(it.item_type)]
         blockers = [it for it in self._stage.items if is_blocking_wall(it.item_type)]
+        # Recupera il poligono dell'area di tiro
+        perimeter_poly = self._stage.properties.get("perimeter_poly")
         self._shooting_path = ShootingPath.from_shooting_positions(
             self._stage.shooting_positions,
             targets=targets,
             blockers=blockers,
+            perimeter_poly=perimeter_poly,
         )
         self._refresh_list()
         self._update_status()
