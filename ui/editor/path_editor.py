@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from core.models import Stage, StageItem, ItemType
 from core.path import ShootingPath, PathWaypoint
-from core.scoring import is_scoring_target
+from core.scoring import is_scoring_target, is_blocking_wall
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -280,14 +280,18 @@ class PathEditorPanel(QFrame):
     # ── UI Handlers ─────────────────────────────────────────────────────
 
     def _on_auto_generate(self):
-        """Generate path from existing shooting positions."""
+        """Generate path from existing shooting positions.
+        Ordina le posizioni con il percorso minimo
+        evitando barriere e muri."""
         if not self._stage:
             return
 
         targets = [it for it in self._stage.items if is_scoring_target(it.item_type)]
+        blockers = [it for it in self._stage.items if is_blocking_wall(it.item_type)]
         self._shooting_path = ShootingPath.from_shooting_positions(
             self._stage.shooting_positions,
             targets=targets,
+            blockers=blockers,
         )
         self._refresh_list()
         self._update_status()
