@@ -301,6 +301,12 @@ class SvgEditorScene(QGraphicsScene):
     def mousePressEvent(self, event):
         dialog = self.editor
         if dialog and dialog._current_tool in ("rect", "ellipse", "hexagon"):
+            # Clic su zona esistente → permetti selezione/spostamento/ridimensionamento
+            item = self.itemAt(event.scenePos(), self.views()[0].transform()) if self.views() else None
+            if item and isinstance(item, ZoneGraphicsItem):
+                super().mousePressEvent(event)
+                return
+            # Clic su area vuota → aggiungi nuova zona
             pos = event.scenePos()
             s = dialog._scale
             x = max(0, pos.x() / s - 20)
@@ -424,7 +430,7 @@ class SvgEditorDialog(QDialog):
         status = QHBoxLayout()
         self._info_label = QLabel(
             f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
-            f"Click per zona  |  Zoom rotella"
+            f"Zoom rotella  |  Clicca per selezionare"
         )
         self._info_label.setStyleSheet("font-size: 11px; color: #64748b;")
         status.addWidget(self._info_label)
@@ -549,16 +555,19 @@ class SvgEditorDialog(QDialog):
         self._btn_ellipse.setChecked(tool == "ellipse")
         self._btn_hex.setChecked(tool == "hexagon")
 
+        # ScrollHandDrag permette selezione, spostamento e pan
+        self._view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self._view.setCursor(Qt.CursorShape.ArrowCursor)
+
         if tool in ("rect", "ellipse", "hexagon"):
-            self._view.setDragMode(QGraphicsView.DragMode.NoDrag)
-            self._view.setCursor(Qt.CursorShape.CrossCursor)
-            self._info_label.setText(f"✏️ Click sul canvas per aggiungere {SHAPE_NAMES.get(tool, tool)}")
+            self._info_label.setText(
+                f"✏️ Clicca su area vuota per aggiungere {SHAPE_NAMES.get(tool, tool)}  |  "
+                f"Clicca su zona per selezionarla/spostarla"
+            )
         else:
-            self._view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-            self._view.setCursor(Qt.CursorShape.ArrowCursor)
             self._info_label.setText(
                 f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
-                f"Trascina per spostare"
+                f"Clicca per selezionare, trascina per spostare"
             )
 
     # ── Scene ──────────────────────────────────────────────────────────
