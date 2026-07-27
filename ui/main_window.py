@@ -708,8 +708,8 @@ class MainWindow(QMainWindow):
     def _refresh_info(self):
         """Aggiorna il pannello Info Stage e il percorso di tiro."""
         self._info_panel.set_stage(self._stage)
-        # Sync path editor
-        self._path_panel.sync_from_stage()
+        # Sync path editor (passa lo stage corrente)
+        self._path_panel.set_stage(self._stage)
         wps = self._path_panel.get_waypoint_data()
         self._scene.set_shooting_path(wps)
 

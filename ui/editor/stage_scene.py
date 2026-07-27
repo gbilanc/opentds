@@ -2085,10 +2085,19 @@ class StageScene(QGraphicsScene):
         return marker
 
     def clear_shooting_position_markers(self):
-        """Rimuove tutti i marker di shooting position dalla scena."""
+        """Rimuove tutti i marker di shooting position dalla scena.
+        Usa attributo pos_m come fallback per identificare i marker."""
+        count = 0
         for item in list(self.items()):
             if isinstance(item, ShootingPositionMarker):
                 self.removeItem(item)
+                count += 1
+            elif hasattr(item, 'pos_m') and hasattr(item, '_is_start'):
+                # Fallback: qualunque item con attributi da shooting position
+                self.removeItem(item)
+                count += 1
+        if count > 0:
+            self.stage.shooting_positions.clear()
 
     def sync_shooting_positions(self):
         """Sincronizza i marker con stage.shooting_positions."""

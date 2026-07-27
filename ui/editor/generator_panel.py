@@ -6,7 +6,7 @@ Fase 2: posizioni di tiro + bersagli + auto-place
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -276,8 +276,8 @@ class StageWizard(QWidget):
         # Lista posizioni
         self._pos_list = QListWidget()
         self._pos_list.setAlternatingRowColors(True)
-        self._pos_list.setMaximumHeight(120)
-        pos_layout.addWidget(self._pos_list)
+        self._pos_list.setMinimumHeight(150)
+        pos_layout.addWidget(self._pos_list, 1)
 
         btn_row = QHBoxLayout()
         self._btn_place_pos = QPushButton("✏️ Posiziona")
@@ -346,7 +346,7 @@ class StageWizard(QWidget):
         # Lista bersagli
         self._target_list = QListWidget()
         self._target_list.setAlternatingRowColors(True)
-        self._target_list.setIconSize(Qt.QSize(20, 20))
+        self._target_list.setIconSize(QSize(20, 20))
         self._target_list.itemClicked.connect(self._on_target_list_clicked)
         self._target_list.setStyleSheet("""
             QListWidget {
@@ -549,12 +549,13 @@ class StageWizard(QWidget):
     def _make_list_item_widget(text: str, on_delete: callable) -> QWidget:
         """Crea un widget per riga della lista con etichetta e bottone elimina."""
         widget = QWidget()
+        widget.setMinimumHeight(36)
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(4, 1, 4, 1)
-        layout.setSpacing(4)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(10)
 
         label = QLabel(text)
-        label.setStyleSheet("font-size: 10px; color: #0f172a;")
+        label.setStyleSheet("font-size: 13px; font-weight: 500; color: #0f172a;")
         layout.addWidget(label, 1)
 
         btn_del = QPushButton("✕")
@@ -586,7 +587,7 @@ class StageWizard(QWidget):
         """Aggiunge una riga con bottone elimina a una lista."""
         item = QListWidgetItem()
         widget = self._make_list_item_widget(text, lambda w: on_delete_clicked(item))
-        item.setSizeHint(widget.sizeHint())
+        item.setSizeHint(widget.minimumSizeHint())
         lst.addItem(item)
         lst.setItemWidget(item, widget)
 
@@ -639,6 +640,14 @@ class StageWizard(QWidget):
     def _clear_positions(self):
         self._pos_list.clear()
         self.placeModeToggled.emit(False)
+        # Rimuove anche i marker dalla scena
+        if self.scene_ref:
+            self.scene_ref.clear_shooting_position_markers()
+            # Sincronizza stage.shooting_positions
+            self.scene_ref.stage.shooting_positions.clear()
+        parent = self.parent()
+        if parent and hasattr(parent, '_refresh_info'):
+            parent._refresh_info()
 
     def get_shooting_positions(self) -> list[tuple[float, float, bool]]:
         """Ritorna tutte le posizioni di tiro configurate."""
