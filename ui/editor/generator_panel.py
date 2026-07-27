@@ -7,6 +7,7 @@ Fase 2: posizioni di tiro + bersagli + auto-place
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QSpinBox, QDoubleSpinBox, QComboBox,
@@ -318,7 +319,11 @@ class StageWizard(QWidget):
     # ── Pagina 3: Aggiunta bersagli ───────────────────────────────────
 
     def _build_page3(self) -> QWidget:
-        """Pagina 3: pulsanti per aggiungere bersagli/ostacoli allo stage."""
+        """Pagina 3: lista di bersagli e ostacoli aggiungibili allo stage.
+
+        Clicca su un elemento per aggiungerlo al centro della scena.
+        Include tutti i tipi standard e compositi (doppietti, bobber, target+noshoot).
+        """
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -332,83 +337,171 @@ class StageWizard(QWidget):
         title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
         layout.addWidget(title)
 
-        def _add_btn(text, tip, callback):
-            """Crea un pulsante con stile."""
-            b = QPushButton(text)
-            b.setToolTip(tip)
-            b.setStyleSheet("""
-                QPushButton {
-                    padding: 8px 14px; font-size: 12px; font-weight: 500;
-                    border: 1px solid #e2e8f0; border-radius: 6px;
-                    background-color: #ffffff; color: #0f172a;
-                    text-align: left;
-                }
-                QPushButton:hover { background-color: #f1f5f9; border-color: #94a3b8; }
-            """)
-            b.clicked.connect(callback)
-            return b
+        help_text = QLabel("Clicca su un elemento per aggiungerlo al centro dello stage.\n"
+                           "Trascinalo poi nella posizione desiderata.")
+        help_text.setStyleSheet("font-size: 11px; color: #64748b;")
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
 
-        # Pulsanti organizzati per categorie
-        layout.addWidget(QLabel("Bersagli cartacei:"))
-        btn_row1 = QHBoxLayout()
-        btn_row1.addWidget(_add_btn("📄 Paper", "Bersaglio cartaceo IPSC",
-            lambda: self._add_via_scene(lambda s: s.add_target(5, 5, 0.45, 0.45, ItemType.PAPER_TARGET))))
-        btn_row1.addWidget(_add_btn("📄 Mini", "Mini target (App. B3)",
-            lambda: self._add_via_scene(lambda s: s.add_mini_target(6, 5))))
-        btn_row1.addWidget(_add_btn("📄 Micro", "Micro target",
-            lambda: self._add_via_scene(lambda s: s.add_micro_target(7, 5))))
-        btn_row1.addStretch()
-        layout.addLayout(btn_row1)
+        # Lista bersagli
+        self._target_list = QListWidget()
+        self._target_list.setAlternatingRowColors(True)
+        self._target_list.setIconSize(Qt.QSize(20, 20))
+        self._target_list.itemClicked.connect(self._on_target_list_clicked)
+        self._target_list.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #e2e8f0; border-radius: 8px;
+                background-color: #ffffff;
+                outline: none;
+            }
+            QListWidget::item {
+                padding: 6px 10px; border-radius: 4px;
+                font-size: 12px;
+            }
+            QListWidget::item:hover {
+                background-color: #f1f5f9;
+            }
+            QListWidget::item:selected {
+                background-color: #dbeafe; color: #0f172a;
+            }
+        """)
 
-        layout.addWidget(QLabel("Bersagli metallici:"))
-        btn_row2 = QHBoxLayout()
-        btn_row2.addWidget(_add_btn("⚙️ Steel", "Bersaglio metallico generico",
-            lambda: self._add_via_scene(lambda s: s.add_target(5, 6, 0.30, 0.30, ItemType.STEEL_TARGET))))
-        btn_row2.addWidget(_add_btn("🥇 Popper", "Popper calibrato (App. C1)",
-            lambda: self._add_via_scene(lambda s: s.add_popper(6, 6))))
-        btn_row2.addWidget(_add_btn("⭕ Plate", "Piatto metallico (App. C3)",
-            lambda: self._add_via_scene(lambda s: s.add_metal_plate(7, 6))))
-        btn_row2.addStretch()
-        layout.addLayout(btn_row2)
+        # Struttura: (categoria, [(icona, label, tip, item_type, (w, h)), ...])
+        ITEMS = [
+            ("Bersagli cartacei", [
+                ("📄", "Paper Target", "Bersaglio cartaceo IPSC", ItemType.PAPER_TARGET, (0.45, 0.75)),
+                ("📄", "Mini Target", "Bersaglio ridotto (App. B3)", ItemType.MINI_TARGET, (0.30, 0.30)),
+                ("📄", "Micro Target", "Bersaglio micro", ItemType.MICRO_TARGET, (0.20, 0.20)),
+                ("📄📄", "Doppio affiancato", "Due paper affiancati (gap 5cm)", ItemType.DOUBLET_SIDE, (0.95, 0.75)),
+                ("📄📄", "Doppio sovrapposto", "Due paper sovrapposti 40%", ItemType.DOUBLET_OVERLAP, (0.65, 0.75)),
+                ("📄🚫📄", "Doppio + ostaggio (aff.)", "Due paper con no-shoot nel mezzo", ItemType.DOUBLET_SIDE_HOSTAGE, (1.20, 0.75)),
+                ("📄🚫📄", "Doppio + ostaggio (sovr.)", "Due paper sovrapposti con no-shoot", ItemType.DOUBLET_OVERLAP_HOSTAGE, (0.90, 0.75)),
+                ("📄🚫", "Target + No-Shoot", "Paper con no-shoot sovrapposto 40%", ItemType.TARGET_PLUS_NOSHOOT, (0.70, 0.75)),
+            ]),
+            ("Bersagli metallici", [
+                ("⚙️", "Steel generico", "Bersaglio metallico", ItemType.STEEL_TARGET, (0.30, 0.30)),
+                ("🥇", "Popper calibrato", "Metallico calibrato (App. C1)", ItemType.POPPER, (0.30, 0.30)),
+                ("⭕", "Piatto metallico", "Non calibrato (App. C3)", ItemType.METAL_PLATE, (0.20, 0.20)),
+                ("🟠", "Piatto bobber", "Pop-up che scompare se colpito", ItemType.BOBBER_PLATE, (0.20, 0.20)),
+                ("🟠🟠", "Doppio bobber", "Due bobber affiancati", ItemType.DOUBLE_BOBBER, (0.50, 0.20)),
+            ]),
+            ("Bersagli mobili", [
+                ("🔄", "Swinger", "Bersaglio oscillante", ItemType.SWINGER, (0.45, 0.75)),
+                ("⬇️", "Drop Turner", "Bersaglio a caduta", ItemType.DROP_TURNER, (0.45, 0.75)),
+                ("➡️", "Mover", "Bersaglio su rotaia", ItemType.MOVER, (0.45, 0.75)),
+            ]),
+            ("Ostacoli e coperture", [
+                ("🧱", "Muro", "Muro per oscurare bersagli", ItemType.WALL, (3.0, 0.2)),
+                ("🛡️", "Barriera", "Barriera visiva", ItemType.BARRIER, (2.0, 0.15)),
+                ("🚪", "Porta", "Porta", ItemType.DOOR, (0.9, 0.05)),
+                ("⬛", "Hard Cover", "Copertura impenetrabile", ItemType.HARD_COVER, (2.0, 0.2)),
+                ("⬜", "Soft Cover", "Copertura visiva", ItemType.SOFT_COVER, (2.0, 0.15)),
+            ]),
+            ("Altro", [
+                ("➖", "Fault Line", "Linea di fallo perimetrale", ItemType.FAULT_LINE, (3.0, 0.0)),
+                ("🚫", "No-Shoot", "Bersaglio di penalità", ItemType.NO_SHOOT, (0.45, 0.75)),
+            ]),
+        ]
 
-        layout.addWidget(QLabel("Bersagli mobili:"))
-        btn_row3 = QHBoxLayout()
-        btn_row3.addWidget(_add_btn("🔄 Swinger", "Bersaglio oscillante",
-            lambda: self._add_via_scene(lambda s: s.add_swinger(8, 7))))
-        btn_row3.addWidget(_add_btn("⬇️ Drop", "Bersaglio a caduta",
-            lambda: self._add_via_scene(lambda s: s.add_drop_turner(9, 7))))
-        btn_row3.addWidget(_add_btn("➡️ Mover", "Bersaglio su rotaia",
-            lambda: self._add_via_scene(lambda s: s.add_mover(10, 7))))
-        btn_row3.addStretch()
-        layout.addLayout(btn_row3)
+        for category, items in ITEMS:
+            # Header di categoria
+            h_item = QListWidgetItem(f"  {category}")
+            h_item.setFlags(Qt.ItemFlag.NoItemFlags)
+            h_item.setData(Qt.ItemDataRole.UserRole, "__header__")
+            font = h_item.font()
+            font.setBold(True)
+            font.setPointSize(10)
+            h_item.setFont(font)
+            h_item.setForeground(QColor("#0f172a"))
+            self._target_list.addItem(h_item)
 
-        layout.addWidget(QLabel("Ostacoli e coperture:"))
-        btn_row4 = QHBoxLayout()
-        btn_row4.addWidget(_add_btn("🧱 Muro", "Aggiunge un muro",
-            lambda: self._add_via_scene(lambda s: s.add_wall(5, 8, 3.0, 0.2))))
-        btn_row4.addWidget(_add_btn("🛡️ Barriera", "Aggiunge una barriera",
-            lambda: self._add_via_scene(lambda s: s.add_barrier(5, 9, 2.0, 0.15))))
-        btn_row4.addWidget(_add_btn("🚪 Porta", "Aggiunge una porta",
-            lambda: self._add_via_scene(lambda s: s.add_door(5, 10, 0.9, 0.05))))
-        btn_row4.addStretch()
-        layout.addLayout(btn_row4)
+            # Items della categoria
+            for icon, label, tip, itype, (def_w, def_h) in items:
+                text = f"   {icon}  {label}"
+                item = QListWidgetItem(text)
+                item.setToolTip(tip)
+                item.setData(Qt.ItemDataRole.UserRole, "__target__")
+                item.setData(Qt.ItemDataRole.UserRole + 1, itype.name)
+                item.setData(Qt.ItemDataRole.UserRole + 2, def_w)
+                item.setData(Qt.ItemDataRole.UserRole + 3, def_h)
+                self._target_list.addItem(item)
 
-        layout.addWidget(QLabel("Altro:"))
-        btn_row5 = QHBoxLayout()
-        btn_row5.addWidget(_add_btn("➖ Fault Line", "Linea di fallo",
-            lambda: self._add_via_scene(lambda s: s.add_fault_line(5, 11, 3.0))))
-        btn_row5.addWidget(_add_btn("🚫 No-Shoot", "Bersaglio No-Shoot",
-            lambda: self._add_via_scene(lambda s: s.add_no_shoot(5, 12, 0.45, 0.45))))
-        btn_row5.addWidget(_add_btn("⬛ Hard Cover", "Copertura impenetrabile",
-            lambda: self._add_via_scene(lambda s: s.add_hard_cover(5, 13))))
-        btn_row5.addWidget(_add_btn("⬜ Soft Cover", "Copertura visiva",
-            lambda: self._add_via_scene(lambda s: s.add_soft_cover(5, 14))))
-        btn_row5.addStretch()
-        layout.addLayout(btn_row5)
+        layout.addWidget(self._target_list, 1)
 
-        layout.addStretch()
+        pos_info = QLabel("📌 Gli oggetti vengono aggiunti al centro dello stage.\n"
+                          "Spostali con drag & drop sulla scena.")
+        pos_info.setStyleSheet("font-size: 10px; color: #94a3b8;")
+        layout.addWidget(pos_info)
+
         scroll.setWidget(content)
         return scroll
+
+    def _on_target_list_clicked(self, item: QListWidgetItem):
+        """Aggiunge il bersaglio selezionato alla scena."""
+        role = item.data(Qt.ItemDataRole.UserRole)
+        if role != "__target__" or self.scene_ref is None:
+            return
+
+        type_name = item.data(Qt.ItemDataRole.UserRole + 1)
+        def_w = item.data(Qt.ItemDataRole.UserRole + 2)
+        def_h = item.data(Qt.ItemDataRole.UserRole + 3)
+
+        try:
+            itype = getattr(ItemType, type_name)
+        except AttributeError:
+            return
+
+        # Posizione centrale di default
+        if hasattr(self.scene_ref, 'stage'):
+            cx = self.scene_ref.stage.width / 2
+            cy = self.scene_ref.stage.height / 2
+        else:
+            cx, cy = 10.0, 7.5
+
+        s = self.scene_ref
+
+        if itype == ItemType.PAPER_TARGET:
+            s.add_target(cx, cy, def_w, def_h, itype)
+        elif itype == ItemType.MINI_TARGET:
+            s.add_mini_target(cx, cy)
+        elif itype == ItemType.MICRO_TARGET:
+            s.add_micro_target(cx, cy)
+        elif itype == ItemType.STEEL_TARGET:
+            s.add_target(cx, cy, def_w, def_h, itype)
+        elif itype == ItemType.POPPER:
+            s.add_popper(cx, cy)
+        elif itype == ItemType.METAL_PLATE:
+            s.add_metal_plate(cx, cy)
+        elif itype in (ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
+                        ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
+                        ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER,
+                        ItemType.TARGET_PLUS_NOSHOOT):
+            s.add_composite(cx, cy, itype)
+        elif itype == ItemType.SWINGER:
+            s.add_swinger(cx, cy)
+        elif itype == ItemType.DROP_TURNER:
+            s.add_drop_turner(cx, cy)
+        elif itype == ItemType.MOVER:
+            s.add_mover(cx, cy)
+        elif itype == ItemType.WALL:
+            s.add_wall(cx, cy, def_w, def_h)
+        elif itype == ItemType.BARRIER:
+            s.add_barrier(cx, cy, def_w, def_h)
+        elif itype == ItemType.DOOR:
+            s.add_door(cx, cy, def_w, def_h)
+        elif itype == ItemType.HARD_COVER:
+            s.add_hard_cover(cx, cy, def_w, def_h)
+        elif itype == ItemType.SOFT_COVER:
+            s.add_soft_cover(cx, cy, def_w, def_h)
+        elif itype == ItemType.FAULT_LINE:
+            s.add_fault_line(cx, cy, def_w)
+        elif itype == ItemType.NO_SHOOT:
+            s.add_no_shoot(cx, cy, def_w, def_h)
+
+        # Notifica parent
+        parent = self.parent()
+        if parent and hasattr(parent, '_refresh_info'):
+            parent._refresh_info()
 
     def _add_via_scene(self, add_func: callable):
         """Chiama una funzione di aggiunta sulla scena e aggiorna info.

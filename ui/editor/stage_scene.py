@@ -2019,6 +2019,18 @@ class StageScene(QGraphicsScene):
                          properties={"scale": 0.50})
         self.push_add_item(item)
 
+    def add_composite(self, x: float, y: float, item_type: ItemType):
+        """Aggiunge un bersaglio composito (doppietti, bobber, target+noshoot)."""
+        from core.constants import TARGET_DIMENSIONS, TARGET_COLORS
+        from core.scoring import get_composite_info
+        key = item_type.name.lower()
+        w, h = TARGET_DIMENSIONS.get(key, (0.70, 0.75))
+        color = TARGET_COLORS.get(key, "#808080")
+        info = get_composite_info(item_type)
+        props = dict(info.get("props", {})) if info else {}
+        item = StageItem(0, item_type, x, y, w, h, 0, color, info.get("description", "") if info else "", properties=props)
+        self.push_add_item(item)
+
     def add_hard_cover(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
         """Aggiunge Hard Cover (copertura impenetrabile, Reg. 4.1.4.1)."""
         item = StageItem(0, ItemType.HARD_COVER, x, y, w, h, 0,
