@@ -221,8 +221,43 @@ class SvgTargetDesign:
                             break
                     design.zones.append(zone)
 
+            # Poligoni (es. esagoni)
+            for elem in root.findall(".//svg:polygon", ns):
+                fill = elem.get("fill", "")
+                if fill and fill != "currentColor" and fill != "none":
+                    points_str = elem.get("points", "")
+                    pts = []
+                    for pair in points_str.split():
+                        if "," in pair:
+                            x, y = pair.split(",")
+                            pts.append((float(x.strip()), float(y.strip())))
+                    if len(pts) >= 3:
+                        xs = [p[0] for p in pts]
+                        ys = [p[1] for p in pts]
+                        min_x, max_x = min(xs), max(xs)
+                        min_y, max_y = min(ys), max(ys)
+                        shape = "hexagon" if len(pts) == 6 else "polygon"
+                        zone = SvgZone(
+                            shape_type=shape,
+                            x=min_x, y=min_y,
+                            width=max_x - min_x, height=max_y - min_y,
+                            color=fill,
+                        )
+                        # Cerca label al centro del poligono
+                        cx = (min_x + max_x) / 2
+                        cy = (min_y + max_y) / 2
+                        for text_elem in root.findall(".//svg:text", ns):
+                            tx_e = float(text_elem.get("x", 0))
+                            ty_e = float(text_elem.get("y", 0))
+                            if abs(tx_e - cx) < 5 and abs(ty_e - cy - 4) < 5:
+                                zone.label = text_elem.text or "?"
+                                break
+                        design.zones.append(zone)
+
             return design
-        except Exception:
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
             return None
 
     def to_dict(self) -> dict:

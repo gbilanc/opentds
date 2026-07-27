@@ -261,7 +261,7 @@ class SvgEditorScene(QGraphicsScene):
 
     def mousePressEvent(self, event):
         dialog = self.editor
-        if dialog and dialog._current_tool in ("rect", "ellipse"):
+        if dialog and dialog._current_tool in ("rect", "ellipse", "hexagon"):
             # Aggiunge una zona nel punto cliccato
             pos = event.scenePos()
             s = dialog._scale
@@ -533,8 +533,9 @@ class SvgEditorDialog(QDialog):
         self._btn_select.setChecked(tool == "select")
         self._btn_rect.setChecked(tool == "rect")
         self._btn_ellipse.setChecked(tool == "ellipse")
+        self._btn_hex.setChecked(tool == "hexagon")
 
-        if tool in ("rect", "ellipse"):
+        if tool in ("rect", "ellipse", "hexagon"):
             self._view.setDragMode(QGraphicsView.DragMode.NoDrag)
             self._view.setCursor(Qt.CursorShape.CrossCursor)
             self._info_label.setText(
