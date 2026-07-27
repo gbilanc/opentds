@@ -60,15 +60,15 @@ class SvgZone:
                 f'rx="{rx}" ry="{ry}" '
                 f'fill="{self.color}" stroke="#fff" stroke-width="1" opacity="0.85"/>'
             )
-        elif self.shape_type == "hexagon":
+        elif self.shape_type == "octagon":
             cx = self.x + self.width / 2
             cy = self.y + self.height / 2
             rx = self.width / 2
             ry = self.height / 2
             points = []
-            for i in range(6):
-                angle = 3.14159 * 2 * i / 6 - 3.14159 / 2  # flat top
-                px = cx + rx * __import__('math').cos(angle)
+            for i in range(8):
+                angle = math.pi * 2 * i / 8 - math.pi / 8
+                px = cx + rx * math.cos(angle)
                 py = cy + ry * math.sin(angle)
                 points.append(f"{px:.1f},{py:.1f}")
             return (
@@ -221,7 +221,7 @@ class SvgTargetDesign:
                             break
                     design.zones.append(zone)
 
-            # Poligoni (es. esagoni)
+            # Poligoni (es. ottagoni)
             for elem in root.findall(".//svg:polygon", ns):
                 fill = elem.get("fill", "")
                 if fill and fill != "currentColor" and fill != "none":
@@ -236,7 +236,7 @@ class SvgTargetDesign:
                         ys = [p[1] for p in pts]
                         min_x, max_x = min(xs), max(xs)
                         min_y, max_y = min(ys), max(ys)
-                        shape = "hexagon" if len(pts) == 6 else "polygon"
+                        shape = "octagon" if len(pts) == 8 else "polygon"
                         zone = SvgZone(
                             shape_type=shape,
                             x=min_x, y=min_y,

@@ -44,12 +44,12 @@ from core.target_designer import (
 SHAPE_NAMES = {
     "rect": "rettangolo",
     "ellipse": "ellisse",
-    "hexagon": "esagono",
+    "octagon": "ottagono",
 }
 SHAPE_ICONS = {
     "rect": "▭",
     "ellipse": "⬭",
-    "hexagon": "⬡",
+    "octagon": "⬡",
 }
 
 
@@ -99,14 +99,14 @@ class SilhouetteItem(QGraphicsRectItem):
 #  Hexagon utility
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _hexagon_polygon(w: float, h: float) -> QPolygonF:
-    """Calcola i 6 vertici dell'esagono inscritto nel rettangolo w×h (flat-top)."""
+def _octagon_polygon(w: float, h: float) -> QPolygonF:
+    """Calcola gli 8 vertici dell'ottagono inscritto nel rettangolo w×h."""
     cx, cy = w / 2, h / 2
     rx, ry = w / 2, h / 2
     return QPolygonF([
-        QPointF(cx + rx * math.cos(math.pi * 2 * i / 6 - math.pi / 2),
-                cy + ry * math.sin(math.pi * 2 * i / 6 - math.pi / 2))
-        for i in range(6)
+        QPointF(cx + rx * math.cos(math.pi * 2 * i / 8 - math.pi / 8),
+                cy + ry * math.sin(math.pi * 2 * i / 8 - math.pi / 8))
+        for i in range(8)
     ])
 
 
@@ -115,8 +115,8 @@ def _build_shape_path(zone: SvgZone, w: float, h: float) -> QPainterPath:
     path = QPainterPath()
     if zone.shape_type == "ellipse":
         path.addEllipse(0, 0, w, h)
-    elif zone.shape_type == "hexagon":
-        path.addPolygon(_hexagon_polygon(w, h))
+    elif zone.shape_type == "octagon":
+        path.addPolygon(_octagon_polygon(w, h))
     else:
         path.addRoundedRect(QRectF(0, 0, w, h), 4, 4)
     return path
@@ -176,8 +176,8 @@ class ZoneGraphicsItem(QGraphicsItem):
 
         if self._zone.shape_type == "ellipse":
             painter.drawEllipse(QRectF(0, 0, w, h))
-        elif self._zone.shape_type == "hexagon":
-            painter.drawPolygon(_hexagon_polygon(w, h))
+        elif self._zone.shape_type == "octagon":
+            painter.drawPolygon(_octagon_polygon(w, h))
         else:
             painter.drawRoundedRect(QRectF(0, 0, w, h), 4, 4)
 
@@ -300,7 +300,7 @@ class SvgEditorScene(QGraphicsScene):
 
     def mousePressEvent(self, event):
         dialog = self.editor
-        if dialog and dialog._current_tool in ("rect", "ellipse", "hexagon"):
+        if dialog and dialog._current_tool in ("rect", "ellipse", "octagon"):
             # Clic su zona esistente → permetti selezione/spostamento/ridimensionamento
             item = self.itemAt(event.scenePos(), self.views()[0].transform()) if self.views() else None
             if item and isinstance(item, ZoneGraphicsItem):
@@ -374,9 +374,9 @@ class SvgEditorDialog(QDialog):
         self._style_tool_btn(self._btn_ellipse)
         toolbar.addWidget(self._btn_ellipse)
 
-        self._btn_hex = QPushButton("⬡ Esag.")
+        self._btn_hex = QPushButton("⬡ Ottag.")
         self._btn_hex.setCheckable(True)
-        self._btn_hex.clicked.connect(lambda: self._set_tool("hexagon"))
+        self._btn_hex.clicked.connect(lambda: self._set_tool("octagon"))
         self._style_tool_btn(self._btn_hex)
         toolbar.addWidget(self._btn_hex)
 
@@ -553,13 +553,13 @@ class SvgEditorDialog(QDialog):
         self._btn_select.setChecked(tool == "select")
         self._btn_rect.setChecked(tool == "rect")
         self._btn_ellipse.setChecked(tool == "ellipse")
-        self._btn_hex.setChecked(tool == "hexagon")
+        self._btn_hex.setChecked(tool == "octagon")
 
         # RubberBandDrag: selezione item con click, pan con rotella/Shift
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self._view.setCursor(Qt.CursorShape.ArrowCursor)
 
-        if tool in ("rect", "ellipse", "hexagon"):
+        if tool in ("rect", "ellipse", "octagon"):
             self._info_label.setText(
                 f"✏️ Clicca area vuota per aggiungere {SHAPE_NAMES.get(tool, tool)}  |  "
                 f"Clicca zona per selezionare/spostare/ridimensionare"
