@@ -635,6 +635,8 @@ class SvgEditorDialog(QDialog):
         self._add_zone_item(zone)
         self._refresh_zone_list()
         self._zone_list.setCurrentRow(len(self._design.zones) - 1)
+        # Mantiene il tool corrente (non torna a selezione)
+        self._set_tool(self._current_tool)
 
     def _delete_selected(self):
         selected = [it for it in self._zone_items if it.isSelected()]
