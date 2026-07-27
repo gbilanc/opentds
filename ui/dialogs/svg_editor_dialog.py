@@ -555,19 +555,19 @@ class SvgEditorDialog(QDialog):
         self._btn_ellipse.setChecked(tool == "ellipse")
         self._btn_hex.setChecked(tool == "hexagon")
 
-        # ScrollHandDrag permette selezione, spostamento e pan
-        self._view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        # RubberBandDrag: selezione item con click, pan con rotella/Shift
+        self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self._view.setCursor(Qt.CursorShape.ArrowCursor)
 
         if tool in ("rect", "ellipse", "hexagon"):
             self._info_label.setText(
-                f"✏️ Clicca su area vuota per aggiungere {SHAPE_NAMES.get(tool, tool)}  |  "
-                f"Clicca su zona per selezionarla/spostarla"
+                f"✏️ Clicca area vuota per aggiungere {SHAPE_NAMES.get(tool, tool)}  |  "
+                f"Clicca zona per selezionare/spostare/ridimensionare"
             )
         else:
             self._info_label.setText(
                 f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
-                f"Clicca per selezionare, trascina per spostare"
+                f"Clicca per selezionare, trascina angoli per ridimensionare"
             )
 
     # ── Scene ──────────────────────────────────────────────────────────
