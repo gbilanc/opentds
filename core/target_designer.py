@@ -8,6 +8,7 @@ e reimportarle per modifica.
 from __future__ import annotations
 
 import math
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -57,6 +58,21 @@ class SvgZone:
             return (
                 f'<ellipse cx="{cx}" cy="{cy}" '
                 f'rx="{rx}" ry="{ry}" '
+                f'fill="{self.color}" stroke="#fff" stroke-width="1" opacity="0.85"/>'
+            )
+        elif self.shape_type == "hexagon":
+            cx = self.x + self.width / 2
+            cy = self.y + self.height / 2
+            rx = self.width / 2
+            ry = self.height / 2
+            points = []
+            for i in range(6):
+                angle = 3.14159 * 2 * i / 6 - 3.14159 / 2  # flat top
+                px = cx + rx * __import__('math').cos(angle)
+                py = cy + ry * math.sin(angle)
+                points.append(f"{px:.1f},{py:.1f}")
+            return (
+                f'<polygon points="{' '.join(points)}" '
                 f'fill="{self.color}" stroke="#fff" stroke-width="1" opacity="0.85"/>'
             )
         elif self.shape_type == "path":

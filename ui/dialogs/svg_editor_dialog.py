@@ -119,6 +119,8 @@ class ZoneGraphicsItem(QGraphicsItem):
         path = QPainterPath()
         if self._zone.shape_type == "ellipse":
             path.addEllipse(0, 0, w, h)
+        elif self._zone.shape_type == "hexagon":
+            path.addPolygon(self._hexagon_points(w, h))
         else:
             path.addRect(0, 0, w, h)
         return path
@@ -136,6 +138,9 @@ class ZoneGraphicsItem(QGraphicsItem):
 
         if self._zone.shape_type == "ellipse":
             painter.drawEllipse(QRectF(0, 0, w, h))
+        elif self._zone.shape_type == "hexagon":
+            points = self._hexagon_points(w, h)
+            painter.drawPolygon(points)
         else:
             painter.drawRoundedRect(QRectF(0, 0, w, h), 4, 4)
 
@@ -212,6 +217,18 @@ class ZoneGraphicsItem(QGraphicsItem):
     def mouseReleaseEvent(self, event):
         self._resizing = False
         super().mouseReleaseEvent(event)
+
+    @staticmethod
+    def _hexagon_points(w: float, h: float):
+        """Calcola i 6 vertici dell'esagono inscritto nel rettangolo w×h."""
+        import math
+        from PySide6.QtGui import QPolygonF
+        cx, cy = w / 2, h / 2
+        rx, ry = w / 2, h / 2
+        pts = [QPointF(cx + rx * math.cos(3.14159 * 2 * i / 6 - 3.14159 / 2),
+                       cy + ry * math.sin(3.14159 * 2 * i / 6 - 3.14159 / 2))
+               for i in range(6)]
+        return QPolygonF(pts)
 
     def hoverMoveEvent(self, event):
         """Cambia cursore sugli angoli per hint di resize."""
@@ -313,6 +330,12 @@ class SvgEditorDialog(QDialog):
         self._btn_ellipse.clicked.connect(lambda: self._set_tool("ellipse"))
         self._style_tool_btn(self._btn_ellipse)
         toolbar.addWidget(self._btn_ellipse)
+
+        self._btn_hex = QPushButton("⬡ Esagono")
+        self._btn_hex.setCheckable(True)
+        self._btn_hex.clicked.connect(lambda: self._set_tool("hexagon"))
+        self._style_tool_btn(self._btn_hex)
+        toolbar.addWidget(self._btn_hex)
 
         toolbar.addSpacing(12)
 
@@ -627,7 +650,8 @@ class SvgEditorDialog(QDialog):
         self._zone_h.setValue(int(zone.height))
         self._zone_x.setValue(int(zone.x))
         self._zone_y.setValue(int(zone.y))
-        self._zone_shape.setText("ellisse" if zone.shape_type == "ellipse" else "rettangolo")
+        shape_names = {"rect": "rettangolo", "ellipse": "ellisse", "hexagon": "esagono"}
+        self._zone_shape.setText(shape_names.get(zone.shape_type, zone.shape_type))
 
         # Selezione scena
         for item in self._zone_items:
