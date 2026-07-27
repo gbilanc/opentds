@@ -110,8 +110,10 @@ def _octagon_polygon(w: float, h: float) -> QPolygonF:
     ])
 
 
-def _build_shape_path(zone: SvgZone, w: float, h: float) -> QPainterPath:
-    """Crea il QPainterPath per la forma della zona."""
+def _build_shape_path(zone: SvgZone, w: float, h: float, include_handles: bool = False) -> QPainterPath:
+    """Crea il QPainterPath per la forma della zona.
+    Se include_handles=True, include anche l'area degli handle angolari.
+    """
     path = QPainterPath()
     if zone.shape_type == "ellipse":
         path.addEllipse(0, 0, w, h)
@@ -119,6 +121,10 @@ def _build_shape_path(zone: SvgZone, w: float, h: float) -> QPainterPath:
         path.addPolygon(_octagon_polygon(w, h))
     else:
         path.addRoundedRect(QRectF(0, 0, w, h), 4, 4)
+    if include_handles:
+        hs = ZoneGraphicsItem.HANDLE_SIZE
+        for px, py in [(0, 0), (w, 0), (0, h), (w, h)]:
+            path.addRect(QRectF(px - hs, py - hs, hs * 2, hs * 2))
     return path
 
 
@@ -162,6 +168,7 @@ class ZoneGraphicsItem(QGraphicsItem):
             self._zone,
             self._zone.width * self._scale,
             self._zone.height * self._scale,
+            include_handles=True,
         )
 
     def paint(self, painter, option, widget=None):
@@ -195,11 +202,15 @@ class ZoneGraphicsItem(QGraphicsItem):
             painter.setPen(QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(-2, -2, w + 4, h + 4))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(QColor("#2563eb")))
-            hs = self.HANDLE_SIZE / 2
-            for px, py in [(0, 0), (w, 0), (0, h), (w, h)]:
-                painter.drawRect(QRectF(px - hs, py - hs, hs * 2, hs * 2))
+
+        # Handle angolari sempre visibili (semi-trasparenti se non selezionato)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor("#2563eb")))
+        hs = self.HANDLE_SIZE / 2
+        painter.setOpacity(0.5 if not self.isSelected() else 1.0)
+        for px, py in [(0, 0), (w, 0), (0, h), (w, h)]:
+            painter.drawRect(QRectF(px - hs, py - hs, hs * 2, hs * 2))
+        painter.setOpacity(1.0)
 
         painter.restore()
 
