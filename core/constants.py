@@ -151,9 +151,9 @@ TARGET_DIMENSIONS: Final[dict[str, tuple[float, float]]] = {
     "mover":        (0.45, 0.45),
     # Compositi
     "doublet_side":         (0.95, 0.75),
-    "doublet_overlap":      (0.65, 0.75),
+    "doublet_overlap":      (0.50, 1.30),  # paper 0.45×0.75 sovrapposti verticalmente
     "doublet_side_hostage": (1.20, 0.75),
-    "doublet_overlap_hostage": (0.90, 0.75),
+    "doublet_overlap_hostage": (0.55, 1.50),  # due paper + no-shoot sovrapposti verticalmente
     "bobber_plate":  (0.20, 0.20),
     "double_bobber": (0.50, 0.20),
     "target_plus_noshoot": (0.70, 0.75),

@@ -141,6 +141,7 @@ class Phase1Config:
     stage_depth: float = 15.0
     letter_shape: str = "random"  # random | Q | O | T | U | W | X | Y | Z
     rotation: float = 0.0       # gradi 0-360
+    polygon_scale: float = 1.0  # 0.3-1.5, fattore di scala uniforme del poligono
     delimitation: str = "fault_lines"  # fault_lines | barriers | walls | mixed
     seed: Optional[int] = None
     discipline: str = "ipsc_pistol"
@@ -223,6 +224,7 @@ class StageGenerator:
             stage,
             letter_shape=phase1.letter_shape,
             rotation=phase1.rotation,
+            scale=phase1.polygon_scale,
         )
         stage.properties["perimeter_poly"] = [
             (round(x, 2), round(y, 2)) for x, y in poly

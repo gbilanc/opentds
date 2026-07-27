@@ -147,6 +147,19 @@ def _rotate_poly(poly: List[Tuple[float, float]], angle_deg: float,
     return result
 
 
+def _scale_poly(poly: List[Tuple[float, float]], factor: float,
+                cx: float, cy: float) -> List[Tuple[float, float]]:
+    """Scala il poligono uniformemente attorno al punto (cx, cy)."""
+    result = []
+    for px, py in poly:
+        dx = px - cx
+        dy = py - cy
+        nx = cx + dx * factor
+        ny = cy + dy * factor
+        result.append((round(nx, 2), round(ny, 2)))
+    return result
+
+
 def _perturb_poly(poly: List[Tuple[float, float]], amount: float = 0.3) -> List[Tuple[float, float]]:
     """Applica una leggera perturbazione casuale ai vertici."""
     result = []
@@ -167,11 +180,13 @@ def generate_perimeter_polygon(
     has_steel: bool = False,
     back_y: float | None = None,
     rotation: float | None = None,
+    scale: float = 1.0,
 ) -> List[Tuple[float, float]]:
     """Genera il poligono dell'area di tiro a forma di lettera dell'alfabeto.
 
-    La lettera viene scalata alle dimensioni dello stage, ruotata
-    casualmente di 0/90/180/270 gradi, e leggermente perturbata.
+    La lettera viene scalata alle dimensioni dello stage, ruotata,
+    scalata uniformemente dal fattore `scale`, e traslata in modo che
+    un lato sia sempre adiacente all'up-range (Y=0).
     Il perimetro è completamente chiuso.
 
     Il poligono risultato è validato con validate_polygon() per
@@ -234,13 +249,28 @@ def generate_perimeter_polygon(
         poly = _rotate_poly(poly, rotation, cx, cy)
         poly = _clamp_poly(poly, w, d_eff, margin)
 
+    # Scala uniforme attorno al centro (dopo rotazione)
+    if scale != 1.0:
+        cx, cy = w / 2, d_eff / 2
+        poly = _scale_poly(poly, scale, cx, cy)
+        poly = _clamp_poly(poly, w, d_eff, margin)
+
+    # Helper: trasla il poligono verso l'up-range (Y=0) in modo che
+    # un lato sia sempre adiacente (IPSC).
+    def _snap_to_uprange(polygon):
+        min_y = min(y for _, y in polygon)
+        dy = (margin + 0.1) - min_y
+        if abs(dy) > 0.01:
+            polygon = [(x, y + dy) for x, y in polygon]
+        return _clamp_poly(polygon, w, d_eff, margin)
+
     # Tentativo con perturbazione: se invalido, usa poligono pulito
     for _ in range(5):
         test_poly = _perturb_poly(poly, amount=0.3)
         clamped = _clamp_poly(test_poly, w, d_eff, margin)
         valid, _ = validate_polygon(clamped, min_vertices=4)
         if valid:
-            return clamped
+            return _snap_to_uprange(clamped)
 
     # Fallback: poligono pulito senza perturbazione
     valid, _ = validate_polygon(poly, min_vertices=4)
@@ -248,7 +278,7 @@ def generate_perimeter_polygon(
         # Ultima risorsa: lettera O semplice
         norm_verts = LETTER_SHAPES["O"]
         poly = [(inset + nx * scale_x, inset + ny * scale_y) for nx, ny in norm_verts]
-    return _clamp_poly(poly, w, d_eff, margin)
+    return _snap_to_uprange(poly)
 
 
 def perimeter_to_items(

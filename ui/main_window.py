@@ -42,6 +42,8 @@ class MainWindow(QMainWindow):
 
         self._stage = Stage(name="Stage IPSC", width=20.0, depth=15.0)
         self._library = StageLibrary()
+        self._base_poly = None  # poligono base (senza rotazione/scala) per update live
+        self._current_poly = None
         self._setup_ui()
         self._setup_toolbar()
         self._setup_menu()
@@ -271,6 +273,7 @@ class MainWindow(QMainWindow):
         self._prop_dock.propertyChanged.connect(self._on_property_changed)
         self._prop_dock.markerChanged.connect(self._on_marker_changed)
         self._gen_panel.phase1Requested.connect(self._on_phase1_requested)
+        self._gen_panel.phase1PreviewChanged.connect(self._on_phase1_preview)
         self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
         self._gen_panel.placeModeToggled.connect(self._view.set_placing_position_mode)
         # Sincronizzazione → Info
@@ -515,20 +518,200 @@ class MainWindow(QMainWindow):
 
     # ── Blender Export ──────────────────────────────────────────────────
 
+    # ── Helpers: applica trasformazioni al poligono base ─────────────────
+
+    @staticmethod
+    def _transform_polygon(
+        poly: list[tuple[float, float]],
+        rotation: float,
+        scale: float,
+        stage_width: float,
+        stage_depth: float,
+    ) -> list[tuple[float, float]]:
+        """Applica rotazione e scala a un poligono base, poi trasla verso l'up-range."""
+        from core.shapes import _rotate_poly, _scale_poly, _clamp_poly
+        from core.constants import MIN_BACKSTOP_DEPTH
+
+        margin = 1.0  # MIN_TARGET_TO_EDGE
+        d_eff = stage_depth - MIN_BACKSTOP_DEPTH
+        poly = list(poly)
+
+        # Rotazione
+        if rotation != 0:
+            cx, cy = stage_width / 2, d_eff / 2
+            poly = _rotate_poly(poly, rotation, cx, cy)
+            poly = _clamp_poly(poly, stage_width, d_eff, margin)
+
+        # Scala
+        if scale != 1.0:
+            cx, cy = stage_width / 2, d_eff / 2
+            poly = _scale_poly(poly, scale, cx, cy)
+            poly = _clamp_poly(poly, stage_width, d_eff, margin)
+
+        # Trasla verso up-range
+        min_y = min(y for _, y in poly)
+        dy = (margin + 0.1) - min_y
+        if abs(dy) > 0.01:
+            poly = [(x, y + dy) for x, y in poly]
+            poly = _clamp_poly(poly, stage_width, d_eff, margin)
+
+        return poly
+
+    def _apply_perimeter(self, poly: list[tuple[float, float]],
+                          delimitation: str) -> None:
+        """Sostituisce gli item perimetrali nella scena con quelli del nuovo poligono.
+
+        Non tocca undo stack, non ricostruisce la scena.
+        """
+        from core.shapes import perimeter_to_items
+        from core.generator import _assign_ids
+
+        self._current_poly = poly
+        self._stage.properties["perimeter_poly"] = [
+            (round(x, 2), round(y, 2)) for x, y in poly
+        ]
+
+        new_items = perimeter_to_items(
+            poly,
+            style=delimitation,
+            stage_width=self._stage.width,
+            stage_depth=self._stage.depth,
+        )
+        _assign_ids(new_items)
+
+        # Rimuove vecchi item perimetrali dalla scena
+        old_ids = {
+            it.id for it in self._stage.items
+            if it.properties.get("perimeter")
+        }
+        for gid in old_ids:
+            g = self._scene._items.pop(gid, None)
+            if g:
+                self._scene.removeItem(g)
+
+        # Sostituisce nello stage
+        self._stage.items = [
+            it for it in self._stage.items
+            if not it.properties.get("perimeter")
+        ]
+        self._stage.items.extend(new_items)
+        self._stage._next_id = max(
+            (it.id for it in self._stage.items), default=0
+        ) + 1
+
+        # Aggiunge nuovi item alla scena
+        for it in new_items:
+            self._scene._do_add_graphics_item(it)
+
+        self._scene._update_shooting_area()
+        self._refresh_info()
+
+    # ── Fase 1: generazione iniziale ──────────────────────────────────
+
     @Slot()
 
     def _on_phase1_requested(self, phase1: Phase1Config):
-        """Esegue la Fase 1: generazione area di tiro (sul thread principale)."""
+        """Esegue la Fase 1: genera il poligono base (senza rotazione/scala),
+        poi applica le trasformazioni corrente e popola lo stage.
+
+        Se lo stage ha già oggetti oltre al perimetro (bersagli, posizioni, ecc.),
+        mostra un avviso prima di rigenerare perché verranno persi.
+        """
+        non_perimeter_items = [
+            it for it in self._stage.items
+            if not it.properties.get("perimeter")
+        ]
+        has_positions = bool(self._stage.shooting_positions)
+        if non_perimeter_items or has_positions:
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.warning(
+                self,
+                "Rigenera area di tiro",
+                "Modificando l'area di tiro verranno rimossi tutti gli oggetti\n"
+                "e le posizioni di tiro già aggiunte. Continuare?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                self._gen_panel.on_phase1_complete()
+                return
+            self._gen_panel._pos_list.clear()
+            if self._gen_panel.scene_ref:
+                self._gen_panel.scene_ref.clear_shooting_position_markers()
+
         self._status.showMessage("Generazione area di tiro...")
         try:
-            stage, poly = StageGenerator.generate_perimeter(phase1)
-            self._replace_stage(stage)
+            # 1. Genera il poligono BASE (rotazione=0, scala=1)
+            from core.shapes import generate_perimeter_polygon
+            self._base_poly = generate_perimeter_polygon(
+                self._stage,
+                letter_shape=phase1.letter_shape,
+                rotation=0,
+                scale=1.0,
+            )
+            # 2. Applica le trasformazioni correnti
+            poly = self._transform_polygon(
+                self._base_poly,
+                rotation=phase1.rotation,
+                scale=phase1.polygon_scale,
+                stage_width=phase1.stage_width,
+                stage_depth=phase1.stage_depth,
+            )
+            # 3. Applica il poligono trasformato alla scena
+            from core.shapes import perimeter_to_items
+            from core.generator import _assign_ids
+
             self._current_poly = poly
-            self._gen_panel.on_phase1_complete(stage.name)
+            self._stage.properties["perimeter_poly"] = [
+                (round(x, 2), round(y, 2)) for x, y in poly
+            ]
+            new_items = perimeter_to_items(
+                poly,
+                style=phase1.delimitation,
+                stage_width=phase1.stage_width,
+                stage_depth=phase1.stage_depth,
+            )
+            _assign_ids(new_items)
+            self._stage.items = new_items
+            self._stage._next_id = max(
+                (it.id for it in self._stage.items), default=0
+            ) + 1
+
+            self._replace_stage(self._stage)
+            self._gen_panel.on_phase1_complete(self._stage.name)
             self._status.showMessage("\u2705 Area di tiro generata")
         except Exception as e:
             self._gen_panel.on_phase1_error(str(e))
             self._status.showMessage(f"\u274c Errore Fase 1: {e}")
+
+    # ── Update live (rotazione/scala) ─────────────────────────────────
+
+    @Slot(Phase1Config)
+    def _on_phase1_preview(self, phase1: Phase1Config):
+        """Update live: applica rotazione e scala al poligono base,
+        aggiorna solo gli item perimetrali senza ricostruire la scena.
+        """
+        non_perimeter = [
+            it for it in self._stage.items
+            if not it.properties.get("perimeter")
+        ]
+        if non_perimeter or self._stage.shooting_positions:
+            return
+        if self._base_poly is None:
+            return
+
+        try:
+            # Applica rotazione e scala al poligono base
+            poly = self._transform_polygon(
+                self._base_poly,
+                rotation=phase1.rotation,
+                scale=phase1.polygon_scale,
+                stage_width=self._stage.width,
+                stage_depth=self._stage.depth,
+            )
+            self._apply_perimeter(poly, phase1.delimitation)
+        except Exception:
+            pass
 
     # ── Helper: sincronizza stage.shooting_positions dalla lista wizard ──
 

@@ -26,11 +26,13 @@ class StageWizard(QWidget):
 
     # Segnali
     phase1Requested = Signal(Phase1Config)
+    phase1PreviewChanged = Signal(Phase1Config)  # update live (rotazione/scala)
     stopRequested = Signal()
     placeModeToggled = Signal(bool)  # True = attivo, False = disattivo
     def __init__(self, parent=None):
         super().__init__(parent)
         self._phase1_done = False
+        self._live_connected = False
         self.scene_ref = None  # impostato da main_window per Fase 3
         self._setup_ui()
 
@@ -158,6 +160,22 @@ class StageWizard(QWidget):
         rot_row.addWidget(self._p1_rot_slider, 1)
         shape_form.addRow("Rotazione:", rot_row)
 
+        scale_row = QHBoxLayout()
+        self._p1_scale = QSpinBox()
+        self._p1_scale.setRange(30, 150)
+        self._p1_scale.setValue(100)
+        self._p1_scale.setSuffix("%")
+        self._p1_scale.setFixedWidth(80)
+
+        self._p1_scale_slider = QSlider(Qt.Orientation.Horizontal)
+        self._p1_scale_slider.setRange(30, 150)
+        self._p1_scale_slider.setValue(100)
+        self._p1_scale_slider.valueChanged.connect(self._p1_scale.setValue)
+        self._p1_scale.valueChanged.connect(self._p1_scale_slider.setValue)
+        scale_row.addWidget(self._p1_scale)
+        scale_row.addWidget(self._p1_scale_slider, 1)
+        shape_form.addRow("Scala:", scale_row)
+
         self._p1_delim = QComboBox()
         self._p1_delim.addItems(["Fault Lines", "Barriere", "Muri", "Misto"])
         self._p1_delim.setCurrentIndex(0)
@@ -188,20 +206,51 @@ class StageWizard(QWidget):
         scroll.setWidget(content)
         return scroll
 
-    def _on_generate_phase1(self):
+    def _build_phase1_config(self) -> Phase1Config:
+        """Costruisce un Phase1Config dai valori correnti dei controlli."""
         shape_map = {"Casuale": "random", "Quadrato": "Q",
                      "Rettangolo": "O", "T": "T", "U": "U",
                      "W": "W", "X": "X", "Y": "Y", "Z": "Z"}
         delim_map = {"Fault Lines": "fault_lines", "Barriere": "barriers",
                       "Muri": "walls", "Misto": "mixed"}
-
-        config = Phase1Config(
+        return Phase1Config(
             stage_width=self._p1_width.value(),
             stage_depth=self._p1_depth.value(),
             letter_shape=shape_map[self._p1_shape.currentText()],
             rotation=float(self._p1_rotation.value()),
+            polygon_scale=self._p1_scale.value() / 100.0,
             delimitation=delim_map[self._p1_delim.currentText()],
         )
+
+    def _connect_live_preview(self):
+        """Collega i controlli di rotazione e scala all'update live della scena."""
+        if self._live_connected:
+            return
+        self._live_connected = True
+        self._p1_rotation.valueChanged.connect(self._on_live_param_changed)
+        self._p1_rot_slider.valueChanged.connect(self._on_live_param_changed)
+        self._p1_scale.valueChanged.connect(self._on_live_param_changed)
+        self._p1_scale_slider.valueChanged.connect(self._on_live_param_changed)
+
+    def _disconnect_live_preview(self):
+        """Scollega i controlli dall'update live."""
+        if not self._live_connected:
+            return
+        self._live_connected = False
+        self._p1_rotation.valueChanged.disconnect(self._on_live_param_changed)
+        self._p1_rot_slider.valueChanged.disconnect(self._on_live_param_changed)
+        self._p1_scale.valueChanged.disconnect(self._on_live_param_changed)
+        self._p1_scale_slider.valueChanged.disconnect(self._on_live_param_changed)
+
+    def _on_live_param_changed(self):
+        """Emesso quando rotazione o scala cambiano dopo la generazione iniziale."""
+        if not self._phase1_done:
+            return
+        config = self._build_phase1_config()
+        self.phase1PreviewChanged.emit(config)
+
+    def _on_generate_phase1(self):
+        config = self._build_phase1_config()
         self._btn_gen_area.setEnabled(False)
         self._btn_gen_area.setText("⏳ Generazione in corso...")
         self._p1_status.setText("Generazione area di tiro in corso...")
@@ -222,6 +271,8 @@ class StageWizard(QWidget):
         """)
         self._p1_status.setText(f"✅ Area di tiro generata ({stage_name})")
         self._btn_next.setEnabled(True)
+        # Attiva update live per rotazione e scala
+        self._connect_live_preview()
 
     def on_phase1_error(self, message: str):
         self._btn_gen_area.setEnabled(True)

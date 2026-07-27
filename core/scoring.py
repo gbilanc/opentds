@@ -59,10 +59,10 @@ COMPOSITE_TARGETS: dict[ItemType, dict] = {
     ItemType.DOUBLET_OVERLAP: {
         "colpi": 4,
         "sub_targets": [
-            (-0.11, 0, ItemType.PAPER_TARGET, "T1"),
-            (0.11, 0, ItemType.PAPER_TARGET, "T2"),
+            (0, -0.11, ItemType.PAPER_TARGET, "T1"),  # sopra
+            (0, 0.11, ItemType.PAPER_TARGET, "T2"),   # sotto
         ],
-        "description": "Doppio target sovrapposto",
+        "description": "Doppio target sovrapposto verticale",
     },
     ItemType.DOUBLET_SIDE_HOSTAGE: {
         "colpi": 4,
@@ -76,11 +76,11 @@ COMPOSITE_TARGETS: dict[ItemType, dict] = {
     ItemType.DOUBLET_OVERLAP_HOSTAGE: {
         "colpi": 4,
         "sub_targets": [
-            (-0.18, 0, ItemType.PAPER_TARGET, "T1"),
-            (0.18, 0, ItemType.PAPER_TARGET, "T2"),
-            (0, 0, ItemType.NO_SHOOT, "NS"),
+            (0, -0.18, ItemType.PAPER_TARGET, "T1"),   # sopra
+            (0, 0.18, ItemType.PAPER_TARGET, "T2"),    # sotto
+            (0, 0, ItemType.NO_SHOOT, "NS"),           # centro
         ],
-        "description": "Doppio target con ostaggio (sovrapposto)",
+        "description": "Doppio target con ostaggio (sovrapposto verticale)",
     },
     ItemType.BOBBER_PLATE: {
         "colpi": 1,
