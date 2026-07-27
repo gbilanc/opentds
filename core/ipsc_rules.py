@@ -1003,29 +1003,41 @@ class IPSCRulesEngine:
         return v
 
     def count_targets(self) -> dict:
-        """Conta i bersagli per tipo."""
+        """Conta i bersagli per tipo, risolvendo i compositi nei sub-target."""
 
-        from core.scoring import is_paper_like, is_steel_like
+        from core.scoring import is_paper_like, is_steel_like, is_composite, get_composite_info
 
-        def _is_paper(it):
-            return is_paper_like(it.item_type)
-        def _is_steel(it):
-            return is_steel_like(it.item_type)
-        def _is_moving(it):
-            return it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
-                                    ItemType.MOVER)
+        paper = 0
+        steel = 0
+        no_shoots = 0
+        moving = 0
 
-        paper = [it for it in self.stage.items if _is_paper(it)]
-        steel = [it for it in self.stage.items if _is_steel(it)]
-        moving = [it for it in self.stage.items if _is_moving(it)]
-        no_shoots = [it for it in self.stage.items
-                     if it.item_type == ItemType.NO_SHOOT]
+        for it in self.stage.items:
+            if is_composite(it.item_type):
+                info = get_composite_info(it.item_type)
+                if info:
+                    for _, _, sub_type, _ in info.get("sub_targets", []):
+                        if sub_type == ItemType.PAPER_TARGET:
+                            paper += 1
+                        elif sub_type == ItemType.METAL_PLATE:
+                            steel += 1
+                        elif sub_type == ItemType.NO_SHOOT:
+                            no_shoots += 1
+            elif is_paper_like(it.item_type):
+                paper += 1
+            elif is_steel_like(it.item_type):
+                steel += 1
+            elif it.item_type == ItemType.NO_SHOOT:
+                no_shoots += 1
+            elif it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
+                moving += 1
+
         return {
-            "paper": len(paper),
-            "steel": len(steel),
-            "moving": len(moving),
-            "no_shoots": len(no_shoots),
-            "total_scoring": len(paper) + len(steel),
+            "paper": paper,
+            "steel": steel,
+            "moving": moving,
+            "no_shoots": no_shoots,
+            "total_scoring": paper + steel,
         }
 
 

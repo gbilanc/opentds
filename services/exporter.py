@@ -98,10 +98,16 @@ def _format_target_list(stage: Stage) -> str:
 
 
 def _count_total_rounds(stage: Stage) -> int:
-    """Calcola il numero di colpi richiesti (default: 2 per carta, 1 per metallo)."""
+    """Calcola il numero di colpi richiesti (default: 2 per carta, 1 per metallo).
+    I bersagli compositi vengono risolti nei sub-target."""
+    from core.scoring import is_composite, get_composite_info
     total = 0
     for it in stage.items:
-        if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
+        if is_composite(it.item_type):
+            info = get_composite_info(it.item_type)
+            if info:
+                total += info.get("colpi", 0)
+        elif it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
                             ItemType.MICRO_TARGET, ItemType.SWINGER,
                             ItemType.DROP_TURNER, ItemType.MOVER):
             total += 2
