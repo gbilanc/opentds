@@ -29,12 +29,6 @@ from services.openscad_exporter import (
     openscad_available,
     ScadExportOptions,
 )
-from services.blender_exporter import (
-    export_via_subprocess,
-    export_via_subprocess_and_open,
-    blender_available,
-    get_blender_path,
-)
 from ui.dialogs.target_config_dialog import TargetConfigDialog
 from ui.dialogs.library_dialog import LibraryDialog
 from services.library import StageLibrary
@@ -202,21 +196,6 @@ class MainWindow(QMainWindow):
             export_3mf_action = QAction("3MF (&.3mf)\u2026", self)
             export_3mf_action.triggered.connect(self._on_export_3mf)
             file_menu.addAction(export_3mf_action)
-
-        # ── Blender Export ──
-        file_menu.addSeparator()
-
-        export_blend_action = QAction("Blender (&.blend)…", self)
-        export_blend_action.setShortcut(QKeySequence("Ctrl+Shift+B"))
-        export_blend_action.triggered.connect(self._on_export_blend)
-        file_menu.addAction(export_blend_action)
-
-        self._has_blender = blender_available()
-        if self._has_blender:
-            open_blender_action = QAction("&Apri in Blender…", self)
-            open_blender_action.setShortcut(QKeySequence("Ctrl+B"))
-            open_blender_action.triggered.connect(self._on_open_in_blender)
-            file_menu.addAction(open_blender_action)
 
         file_menu.addSeparator()
 
@@ -524,53 +503,7 @@ class MainWindow(QMainWindow):
     # ── Blender Export ──────────────────────────────────────────────────
 
     @Slot()
-    def _on_export_blend(self):
-        """Esporta lo stage in un file .blend."""
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-        if not get_blender_path():
-            QMessageBox.warning(
-                self, "Blender non trovato",
-                "Blender non è installato o non è nel PATH.\n"
-                "Installa Blender 5.2+ per esportare in .blend."
-            )
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Esporta in Blender", "stage.blend", "Blender (*.blend)"
-        )
-        if path:
-            self._status.showMessage("Esportazione in Blender in corso...")
-            try:
-                export_via_subprocess(self._stage, Path(path))
-                self._status.showMessage(f"✅ Blender esportato: {path}")
-            except Exception as e:
-                self._status.showMessage(f"❌ Errore esportazione Blender: {e}")
-                QMessageBox.critical(self, "Errore", str(e))
-
-    @Slot()
-    def _on_open_in_blender(self):
-        """Esporta lo stage in un file .blend temporaneo e lo apre in Blender."""
-        from PySide6.QtWidgets import QMessageBox
-
-        if not get_blender_path():
-            QMessageBox.warning(
-                self, "Blender non trovato",
-                "Blender non è installato o non è nel PATH.\n"
-                "Installa Blender 5.2+ per aprire in Blender."
-            )
-            return
-
-        self._status.showMessage("Avvio Blender in corso...")
-        try:
-            output = Path("__opentds_blender_export.blend")
-            export_via_subprocess_and_open(self._stage, output)
-            self._status.showMessage(f"✅ Blender avviato con stage esportato")
-        except Exception as e:
-            self._status.showMessage(f"❌ Errore apertura Blender: {e}")
-            QMessageBox.critical(self, "Errore", str(e))
-
-    @Slot(Phase1Config)
     def _on_phase1_requested(self, phase1: Phase1Config):
         """Esegue la Fase 1: generazione area di tiro (sul thread principale)."""
         self._status.showMessage("Generazione area di tiro...")

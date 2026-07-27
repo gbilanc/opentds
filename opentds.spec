@@ -78,7 +78,6 @@ hidden_imports = [
     "services.serializer",
     "services.exporter",
     "services.openscad_exporter",
-    "services.blender_exporter",
     "services.library",
     # UI
     "ui.main_window",
