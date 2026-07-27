@@ -273,6 +273,8 @@ class ZoneGraphicsItem(QGraphicsItem):
             self.setPos(self._zone.x * s, self._zone.y * s)
             self.prepareGeometryChange()
             self.update()
+            if self._on_changed:
+                self._on_changed(self._zone)
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -280,6 +282,8 @@ class ZoneGraphicsItem(QGraphicsItem):
     def mouseReleaseEvent(self, event):
         self._resizing = False
         self._drag_start_zone = None
+        if self._on_changed:
+            self._on_changed(self._zone)
         super().mouseReleaseEvent(event)
 
     def hoverMoveEvent(self, event):
