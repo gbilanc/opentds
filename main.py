@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false")
 
 from ui.main_window import MainWindow
+from ui.theme import ThemeManager
 
 
 def setup_high_dpi():
@@ -31,29 +32,9 @@ def main():
     font.setPixelSize(14)
     app.setFont(font)
 
-    # Tema QSS minimale
-    qss = """
-    QMainWindow { background-color: #f8fafc; }
-    QToolBar {
-        background-color: #ffffff;
-        border-bottom: 1px solid #e2e8f0;
-        padding: 4px 8px;
-        spacing: 6px;
-    }
-    QPushButton {
-        padding: 6px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        font-weight: 500;
-        border: 1px solid #e2e8f0;
-        background-color: #ffffff;
-        color: #0f172a;
-    }
-    QPushButton:hover { background-color: #f1f5f9; border-color: #94a3b8; }
-    QPushButton:pressed { background-color: #e2e8f0; }
-    QStatusBar { background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 4px 16px; color: #475569; }
-    """
-    app.setStyleSheet(qss)
+    # Inizializza tema (carica light.qss di default)
+    theme = ThemeManager(app)
+    app.setProperty("opentds_theme", theme)
 
     window = MainWindow()
     window.show()

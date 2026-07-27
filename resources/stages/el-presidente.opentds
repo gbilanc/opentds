@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "name": "El Presidente",
+  "width": 15.0,
+  "depth": 10.0,
+  "course_type": "short",
+  "division": "production",
+  "properties": {
+    "description": "Classico classificatore IPSC El Presidente. Tre bersagli cartacei affiancati, 2 colpi ciascuno, da una singola posizione di partenza.",
+    "procedure": "Al segnale di avvio, dalla posizione di partenza, ingaggiare tutti e tre i bersagli con 2 colpi ciascuno. Ricaricare e ripetere.",
+    "start_signal": "Acustico",
+    "start_position": "In piedi, arma carica in fondina, mani sopra le spalle",
+    "max_points": 60,
+    "angoli_sicurezza": "90°"
+  },
+  "items": [
+    {"id": 1, "type": "PAPER_TARGET", "x": 5.0, "y": 7.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T1"},
+    {"id": 2, "type": "PAPER_TARGET", "x": 7.5, "y": 7.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T2"},
+    {"id": 3, "type": "PAPER_TARGET", "x": 10.0, "y": 7.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T3"},
+    {"id": 4, "type": "FAULT_LINE", "x": 2.5, "y": 2.0, "width": 10.0, "height": 0.0, "rotation": 0, "color": "#dc2626", "label": "Fault Line"},
+    {"id": 5, "type": "WALL", "x": 0.0, "y": 0.0, "width": 0.3, "height": 2.0, "rotation": 0, "color": "#475569", "label": "Backstop"},
+    {"id": 6, "type": "WALL", "x": 15.0, "y": 0.0, "width": 0.3, "height": 2.0, "rotation": 0, "color": "#475569", "label": "Backstop"}
+  ],
+  "shooting_positions": [
+    {"id": 1, "x": 7.5, "y": 1.0, "label": "Start", "is_start": true, "angle": 90.0, "properties": {}}
+  ]
+}

@@ -11,6 +11,8 @@ from core.scoring import (
     is_steel_like,
     is_scoring_target,
     is_obstacle,
+    is_composite,
+    get_composite_info,
     resolve_target_counts,
     score_stage,
 )
@@ -47,6 +49,28 @@ class TestTypeHelpers:
         assert is_obstacle(ItemType.HARD_COVER)
         assert not is_obstacle(ItemType.PAPER_TARGET)
         assert not is_obstacle(ItemType.FAULT_LINE)
+
+    def test_composite_targets_classified_correctly(self):
+        """I bersagli compositi sono correttamente classificati."""
+        # Doppi cartacei
+        assert is_paper_like(ItemType.DOUBLET_SIDE)
+        assert is_paper_like(ItemType.DOUBLET_OVERLAP)
+        assert is_paper_like(ItemType.DOUBLET_SIDE_HOSTAGE)
+        assert is_paper_like(ItemType.DOUBLET_OVERLAP_HOSTAGE)
+        assert is_scoring_target(ItemType.DOUBLET_SIDE)
+        assert not is_steel_like(ItemType.DOUBLET_SIDE)
+        # Bobber
+        assert is_steel_like(ItemType.BOBBER_PLATE)
+        assert is_steel_like(ItemType.DOUBLE_BOBBER)
+        assert is_scoring_target(ItemType.BOBBER_PLATE)
+        assert not is_paper_like(ItemType.BOBBER_PLATE)
+        # Info composizione
+        info = get_composite_info(ItemType.DOUBLET_SIDE)
+        assert info is not None
+        assert info["colpi"] == 4
+        assert len(info["sub_targets"]) == 2
+        assert is_composite(ItemType.DOUBLET_SIDE)
+        assert not is_composite(ItemType.PAPER_TARGET)
 
 
 class TestResolveTargetCounts:

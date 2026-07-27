@@ -149,6 +149,13 @@ TARGET_DIMENSIONS: Final[dict[str, tuple[float, float]]] = {
     "swinger":      (0.45, 0.45),
     "drop_turner":  (0.45, 0.45),
     "mover":        (0.45, 0.45),
+    # Compositi
+    "doublet_side":         (0.95, 0.75),
+    "doublet_overlap":      (0.65, 0.75),
+    "doublet_side_hostage": (1.20, 0.75),
+    "doublet_overlap_hostage": (0.90, 0.75),
+    "bobber_plate":  (0.20, 0.20),
+    "double_bobber": (0.50, 0.20),
 }
 
 # Colori IPSC standard
@@ -166,6 +173,13 @@ TARGET_COLORS: Final[dict[str, str]] = {
     "wall":        "#475569",
     "barrier":     "#fbbf24",
     "fault_line":  "#dc2626",  # rosso — linea di fallo
+    # Bersagli compositi
+    "doublet_side":            "#8B4513",
+    "doublet_overlap":         "#8B4513",
+    "doublet_side_hostage":    "#8B4513",
+    "doublet_overlap_hostage": "#8B4513",
+    "bobber_plate":  "#f97316",  # arancione
+    "double_bobber": "#f97316",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

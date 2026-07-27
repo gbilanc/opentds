@@ -40,6 +40,13 @@ TYPE_COLORS: dict[ItemType, str] = {
     ItemType.SWINGER: "#A0522D",           # Bersaglio cartaceo mobile → marrone
     ItemType.DROP_TURNER: "#8B6914",        # Bersaglio cartaceo mobile → marrone
     ItemType.MOVER: "#CD853F",              # Bersaglio cartaceo mobile → marrone
+    # Compositi
+    ItemType.DOUBLET_SIDE: "#8B4513",
+    ItemType.DOUBLET_OVERLAP: "#8B4513",
+    ItemType.DOUBLET_SIDE_HOSTAGE: "#8B4513",
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: "#8B4513",
+    ItemType.BOBBER_PLATE: "#f97316",
+    ItemType.DOUBLE_BOBBER: "#f97316",
 }
 
 TYPE_LABELS: dict[ItemType, str] = {
@@ -59,6 +66,13 @@ TYPE_LABELS: dict[ItemType, str] = {
     ItemType.SWINGER: "Swinger",
     ItemType.DROP_TURNER: "Drop turner",
     ItemType.MOVER: "Mover",
+    # Compositi
+    ItemType.DOUBLET_SIDE: "Doppio affiancato",
+    ItemType.DOUBLET_OVERLAP: "Doppio sovrapposto",
+    ItemType.DOUBLET_SIDE_HOSTAGE: "Doppio + ostaggio (aff.)",
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: "Doppio + ostaggio (sovr.)",
+    ItemType.BOBBER_PLATE: "Piatto bobber",
+    ItemType.DOUBLE_BOBBER: "Doppio bobber",
 }
 
 

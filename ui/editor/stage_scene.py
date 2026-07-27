@@ -25,6 +25,7 @@ from core.collision import make_obb, item_obb, overlaps as shapely_overlaps
 from shapely.geometry import box as shapely_box, Point as ShapelyPoint
 
 from ui.editor.target_images import TargetSvgManager
+from ui.editor.path_editor import PathPolylineItem
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1411,6 +1412,128 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  CompositeTargetGraphicsItem — bersagli compositi (doppi, bobber, ecc.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
+    """Renderizza bersagli compositi: doppietti, bobber, ecc.
+
+    Ogni tipo composito è formato da più sub-target (paper, steel,
+    no-shoot) disegnati come rettangoli colorati con etichette.
+    """
+
+    def __init__(self, wrapper: StageItemWrapper, scale: float,
+                 parent: QGraphicsItem | None = None):
+        QGraphicsItem.__init__(self, parent)
+        self.stage_item_init(wrapper, scale)
+
+    def boundingRect(self):
+        it = self.wrapper.item
+        w = it.width * self.scale
+        h = it.height * self.scale
+        margin = 10
+        return QRectF(-w / 2 - margin, -h / 2 - margin, w + margin * 2, h + margin * 2)
+
+    def paint(self, painter, option, widget=None):
+        it = self.wrapper.item
+        s = self.scale
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Determina la composizione
+        from core.scoring import get_composite_info
+        info = get_composite_info(it.item_type)
+        if not info:
+            painter.restore()
+            return
+
+        sub_targets = info.get("sub_targets", [])
+        bobber_mode = it.item_type in (ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER)
+
+        for dx, dy, sub_type, label in sub_targets:
+            cx = dx * s
+            cy = dy * s
+
+            if sub_type == ItemType.PAPER_TARGET:
+                # Rettangolo marrone
+                color = QColor("#8B4513")
+                painter.setBrush(QBrush(color))
+                painter.setPen(QPen(QColor("#5c2e0d"), 1.5))
+                pw, ph = 0.45 * s, 0.75 * s
+                painter.drawRoundRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
+                # Label
+                painter.setPen(QPen(QColor("white"), 1))
+                painter.drawText(QRectF(cx - pw / 2, cy - ph / 2, pw, ph),
+                                 Qt.AlignmentFlag.AlignCenter, label)
+
+            elif sub_type == ItemType.NO_SHOOT:
+                # Rettangolo giallo con X
+                color = QColor("#eab308")
+                painter.setBrush(QBrush(color))
+                painter.setPen(QPen(QColor("#a16207"), 1.5))
+                pw, ph = 0.45 * s, 0.75 * s
+                painter.drawRoundRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
+                # X rossa
+                pen = QPen(QColor("#dc2626"), 2)
+                painter.setPen(pen)
+                painter.drawLine(cx - pw / 4, cy - ph / 4, cx + pw / 4, cy + ph / 4)
+                painter.drawLine(cx + pw / 4, cy - ph / 4, cx - pw / 4, cy + ph / 4)
+                # Label
+                painter.setPen(QPen(QColor("#5c2e0d"), 1))
+                painter.drawText(QRectF(cx - pw / 2, cy - ph / 2, pw, ph),
+                                 Qt.AlignmentFlag.AlignCenter, label)
+
+            elif sub_type == ItemType.METAL_PLATE:
+                # Cerchio arancione (bobber) o grigio
+                if bobber_mode:
+                    color = QColor("#f97316")
+                else:
+                    color = QColor("#d1d5db")
+                painter.setBrush(QBrush(color))
+                pen_width = 2 if bobber_mode else 1.5
+                painter.setPen(QPen(QColor("#1e293b"), pen_width))
+                r = 0.10 * s  # raggio
+                painter.drawEllipse(QPointF(cx, cy), r, r)
+                if bobber_mode:
+                    # Frecina verso l'alto per indicare "pop-up"
+                    painter.setPen(QPen(QColor("#1e293b"), 2))
+                    painter.drawLine(cx, cy - r - 4, cx, cy - r - 10)
+                    painter.drawLine(cx - 3, cy - r - 7, cx, cy - r - 10)
+                    painter.drawLine(cx + 3, cy - r - 7, cx, cy - r - 10)
+                # Label
+                painter.setPen(QPen(QColor("white"), 1))
+                f = painter.font()
+                f.setPointSize(7)
+                f.setBold(True)
+                painter.setFont(f)
+                painter.drawText(QRectF(cx - r, cy - r, r * 2, r * 2),
+                                 Qt.AlignmentFlag.AlignCenter, label)
+
+        # Etichetta riepilogativa sotto il composito
+        desc = info.get("description", "")
+        if desc:
+            painter.setPen(QPen(QColor("#64748b"), 1))
+            f = painter.font()
+            f.setPointSize(7)
+            f.setBold(False)
+            painter.setFont(f)
+            pw_tot = it.width * s
+            painter.drawText(QRectF(-pw_tot / 2, s * 0.4, pw_tot, 14),
+                             Qt.AlignmentFlag.AlignCenter, desc)
+
+        painter.restore()
+
+    def _draw_selection_highlight(self, painter: QPainter) -> None:
+        if not self.isSelected():
+            return
+        pen = QPen(QColor("#2563eb"), 2, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        br = self.boundingRect().adjusted(-4, -4, 4, 4)
+        painter.drawRect(br)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Undo Commands
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1475,6 +1598,7 @@ class StageScene(QGraphicsScene):
         self.undo_stack = QUndoStack(self)
         self._shooting_area: ShootingAreaItem | None = None
         self._engagement_area: EngagementAreaItem | None = None
+        self._path_item: PathPolylineItem = PathPolylineItem()
         self._setup_grid()
         self._sync_from_model()
         self._update_shooting_area()
@@ -1507,8 +1631,10 @@ class StageScene(QGraphicsScene):
 
         self.grid = GridItem(self.stage.width, self.stage.depth, self.scale)
         self._shooting_area = ShootingAreaItem()
+        self._path_item = PathPolylineItem()
         self.addItem(self.grid)
         self.addItem(self._shooting_area)
+        self.addItem(self._path_item)
         self.setSceneRect(
             0, 0,
             self.stage.width * self.scale,
@@ -1525,6 +1651,14 @@ class StageScene(QGraphicsScene):
         if not poly:
             poly = _build_polygon_from_fault_lines(self.stage.items)
         self._shooting_area.set_polygon(poly or [], self.scale)
+
+    def set_shooting_path(
+        self,
+        waypoints: list[tuple[float, float, str, bool]],
+        color: str = "#3b82f6",
+    ):
+        """Update the path polyline rendering."""
+        self._path_item.set_path(waypoints, self.scale, color)
 
     def reload_all_targets(self):
         """Ricarica tutti i bersagli dopo un cambio di configurazione aspetto."""
@@ -1550,7 +1684,7 @@ class StageScene(QGraphicsScene):
         ItemType.HARD_COVER:    (HardCoverGraphicsItem, None),
         ItemType.SOFT_COVER:    (SoftCoverGraphicsItem, None),
         ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
-        # Bersagli (SVG vettoriali unificati)
+        # Bersagli standard (SVG vettoriali unificati)
         ItemType.PAPER_TARGET:  (SvgTargetGraphicsItem, None),
         ItemType.STEEL_TARGET:  (SvgTargetGraphicsItem, None),
         ItemType.POPPER:        (SvgTargetGraphicsItem, None),
@@ -1561,6 +1695,13 @@ class StageScene(QGraphicsScene):
         ItemType.SWINGER:       (SvgTargetGraphicsItem, None),
         ItemType.DROP_TURNER:   (SvgTargetGraphicsItem, None),
         ItemType.MOVER:         (SvgTargetGraphicsItem, None),
+        # Bersagli compositi (disegnati proceduralmente)
+        ItemType.DOUBLET_SIDE:             (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_OVERLAP:          (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_SIDE_HOSTAGE:     (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_OVERLAP_HOSTAGE:  (CompositeTargetGraphicsItem, None),
+        ItemType.BOBBER_PLATE:             (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLE_BOBBER:            (CompositeTargetGraphicsItem, None),
     }
 
     def _make_graphics_item(self, item: StageItem) -> QGraphicsItem:

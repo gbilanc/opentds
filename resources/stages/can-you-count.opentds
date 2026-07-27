@@ -1,0 +1,28 @@
+{
+  "version": 3,
+  "name": "Can You Count",
+  "width": 20.0,
+  "depth": 12.0,
+  "course_type": "short",
+  "division": "production",
+  "properties": {
+    "description": "Classificatore IPSC 'Can You Count'. 6 bersagli cartacei disposti a ventaglio, da 1 colpo ciascuno. Richiede conteggio preciso dei colpi.",
+    "procedure": "Al segnale di avvio, dalla posizione di partenza, ingaggiare ciascun bersaglio con 1 solo colpo.",
+    "start_signal": "Acustico",
+    "start_position": "In piedi, arma carica in fondina",
+    "max_points": 30,
+    "angoli_sicurezza": "90°"
+  },
+  "items": [
+    {"id": 1, "type": "PAPER_TARGET", "x": 3.0, "y": 8.0, "width": 0.45, "height": 0.75, "rotation": 15, "color": "#8B4513", "label": "T1"},
+    {"id": 2, "type": "PAPER_TARGET", "x": 5.5, "y": 9.0, "width": 0.45, "height": 0.75, "rotation": 5, "color": "#8B4513", "label": "T2"},
+    {"id": 3, "type": "PAPER_TARGET", "x": 8.0, "y": 9.5, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T3"},
+    {"id": 4, "type": "PAPER_TARGET", "x": 10.5, "y": 9.5, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T4"},
+    {"id": 5, "type": "PAPER_TARGET", "x": 13.0, "y": 9.0, "width": 0.45, "height": 0.75, "rotation": -5, "color": "#8B4513", "label": "T5"},
+    {"id": 6, "type": "PAPER_TARGET", "x": 15.5, "y": 8.0, "width": 0.45, "height": 0.75, "rotation": -15, "color": "#8B4513", "label": "T6"},
+    {"id": 7, "type": "FAULT_LINE", "x": 2.0, "y": 2.0, "width": 16.0, "height": 0.0, "rotation": 0, "color": "#dc2626", "label": "Fault Line"}
+  ],
+  "shooting_positions": [
+    {"id": 1, "x": 9.0, "y": 1.5, "label": "Start", "is_start": true, "angle": 90.0, "properties": {}}
+  ]
+}

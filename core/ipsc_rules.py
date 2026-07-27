@@ -193,10 +193,12 @@ class IPSCRulesEngine:
         """Verifica conteggi bersagli secondo regole IPSC."""
         v: List[str] = []
 
+        from core.scoring import is_paper_like, is_steel_like
+
         paper = [it for it in self.stage.items
-                 if it.item_type == ItemType.PAPER_TARGET]
+                 if is_paper_like(it.item_type)]
         steel = [it for it in self.stage.items
-                 if it.item_type == ItemType.STEEL_TARGET]
+                 if is_steel_like(it.item_type)]
         no_shoots = [it for it in self.stage.items
                      if it.item_type == ItemType.NO_SHOOT]
         moving = [it for it in self.stage.items
@@ -588,9 +590,12 @@ class IPSCRulesEngine:
         total_rounds = 0
         paper_like = (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
                       ItemType.MICRO_TARGET, ItemType.SWINGER,
-                      ItemType.DROP_TURNER, ItemType.MOVER)
+                      ItemType.DROP_TURNER, ItemType.MOVER,
+                      ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
+                      ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE)
         steel_like = (ItemType.STEEL_TARGET, ItemType.POPPER,
-                      ItemType.METAL_PLATE)
+                      ItemType.METAL_PLATE,
+                      ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER)
 
         for it in self.stage.items:
             if it.item_type in paper_like:
@@ -1000,12 +1005,12 @@ class IPSCRulesEngine:
     def count_targets(self) -> dict:
         """Conta i bersagli per tipo."""
 
+        from core.scoring import is_paper_like, is_steel_like
+
         def _is_paper(it):
-            return it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                                    ItemType.MICRO_TARGET)
+            return is_paper_like(it.item_type)
         def _is_steel(it):
-            return it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER,
-                                    ItemType.METAL_PLATE)
+            return is_steel_like(it.item_type)
         def _is_moving(it):
             return it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
                                     ItemType.MOVER)

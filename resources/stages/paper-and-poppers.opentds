@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "name": "Paper & Poppers",
+  "width": 20.0,
+  "depth": 15.0,
+  "course_type": "medium",
+  "division": "production",
+  "properties": {
+    "description": "Stage misto con bersagli cartacei e popper metallici. 8 bersagli carta + 2 popper. Un popper attiva un bersaglio mobile.",
+    "procedure": "Al segnale di avvio, ingaggiare tutti i bersagli. Il popper a sinistra attiva il bersaglio oscillante a destra.",
+    "start_signal": "Acustico",
+    "start_position": "Ovunque nell'area di tiro",
+    "max_points": 100,
+    "angoli_sicurezza": "90°"
+  },
+  "items": [
+    {"id": 1, "type": "PAPER_TARGET", "x": 3.0, "y": 10.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T1"},
+    {"id": 2, "type": "PAPER_TARGET", "x": 6.0, "y": 11.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T2"},
+    {"id": 3, "type": "PAPER_TARGET", "x": 9.0, "y": 12.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T3"},
+    {"id": 4, "type": "PAPER_TARGET", "x": 12.0, "y": 11.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T4"},
+    {"id": 5, "type": "PAPER_TARGET", "x": 15.0, "y": 10.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T5"},
+    {"id": 6, "type": "PAPER_TARGET", "x": 4.0, "y": 8.0, "width": 0.45, "height": 0.75, "rotation": 10, "color": "#8B4513", "label": "T6"},
+    {"id": 7, "type": "PAPER_TARGET", "x": 11.0, "y": 8.0, "width": 0.45, "height": 0.75, "rotation": -10, "color": "#8B4513", "label": "T7"},
+    {"id": 8, "type": "PAPER_TARGET", "x": 7.5, "y": 9.0, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#8B4513", "label": "T8"},
+    {"id": 9, "type": "POPPER", "x": 2.5, "y": 7.0, "width": 0.30, "height": 0.30, "rotation": 0, "color": "#d1d5db", "label": "PP1", "properties": {"calibrated": true, "calibration_pf": 125, "activates": [11]}},
+    {"id": 10, "type": "POPPER", "x": 16.0, "y": 7.0, "width": 0.30, "height": 0.30, "rotation": 0, "color": "#d1d5db", "label": "PP2"},
+    {"id": 11, "type": "SWINGER", "x": 13.0, "y": 12.5, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#A0522D", "label": "SW1", "properties": {"amplitude": 45, "speed": 1.0, "activated_by": [9], "activation_visible": true}},
+    {"id": 12, "type": "NO_SHOOT", "x": 6.5, "y": 10.5, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#eab308", "label": "NS1"},
+    {"id": 13, "type": "NO_SHOOT", "x": 14.5, "y": 9.5, "width": 0.45, "height": 0.75, "rotation": 0, "color": "#eab308", "label": "NS2"},
+    {"id": 14, "type": "BARRIER", "x": 3.0, "y": 5.0, "width": 1.5, "height": 0.15, "rotation": 0, "color": "#fbbf24", "label": "Barriera"},
+    {"id": 15, "type": "BARRIER", "x": 15.0, "y": 5.0, "width": 1.5, "height": 0.15, "rotation": 0, "color": "#fbbf24", "label": "Barriera"}
+  ],
+  "shooting_positions": [
+    {"id": 1, "x": 9.0, "y": 2.0, "label": "Start", "is_start": true, "angle": 90.0, "properties": {}},
+    {"id": 2, "x": 6.0, "y": 4.0, "label": "Pos 2", "is_start": false, "angle": 90.0, "properties": {}},
+    {"id": 3, "x": 12.0, "y": 4.0, "label": "Pos 3", "is_start": false, "angle": 90.0, "properties": {}}
+  ]
+}

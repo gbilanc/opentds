@@ -24,18 +24,91 @@ from core.geometry import euclidean_distance
 
 def is_paper_like(t: ItemType) -> bool:
     """True per tipi bersaglio cartaceo."""
-    return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
+    return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                  ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
+                  ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE)
 
 
 def is_steel_like(t: ItemType) -> bool:
     """True per tipi bersaglio metallico."""
-    return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
+    return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE,
+                  ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER)
 
 
 def is_scoring_target(t: ItemType) -> bool:
     """True per tutti i bersagli che assegnano punti."""
     return is_paper_like(t) or is_steel_like(t) or t in (
         ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bersagli compositi
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COMPOSITE_TARGETS: dict[ItemType, dict] = {
+    # (tipo, (dx, dy), sub_item_type, label) — offset relativi al centro
+    ItemType.DOUBLET_SIDE: {
+        "colpi": 4,  # 2 × paper × 2 colpi
+        "sub_targets": [
+            (-0.25, 0, ItemType.PAPER_TARGET, "T1"),
+            (0.25, 0, ItemType.PAPER_TARGET, "T2"),
+        ],
+        "description": "Doppio target affiancato",
+    },
+    ItemType.DOUBLET_OVERLAP: {
+        "colpi": 4,
+        "sub_targets": [
+            (-0.11, 0, ItemType.PAPER_TARGET, "T1"),
+            (0.11, 0, ItemType.PAPER_TARGET, "T2"),
+        ],
+        "description": "Doppio target sovrapposto",
+    },
+    ItemType.DOUBLET_SIDE_HOSTAGE: {
+        "colpi": 4,
+        "sub_targets": [
+            (-0.40, 0, ItemType.PAPER_TARGET, "T1"),
+            (0.40, 0, ItemType.PAPER_TARGET, "T2"),
+            (0, 0, ItemType.NO_SHOOT, "NS"),
+        ],
+        "description": "Doppio target con ostaggio (affiancato)",
+    },
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: {
+        "colpi": 4,
+        "sub_targets": [
+            (-0.18, 0, ItemType.PAPER_TARGET, "T1"),
+            (0.18, 0, ItemType.PAPER_TARGET, "T2"),
+            (0, 0, ItemType.NO_SHOOT, "NS"),
+        ],
+        "description": "Doppio target con ostaggio (sovrapposto)",
+    },
+    ItemType.BOBBER_PLATE: {
+        "colpi": 1,
+        "sub_targets": [
+            (0, 0, ItemType.METAL_PLATE, "B1"),
+        ],
+        "props": {"bobber": True, "fall_time": 0.5},
+        "description": "Piatto bobber",
+    },
+    ItemType.DOUBLE_BOBBER: {
+        "colpi": 2,
+        "sub_targets": [
+            (-0.15, 0, ItemType.METAL_PLATE, "B1"),
+            (0.15, 0, ItemType.METAL_PLATE, "B2"),
+        ],
+        "props": {"bobber": True, "fall_time": 0.5},
+        "description": "Doppio piatto bobber",
+    },
+}
+
+
+def is_composite(t: ItemType) -> bool:
+    """True per tipi bersaglio composito."""
+    return t in COMPOSITE_TARGETS
+
+
+def get_composite_info(t: ItemType) -> dict | None:
+    """Restituisce le info di composizione per un tipo composito."""
+    return COMPOSITE_TARGETS.get(t)
 
 
 def is_obstacle(t: ItemType) -> bool:

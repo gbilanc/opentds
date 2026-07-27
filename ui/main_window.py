@@ -17,6 +17,7 @@ from ui.editor.stage_view import StageView
 from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
 from ui.editor.stage_info import StageInfoPanel
+from ui.editor.path_editor import PathEditorPanel
 from ui.workers.generator_worker import GeneratorWorker
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
@@ -93,6 +94,13 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._gen_dock)
         self.tabifyDockWidget(self._info_dock, self._gen_dock)
 
+        # Path editor dock (raggruppato con property a destra)
+        self._path_panel = PathEditorPanel(self)
+        self._path_dock = QDockWidget("Percorso di Tiro", self)
+        self._path_dock.setWidget(self._path_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._path_dock)
+        self.tabifyDockWidget(self._prop_dock, self._path_dock)
+
     def _setup_toolbar(self):
         toolbar = QToolBar("Strumenti")
         toolbar.setMovable(False)
@@ -134,17 +142,29 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(btn_redo)
 
     def _setup_menu(self):
-        from PySide6.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QFileDialog, QApplication
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("&File")
 
-        save_action = QAction("&Salva Stage\u2026", self)
+        library_action = QAction("\U0001f4da &Libreria Stage…", self)
+        library_action.setShortcut(QKeySequence("Ctrl+L"))
+        library_action.triggered.connect(self._on_library)
+        file_menu.addAction(library_action)
+
+        file_menu.addSeparator()
+
+        save_library_action = QAction("Salva nella &libreria…", self)
+        save_library_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_library_action.triggered.connect(self._on_save_to_library)
+        file_menu.addAction(save_library_action)
+
+        save_action = QAction("&Salva Stage…", self)
         save_action.setShortcut(QKeySequence("Ctrl+S"))
         save_action.triggered.connect(self._on_save)
         file_menu.addAction(save_action)
 
-        open_action = QAction("&Apri Stage\u2026", self)
+        open_action = QAction("&Apri Stage…", self)
         open_action.setShortcut(QKeySequence("Ctrl+O"))
         open_action.triggered.connect(self._on_open)
         file_menu.addAction(open_action)
@@ -230,6 +250,15 @@ class MainWindow(QMainWindow):
         ))
         edit_menu.addAction(del_action)
 
+        # ── Vista ──
+        view_menu = menubar.addMenu("&Visualizza")
+
+        toggle_theme_action = QAction("Alterna tema &scuro", self)
+        toggle_theme_action.setShortcut(QKeySequence("Ctrl+T"))
+        toggle_theme_action.setCheckable(True)
+        toggle_theme_action.triggered.connect(self._toggle_theme)
+        view_menu.addAction(toggle_theme_action)
+
         # ── Configurazione ──
         config_menu = menubar.addMenu("&Configurazione")
 
@@ -261,6 +290,8 @@ class MainWindow(QMainWindow):
         self._scene.itemRemoved.connect(self._refresh_info)
         # Evidenziazione violazioni
         self._info_panel.violationsUpdated.connect(self._scene.set_violations)
+        # Path editor → scene (aggiorna rendering path)
+        self._path_panel.pathChanged.connect(self._on_path_changed)
 
     @Slot(StageItemWrapper)
     def _on_item_added(self, _wrapper):
@@ -303,6 +334,19 @@ class MainWindow(QMainWindow):
         if hasattr(marker, '_on_changed') and marker._on_changed:
             marker._on_changed(marker)
 
+    def _toggle_theme(self):
+        """Alterna tema chiaro/scuro."""
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        theme = app.property("opentds_theme")
+        if theme:
+            theme.toggle()
+            # Aggiorna stato status bar
+            mode = "scuro" if theme.dark_mode else "chiaro"
+            self._status.showMessage(f"Tema {mode} attivato")
+            # Re-render scena con colori aggiornati
+            self._scene._update_shooting_area()
+
     def _on_target_config(self):
         """Apre il dialog di configurazione aspetto bersagli."""
         dialog = TargetConfigDialog(self)
@@ -324,6 +368,39 @@ class MainWindow(QMainWindow):
             self._status.setStyleSheet("color: #dc2626;")
         self._status.showMessage(msg)
         self._refresh_info()
+
+    def _on_library(self):
+        """Apre la libreria stage."""
+        dialog = LibraryDialog(self._library, self)
+        if dialog.exec():
+            entry = dialog.selected_entry
+            if entry:
+                stage = self._library.load_stage(entry)
+                if stage:
+                    self._replace_stage(stage)
+                    self._status.showMessage(f"Stage caricato dalla libreria: {entry.name}")
+                else:
+                    self._status.showMessage(f"Errore: impossibile caricare '{entry.name}'")
+
+    def _on_save_to_library(self):
+        """Salva lo stage corrente nella libreria."""
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, "Salva nella libreria",
+            "Nome dello stage:",
+            text=self._stage.name,
+        )
+        if ok and name:
+            desc, ok2 = QInputDialog.getText(
+                self, "Descrizione",
+                "Descrizione (opzionale):",
+            )
+            description = desc if ok2 else ""
+            entry = self._library.save_stage(
+                self._stage, name=name, description=description,
+                tags=["utente"],
+            )
+            self._status.showMessage(f"Stage salvato in libreria: {entry.name}")
 
     def _on_save(self):
         from PySide6.QtWidgets import QFileDialog
@@ -617,11 +694,21 @@ class MainWindow(QMainWindow):
         self._gen_panel._btn_place_pos.setText("✏️ Posiziona")
         self._view.set_placing_position_mode(False)
 
+    @Slot()
+    def _on_path_changed(self):
+        """Aggiorna la scena quando il percorso di tiro cambia."""
+        wps = self._path_panel.get_waypoint_data()
+        self._scene.set_shooting_path(wps)
+
     @Slot(float, float, float, float, bool)
     @Slot()
     def _refresh_info(self):
-        """Aggiorna il pannello Info Stage."""
+        """Aggiorna il pannello Info Stage e il percorso di tiro."""
         self._info_panel.set_stage(self._stage)
+        # Sync path editor
+        self._path_panel.sync_from_stage()
+        wps = self._path_panel.get_waypoint_data()
+        self._scene.set_shooting_path(wps)
 
     def _replace_stage(self, new_stage: Stage):
         """Sostituisce lo stage nell'editor e ricostruisce la scena.

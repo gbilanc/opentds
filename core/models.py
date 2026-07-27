@@ -23,6 +23,13 @@ class ItemType(Enum):
     SWINGER = auto()           # bersaglio oscillante
     DROP_TURNER = auto()       # bersaglio che cade/gira
     MOVER = auto()             # bersaglio su rotaia
+    # ── Bersagli compositi ─────────────────────────────────────────
+    DOUBLET_SIDE = auto()      # due paper affiancati
+    DOUBLET_OVERLAP = auto()   # due paper sovrapposti
+    DOUBLET_SIDE_HOSTAGE = auto()   # due paper + no-shoot in mezzo
+    DOUBLET_OVERLAP_HOSTAGE = auto()  # due paper + no-shoot in mezzo
+    BOBBER_PLATE = auto()      # piatto metallico che scompare
+    DOUBLE_BOBBER = auto()     # due bobber affiancati
 
 
 class CourseType(Enum):

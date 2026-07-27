@@ -20,6 +20,10 @@ _TARGET_TYPES = {
     ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
     ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
     ItemType.NO_SHOOT, ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+    # Compositi
+    ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
+    ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
+    ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER,
 }
 
 

@@ -53,6 +53,13 @@ ITEM_COLORS: dict[ItemType, str] = {
     ItemType.SWINGER:        "#A0522D",   # marrone scuro mobile
     ItemType.DROP_TURNER:    "#8B6914",   # marrone dorato mobile
     ItemType.MOVER:          "#CD853F",   # marrone chiaro mobile
+    # Compositi
+    ItemType.DOUBLET_SIDE:             "#8B4513",
+    ItemType.DOUBLET_OVERLAP:          "#8B4513",
+    ItemType.DOUBLET_SIDE_HOSTAGE:     "#8B4513",
+    ItemType.DOUBLET_OVERLAP_HOSTAGE:  "#8B4513",
+    ItemType.BOBBER_PLATE:  "#f97316",
+    ItemType.DOUBLE_BOBBER: "#f97316",
 }
 
 
@@ -82,6 +89,13 @@ TYPE_GEOM: dict[ItemType, ItemGeom3D] = {
     ItemType.DOOR:           ItemGeom3D(sx=0.9, sy=0.05, sz=2.0, shape="cube"),
     ItemType.HARD_COVER:     ItemGeom3D(sx=1.0, sy=0.1,  sz=2.0, shape="cube"),
     ItemType.SOFT_COVER:     ItemGeom3D(sx=1.0, sy=0.08, sz=2.0, shape="cube"),
+    # Compositi
+    ItemType.DOUBLET_SIDE:             ItemGeom3D(sx=0.95, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DOUBLET_OVERLAP:          ItemGeom3D(sx=0.65, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DOUBLET_SIDE_HOSTAGE:     ItemGeom3D(sx=1.20, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DOUBLET_OVERLAP_HOSTAGE:  ItemGeom3D(sx=0.90, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.BOBBER_PLATE:  ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cylinder"),
+    ItemType.DOUBLE_BOBBER: ItemGeom3D(sx=0.50, sy=0.02, sz=0.20, shape="cylinder"),
     ItemType.SWINGER:        ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
     ItemType.DROP_TURNER:    ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
     ItemType.MOVER:          ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
