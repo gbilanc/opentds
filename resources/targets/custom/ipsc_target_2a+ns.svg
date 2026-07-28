@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100.0 100.0">
+  <!-- Ipsc 2Target  -->
+  <desc>Bersaglio personalizzato</desc>
+
+  <!-- Silhouette principale (tintabile con currentColor) -->
+  <path d="     M 50 2     C 65 2, 78 8, 85 18     C 92 28, 96 38, 98 46     L 98 64     C 96 72, 92 82, 85 90     C 80 95, 72 98, 65 98     L 35 98     C 28 98, 20 95, 15 90     C 8 82, 4 72, 2 64     L 2 46     C 4 38, 8 28, 15 18     C 22 8, 35 2, 50 2     Z   " fill="currentColor"/>
+
+  <!-- Zone di punteggio -->
+  <polygon points="48.0,42.4 48.0,62.0 36.5,75.8 20.2,75.8 8.7,62.0 8.7,42.4 20.2,28.5 36.5,28.5" fill="#ca8a04" stroke="#fff" stroke-width="1" opacity="0.85"/>
+  <text x="28.33333333333333" y="56.166666666666664" text-anchor="middle" fill="white" font-size="14" font-weight="bold">C</text>
+  <polygon points="87.7,42.4 87.7,62.0 76.2,75.9 59.8,75.9 48.3,62.0 48.3,42.4 59.8,28.6 76.2,28.6" fill="#ca8a04" stroke="#fff" stroke-width="1" opacity="0.85"/>
+  <text x="68.0" y="56.23333333333333" text-anchor="middle" fill="white" font-size="14" font-weight="bold">C</text>
+  <polygon points="67.7,42.4 67.7,62.0 56.2,75.9 39.8,75.9 28.3,62.0 28.3,42.4 39.8,28.6 56.2,28.6" fill="#c0bfbc" stroke="#fff" stroke-width="1" opacity="0.85"/>
+  <text x="48.0" y="56.23333333333333" text-anchor="middle" fill="white" font-size="14" font-weight="bold">C</text>
+</svg>

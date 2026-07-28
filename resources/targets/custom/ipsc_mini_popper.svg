@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100.0 100.0">
+  <!-- Ipsc Popper -->
+  <desc>Bersaglio personalizzato</desc>
+
+  <!-- Silhouette principale (tintabile con currentColor) -->
+  <path d="     M 35 2     L 65 2     L 72 50     L 70 70     C 68 78, 60 85, 50 88     C 40 85, 32 78, 30 70     L 28 50     Z   " fill="currentColor"/>
+
+  <!-- Zone di punteggio -->
+  <rect x="38.0" y="41.0" width="15.0" height="40.0" fill="#2563eb" stroke="#fff" stroke-width="1" opacity="0.85"/>
+  <text x="45.5" y="65.0" text-anchor="middle" fill="white" font-size="14" font-weight="bold">B</text>
+  <ellipse cx="46.0" cy="39.0" rx="15.0" ry="15.0" fill="#2563eb" stroke="#fff" stroke-width="1" opacity="0.85"/>
+  <text x="46.0" y="43.0" text-anchor="middle" fill="white" font-size="14" font-weight="bold">B</text>
+</svg>

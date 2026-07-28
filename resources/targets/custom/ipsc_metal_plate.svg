@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100.0 100.0">
+  <!-- Ipsc Metal Plate -->
+  <desc>Bersaglio personalizzato</desc>
+
+  <!-- Silhouette principale (tintabile con currentColor) -->
+  <rect x="2" y="2" width="96.0" height="96.0" rx="8" fill="currentColor"/>
+
+  <!-- Zone di punteggio -->
+  <ellipse cx="47.0" cy="50.666666666666664" rx="15.0" ry="15.0" fill="#2563eb" stroke="#fff" stroke-width="1" opacity="0.85"/>
+  <text x="47.0" y="54.666666666666664" text-anchor="middle" fill="white" font-size="14" font-weight="bold">B</text>
+</svg>
