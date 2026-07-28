@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 from typing import Callable, List, Optional
 
+from ui.icons import load_icon
+
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal, Slot
 from PySide6.QtGui import (
     QPainter, QPainterPath, QColor, QPen, QBrush, QFont, QFontMetrics,
@@ -218,12 +220,12 @@ class PathEditorPanel(QFrame):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
 
-        self._btn_auto = QPushButton("🔄 Auto-genera")
+        self._btn_auto = QPushButton(load_icon("path_reset"), "Auto-genera")
         self._btn_auto.setToolTip("Genera il percorso dalle posizioni di tiro esistenti")
         self._btn_auto.clicked.connect(self._on_auto_generate)
         btn_row.addWidget(self._btn_auto)
 
-        self._btn_clear = QPushButton("🗑️ Cancella")
+        self._btn_clear = QPushButton(load_icon("delete"), "Cancella")
         self._btn_clear.setToolTip("Rimuovi tutti i waypoint")
         self._btn_clear.clicked.connect(self._on_clear)
         btn_row.addWidget(self._btn_clear)
@@ -351,7 +353,7 @@ class PathEditorPanel(QFrame):
         for wp in self._shooting_path.ordered_waypoints:
             engaged_count = len(wp.engaged_target_ids)
             visible_count = len(wp.visible_target_ids)
-            start_mark = " 🟢" if wp.is_start else ""
+            start_mark = " [START]" if wp.is_start else ""
             text = (
                 f"#{wp.order + 1}{start_mark} — "
                 f"({wp.x:.1f}, {wp.y:.1f})"

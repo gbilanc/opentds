@@ -18,6 +18,7 @@ from ui.editor.property_dock import PropertyDock
 from ui.editor.generator_panel import GeneratorPanel
 from ui.editor.stage_info import StageInfoPanel
 from ui.editor.path_editor import PathEditorPanel
+from ui.icons import load_icon
 from ui.workers.generator_worker import GeneratorWorker
 from services.serializer import save_stage, load_stage
 from services.exporter import export_png, export_pdf
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
 
         cx, cy = self._stage.width / 2, self._stage.depth / 2
 
-        btn_del = QPushButton("\U0001f5d1 Elimina")
+        btn_del = QPushButton(load_icon("delete"), "Elimina")
         btn_del.setToolTip("Elimina oggetti selezionati")
         btn_del.clicked.connect(lambda: (
             self._scene.push_remove_selected(),
@@ -117,14 +118,14 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        btn_validate = QPushButton("\u2705 Valida")
+        btn_validate = QPushButton(load_icon("check"), "Valida")
         btn_validate.setToolTip("Valida lo stage con IPSCRulesEngine")
         btn_validate.clicked.connect(self._on_validate)
         toolbar.addWidget(btn_validate)
 
         toolbar.addSeparator()
 
-        btn_undo = QPushButton("\u21a9\ufe0f Undo")
+        btn_undo = QPushButton(load_icon("undo"), "Undo")
         btn_undo.setToolTip("Annulla (Ctrl+Z)")
         btn_undo.clicked.connect(lambda: (
             self._scene.undo_stack.undo(),
@@ -132,7 +133,7 @@ class MainWindow(QMainWindow):
         ))
         toolbar.addWidget(btn_undo)
 
-        btn_redo = QPushButton("\u21aa\ufe0f Redo")
+        btn_redo = QPushButton(load_icon("redo"), "Redo")
         btn_redo.setToolTip("Ripeti (Ctrl+Shift+Z)")
         btn_redo.clicked.connect(lambda: (
             self._scene.undo_stack.redo(),
@@ -146,7 +147,7 @@ class MainWindow(QMainWindow):
 
         file_menu = menubar.addMenu("&File")
 
-        library_action = QAction("\U0001f4da &Libreria Stage…", self)
+        library_action = QAction(load_icon("library"), "&Libreria Stage…", self)
         library_action.setShortcut(QKeySequence("Ctrl+L"))
         library_action.triggered.connect(self._on_library)
         file_menu.addAction(library_action)
@@ -237,7 +238,7 @@ class MainWindow(QMainWindow):
         # ── Strumenti ──
         tools_menu = menubar.addMenu("&Strumenti")
 
-        svg_editor_action = QAction("✏️ Editor Bersagli &SVG…", self)
+        svg_editor_action = QAction(load_icon("edit"), "Editor Bersagli &SVG…", self)
         svg_editor_action.triggered.connect(self._on_svg_editor)
         tools_menu.addAction(svg_editor_action)
 
@@ -359,10 +360,10 @@ class MainWindow(QMainWindow):
         result = engine.validate()
         n_violations = len(result.violations)
         if n_violations == 0:
-            msg = "✅ Stage valido — nessuna violazione IPSC"
+            msg = " Stage valido — nessuna violazione IPSC"
             self._status.setStyleSheet("color: #16a34a;")
         else:
-            msg = f"⚠️ {n_violations} violazion{'i' if n_violations != 1 else 'e'} IPSC"
+            msg = f"‼ {n_violations} violazion{'i' if n_violations != 1 else 'e'} IPSC"
             self._status.setStyleSheet("color: #dc2626;")
         self._status.showMessage(msg)
         self._refresh_info()
@@ -734,7 +735,7 @@ class MainWindow(QMainWindow):
         """Aggiunge una shooting position dalla view al wizard."""
         saved_x, saved_y = x, y
 
-        # Callback quando l'utente clicca ✕ sulla riga della lista
+        # Callback quando l'utente clicca  sulla riga della lista
         def _on_pos_deleted(item):
             """Rimuove il marker corrispondente dalla scena."""
             for gi in list(self._scene.items()):
@@ -823,7 +824,7 @@ class MainWindow(QMainWindow):
 
         # Auto-disattiva la modalità posizionamento dopo aver piazzato
         self._gen_panel._btn_place_pos.setChecked(False)
-        self._gen_panel._btn_place_pos.setText("✏️ Posiziona")
+        self._gen_panel._btn_place_pos.setText("Posiziona")
         self._view.set_placing_position_mode(False)
 
     @Slot()

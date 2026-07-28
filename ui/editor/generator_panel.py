@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core.generator import GeneratorConfig, Phase1Config
 from core.models import ItemType
+from ui.icons import load_icon
 
 
 class StageWizard(QWidget):
@@ -103,7 +104,7 @@ class StageWizard(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(14)
 
-        title = QLabel("🎯 Fase 1 — Area di Tiro")
+        title = QLabel("Fase 1 — Area di Tiro")
         title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
         layout.addWidget(title)
 
@@ -260,7 +261,7 @@ class StageWizard(QWidget):
         """Chiamato quando la Fase 1 è completata con successo."""
         self._phase1_done = True
         self._btn_gen_area.setEnabled(True)
-        self._btn_gen_area.setText("✅ Area Generata — Rigenera")
+        self._btn_gen_area.setText("Area Generata — Rigenera")
         self._btn_gen_area.setStyleSheet("""
             QPushButton {
                 padding: 10px 20px; font-size: 14px; font-weight: 600;
@@ -269,7 +270,7 @@ class StageWizard(QWidget):
             }
             QPushButton:hover { background-color: #d97706; }
         """)
-        self._p1_status.setText(f"✅ Area di tiro generata ({stage_name})")
+        self._p1_status.setText(f"Area di tiro generata ({stage_name})")
         self._btn_next.setEnabled(True)
         # Attiva update live per rotazione e scala
         self._connect_live_preview()
@@ -285,7 +286,7 @@ class StageWizard(QWidget):
             }
             QPushButton:hover { background-color: #16a34a; }
         """)
-        self._p1_status.setText(f"❌ Errore: {message}")
+        self._p1_status.setText(f"Errore: {message}")
         self._p1_status.setStyleSheet("font-size: 12px; color: #dc2626;")
 
     # ── Pagina 2: Bersagli e Posizioni ────────────────────────────────
@@ -305,7 +306,7 @@ class StageWizard(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(14)
 
-        title = QLabel("🎯 Fase 2 — Posizioni di Tiro")
+        title = QLabel("Fase 2 — Posizioni di Tiro")
         title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
         layout.addWidget(title)
 
@@ -315,7 +316,7 @@ class StageWizard(QWidget):
         pos_layout.setSpacing(8)
 
         pos_help = QLabel(
-            "🖱️ Clicca sulla mappa nell'editor per aggiungere posizioni.\n"
+            "Clicca sulla mappa nell'editor per aggiungere posizioni.\n"
             "Il primo click = posizione di partenza (Start).\n"
             "Click successivi = posizioni intermedie.\n"
             "Click destro su un marker per rimuoverlo."
@@ -331,13 +332,13 @@ class StageWizard(QWidget):
         pos_layout.addWidget(self._pos_list, 1)
 
         btn_row = QHBoxLayout()
-        self._btn_place_pos = QPushButton("✏️ Posiziona")
+        self._btn_place_pos = QPushButton("Posiziona")
         self._btn_place_pos.setCheckable(True)
         self._btn_place_pos.setToolTip("Clicca sulla mappa per aggiungere posizioni")
         self._btn_place_pos.clicked.connect(self._toggle_place_mode)
         btn_row.addWidget(self._btn_place_pos)
 
-        self._btn_clear_pos = QPushButton("🗑️ Cancella tutte")
+        self._btn_clear_pos = QPushButton("Cancella tutte")
         self._btn_clear_pos.clicked.connect(self._clear_positions)
         btn_row.addWidget(self._btn_clear_pos)
         pos_layout.addLayout(btn_row)
@@ -384,7 +385,7 @@ class StageWizard(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("🎯 Fase 3 — Aggiunta Bersagli e Ostacoli")
+        title = QLabel("Fase 3 — Aggiunta Bersagli e Ostacoli")
         title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
         layout.addWidget(title)
 
@@ -417,40 +418,59 @@ class StageWizard(QWidget):
             }
         """)
 
-        # Struttura: (categoria, [(icona, label, tip, item_type, (w, h)), ...])
+        # Struttura: (categoria, [(nome_icona, label, tip, item_type, (w, h)), ...])
+        _ICON_MAP = {
+            "paper": "target_paper",
+            "steel": "target_steel",
+            "popper": "target_popper",
+            "plate": "target_plate",
+            "bobber": "target_bobber",
+            "double": "target_double",
+            "double_hostage": "target_double_hostage",
+            "swinger": "target_swinger",
+            "drop": "target_drop",
+            "mover": "target_mover",
+            "wall": "wall",
+            "barrier": "barrier",
+            "door": "door",
+            "hard_cover": "hard_cover",
+            "soft_cover": "soft_cover",
+            "fault_line": "fault_line",
+            "no_shoot": "no_shoot",
+        }
         ITEMS = [
             ("Bersagli cartacei", [
-                ("📄", "Paper Target", "Bersaglio cartaceo IPSC", ItemType.PAPER_TARGET, (0.45, 0.75)),
-                ("📄", "Mini Target", "Bersaglio ridotto (App. B3)", ItemType.MINI_TARGET, (0.30, 0.30)),
-                ("📄", "Micro Target", "Bersaglio micro", ItemType.MICRO_TARGET, (0.20, 0.20)),
-                ("📄📄", "Doppio affiancato", "Due paper affiancati (gap 5cm)", ItemType.DOUBLET_SIDE, (0.95, 0.75)),
-                ("📄📄", "Doppio sovrapposto", "Due paper sovrapposti 40%", ItemType.DOUBLET_OVERLAP, (0.65, 0.75)),
-                ("📄🚫📄", "Doppio + ostaggio (aff.)", "Due paper con no-shoot nel mezzo", ItemType.DOUBLET_SIDE_HOSTAGE, (1.20, 0.75)),
-                ("📄🚫📄", "Doppio + ostaggio (sovr.)", "Due paper sovrapposti con no-shoot", ItemType.DOUBLET_OVERLAP_HOSTAGE, (0.90, 0.75)),
-                ("📄🚫", "Target + No-Shoot", "Paper con no-shoot sovrapposto 40%", ItemType.TARGET_PLUS_NOSHOOT, (0.70, 0.75)),
+                ("paper", "Paper Target", "Bersaglio cartaceo IPSC", ItemType.PAPER_TARGET, (0.45, 0.75)),
+                ("paper", "Mini Target", "Bersaglio ridotto (App. B3)", ItemType.MINI_TARGET, (0.30, 0.30)),
+                ("paper", "Micro Target", "Bersaglio micro", ItemType.MICRO_TARGET, (0.20, 0.20)),
+                ("double", "Doppio affiancato", "Due paper affiancati (gap 5cm)", ItemType.DOUBLET_SIDE, (0.95, 0.75)),
+                ("double", "Doppio sovrapposto", "Due paper sovrapposti 40%", ItemType.DOUBLET_OVERLAP, (0.65, 0.75)),
+                ("double_hostage", "Doppio + ostaggio (aff.)", "Due paper con no-shoot nel mezzo", ItemType.DOUBLET_SIDE_HOSTAGE, (1.20, 0.75)),
+                ("double_hostage", "Doppio + ostaggio (sovr.)", "Due paper sovrapposti con no-shoot", ItemType.DOUBLET_OVERLAP_HOSTAGE, (0.90, 0.75)),
+                ("double_hostage", "Target + No-Shoot", "Paper con no-shoot sovrapposto 40%", ItemType.TARGET_PLUS_NOSHOOT, (0.70, 0.75)),
             ]),
             ("Bersagli metallici", [
-                ("⚙️", "Steel generico", "Bersaglio metallico", ItemType.STEEL_TARGET, (0.30, 0.30)),
-                ("🥇", "Popper calibrato", "Metallico calibrato (App. C1)", ItemType.POPPER, (0.30, 0.30)),
-                ("⭕", "Piatto metallico", "Non calibrato (App. C3)", ItemType.METAL_PLATE, (0.20, 0.20)),
-                ("🟠", "Piatto bobber", "Pop-up che scompare se colpito", ItemType.BOBBER_PLATE, (0.20, 0.20)),
-                ("🟠🟠", "Doppio bobber", "Due bobber affiancati", ItemType.DOUBLE_BOBBER, (0.50, 0.20)),
+                ("steel", "Steel generico", "Bersaglio metallico", ItemType.STEEL_TARGET, (0.30, 0.30)),
+                ("popper", "Popper calibrato", "Metallico calibrato (App. C1)", ItemType.POPPER, (0.30, 0.30)),
+                ("plate", "Piatto metallico", "Non calibrato (App. C3)", ItemType.METAL_PLATE, (0.20, 0.20)),
+                ("bobber", "Piatto bobber", "Pop-up che scompare se colpito", ItemType.BOBBER_PLATE, (0.20, 0.20)),
+                ("bobber", "Doppio bobber", "Due bobber affiancati", ItemType.DOUBLE_BOBBER, (0.50, 0.20)),
             ]),
             ("Bersagli mobili", [
-                ("🔄", "Swinger", "Bersaglio oscillante", ItemType.SWINGER, (0.45, 0.75)),
-                ("⬇️", "Drop Turner", "Bersaglio a caduta", ItemType.DROP_TURNER, (0.45, 0.75)),
-                ("➡️", "Mover", "Bersaglio su rotaia", ItemType.MOVER, (0.45, 0.75)),
+                ("swinger", "Swinger", "Bersaglio oscillante", ItemType.SWINGER, (0.45, 0.75)),
+                ("drop", "Drop Turner", "Bersaglio a caduta", ItemType.DROP_TURNER, (0.45, 0.75)),
+                ("mover", "Mover", "Bersaglio su rotaia", ItemType.MOVER, (0.45, 0.75)),
             ]),
             ("Ostacoli e coperture", [
-                ("🧱", "Muro", "Muro per oscurare bersagli", ItemType.WALL, (3.0, 0.2)),
-                ("🛡️", "Barriera", "Barriera visiva", ItemType.BARRIER, (2.0, 0.15)),
-                ("🚪", "Porta", "Porta", ItemType.DOOR, (0.9, 0.05)),
-                ("⬛", "Hard Cover", "Copertura impenetrabile", ItemType.HARD_COVER, (2.0, 0.2)),
-                ("⬜", "Soft Cover", "Copertura visiva", ItemType.SOFT_COVER, (2.0, 0.15)),
+                ("wall", "Muro", "Muro per oscurare bersagli", ItemType.WALL, (3.0, 0.2)),
+                ("barrier", "Barriera", "Barriera visiva", ItemType.BARRIER, (2.0, 0.15)),
+                ("door", "Porta", "Porta", ItemType.DOOR, (0.9, 0.05)),
+                ("hard_cover", "Hard Cover", "Copertura impenetrabile", ItemType.HARD_COVER, (2.0, 0.2)),
+                ("soft_cover", "Soft Cover", "Copertura visiva", ItemType.SOFT_COVER, (2.0, 0.15)),
             ]),
             ("Altro", [
-                ("➖", "Fault Line", "Linea di fallo perimetrale", ItemType.FAULT_LINE, (3.0, 0.0)),
-                ("🚫", "No-Shoot", "Bersaglio di penalità", ItemType.NO_SHOOT, (0.45, 0.75)),
+                ("fault_line", "Fault Line", "Linea di fallo perimetrale", ItemType.FAULT_LINE, (3.0, 0.0)),
+                ("no_shoot", "No-Shoot", "Bersaglio di penalità", ItemType.NO_SHOOT, (0.45, 0.75)),
             ]),
         ]
 
@@ -467,9 +487,10 @@ class StageWizard(QWidget):
             self._target_list.addItem(h_item)
 
             # Items della categoria
-            for icon, label, tip, itype, (def_w, def_h) in items:
-                text = f"   {icon}  {label}"
-                item = QListWidgetItem(text)
+            for icon_name, label, tip, itype, (def_w, def_h) in items:
+                item = QListWidgetItem(label)
+                svg_name = _ICON_MAP.get(icon_name, icon_name)
+                item.setIcon(load_icon(svg_name))
                 item.setToolTip(tip)
                 item.setData(Qt.ItemDataRole.UserRole, "__target__")
                 item.setData(Qt.ItemDataRole.UserRole + 1, itype.name)
@@ -479,7 +500,7 @@ class StageWizard(QWidget):
 
         layout.addWidget(self._target_list, 1)
 
-        pos_info = QLabel("📌 Gli oggetti vengono aggiunti al centro dello stage.\n"
+        pos_info = QLabel("Gli oggetti vengono aggiunti al centro dello stage.\n"
                           "Spostali con drag & drop sulla scena.")
         pos_info.setStyleSheet("font-size: 10px; color: #94a3b8;")
         layout.addWidget(pos_info)
@@ -609,7 +630,7 @@ class StageWizard(QWidget):
         label.setStyleSheet("font-size: 13px; font-weight: 500; color: #0f172a;")
         layout.addWidget(label, 1)
 
-        btn_del = QPushButton("✕")
+        btn_del = QPushButton(load_icon("close"), "")
         btn_del.setFixedSize(20, 20)
         btn_del.setStyleSheet("""
             QPushButton {
@@ -686,7 +707,7 @@ class StageWizard(QWidget):
         if active:
             self._btn_place_pos.setText("⏹️ Ferma")
         else:
-            self._btn_place_pos.setText("✏️ Posiziona")
+            self._btn_place_pos.setText("Posiziona")
 
     def _clear_positions(self):
         self._pos_list.clear()

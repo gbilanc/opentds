@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from services.library import StageLibrary, LibraryEntry
+from ui.icons import load_icon
 
 
 class LibraryDialog(QDialog):
@@ -45,7 +46,7 @@ class LibraryDialog(QDialog):
         layout.setSpacing(12)
 
         # Header
-        title = QLabel("📚 Libreria Stage")
+        title = QLabel("Libreria Stage")
         title.setStyleSheet("font-size: 20px; font-weight: 700; color: #0f172a;")
         layout.addWidget(title)
 
@@ -62,7 +63,7 @@ class LibraryDialog(QDialog):
         search_layout.setSpacing(8)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("🔍 Cerca stage per nome, descrizione o tag...")
+        self._search_input.setPlaceholderText("Cerca stage per nome, descrizione o tag...")
         self._search_input.textChanged.connect(self._on_search)
         search_layout.addWidget(self._search_input, 1)
 
@@ -71,7 +72,7 @@ class LibraryDialog(QDialog):
         self._filter_predefined.clicked.connect(self._on_filter)
         search_layout.addWidget(self._filter_predefined)
 
-        btn_import = QPushButton("📥 Importa...")
+        btn_import = QPushButton(load_icon("import_icon"), "Importa...")
         btn_import.clicked.connect(self._on_import)
         search_layout.addWidget(btn_import)
 
@@ -139,7 +140,7 @@ class LibraryDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(8)
 
-        self._btn_load = QPushButton("📂 Carica stage")
+        self._btn_load = QPushButton(load_icon("open"), "Carica stage")
         self._btn_load.setStyleSheet("""
             QPushButton {
                 background-color: #2563eb; color: white;
@@ -153,11 +154,11 @@ class LibraryDialog(QDialog):
         self._btn_load.setEnabled(False)
         btn_layout.addWidget(self._btn_load)
 
-        btn_export = QPushButton("📤 Esporta...")
+        btn_export = QPushButton(load_icon("export"), "Esporta...")
         btn_export.clicked.connect(self._on_export)
         btn_layout.addWidget(btn_export)
 
-        self._btn_delete = QPushButton("🗑️ Elimina")
+        self._btn_delete = QPushButton(load_icon("delete"), "Elimina")
         self._btn_delete.clicked.connect(self._on_delete)
         self._btn_delete.setEnabled(False)
         btn_layout.addWidget(self._btn_delete)
@@ -183,9 +184,9 @@ class LibraryDialog(QDialog):
             entries = [e for e in entries if tag_filter in e.tags]
 
         for entry in entries:
-            icon = "📄" if entry.is_predefined else "💾"
-            text = f"{icon} {entry.name}"
-            item = QListWidgetItem(text)
+            icon = load_icon("file" if entry.is_predefined else "save")
+            item = QListWidgetItem(entry.name)
+            item.setIcon(icon)
             item.setData(Qt.ItemDataRole.UserRole, entry.id)
             if entry.is_predefined:
                 item.setForeground(QColor("#2563eb"))
@@ -213,11 +214,11 @@ class LibraryDialog(QDialog):
         self._preview_title.setText(entry.name)
         desc = entry.description or "Nessuna descrizione"
         self._preview_desc.setText(desc)
-        self._preview_course.setText(f"🏷️ Tipo corso: {entry.course_type or 'Non specificato'}")
-        self._preview_size.setText(f"📐 Dimensioni: {entry.width:.0f}×{entry.depth:.0f} m")
-        self._preview_targets.setText(f"🎯 Bersagli: {entry.target_count}")
-        self._preview_rounds.setText(f"🔫 Colpi: {entry.round_count}")
-        self._preview_tags.setText(f"🏷️ Tag: {', '.join(entry.tags) if entry.tags else '—'}")
+        self._preview_course.setText(f"Tipo corso: {entry.course_type or 'Non specificato'}")
+        self._preview_size.setText(f"Dimensioni: {entry.width:.0f}×{entry.depth:.0f} m")
+        self._preview_targets.setText(f"Bersagli: {entry.target_count}")
+        self._preview_rounds.setText(f"Colpi: {entry.round_count}")
+        self._preview_tags.setText(f"Tag: {', '.join(entry.tags) if entry.tags else '—'}")
         self._btn_load.setEnabled(True)
         self._btn_delete.setEnabled(not entry.is_predefined)
 

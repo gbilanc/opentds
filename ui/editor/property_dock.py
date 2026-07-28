@@ -8,11 +8,14 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QFormLayout, QLineEdit, QDoubleSpinBox,
     QSpinBox, QLabel, QPushButton, QHBoxLayout, QColorDialog,
-    QComboBox, QVBoxLayout, QGroupBox
+    QComboBox, QVBoxLayout, QGroupBox, QFileDialog
 )
 
+import os
 from core.models import StageItem, ItemType
 from ui.editor.stage_scene import StageItemWrapper
+from core.target_designer import CUSTOM_TARGETS_DIR, ensure_custom_dir
+from ui.icons import load_icon
 import math
 
 # Tipi bersaglio: colore e forma sono definiti centralmente, non modificabili per item
@@ -113,6 +116,28 @@ class PropertyDock(QDockWidget):
         color_row.addStretch()
         form.addRow("Colore:", color_row)
 
+        # Bersaglio personalizzato (solo per tipi target)
+        self._custom_svg_widget = QWidget()
+        custom_svg_layout = QHBoxLayout(self._custom_svg_widget)
+        custom_svg_layout.setContentsMargins(0, 0, 0, 0)
+        custom_svg_layout.setSpacing(4)
+        self._custom_svg_combo = QComboBox()
+        self._custom_svg_combo.setMinimumWidth(100)
+        self._custom_svg_combo.currentIndexChanged.connect(self._on_custom_svg_combo_changed)
+        custom_svg_layout.addWidget(self._custom_svg_combo)
+        self._btn_browse_svg = QPushButton("…")
+        self._btn_browse_svg.setFixedWidth(26)
+        self._btn_browse_svg.setToolTip("Sfoglia per un file SVG…")
+        self._btn_browse_svg.clicked.connect(self._on_browse_custom_svg)
+        custom_svg_layout.addWidget(self._btn_browse_svg)
+        self._btn_reset_svg = QPushButton(load_icon("close"), "")
+        self._btn_reset_svg.setFixedWidth(26)
+        self._btn_reset_svg.setToolTip("Ripristina bersaglio default IPSC")
+        self._btn_reset_svg.clicked.connect(self._on_reset_custom_svg)
+        custom_svg_layout.addWidget(self._btn_reset_svg)
+        self._custom_svg_widget.setVisible(False)
+        form.addRow("Aspetto:", self._custom_svg_widget)
+
         # Proprietà mobili (dinamiche)
         self._mobility_group = QGroupBox("Parametri movimento")
         self._mobility_layout = QFormLayout(self._mobility_group)
@@ -171,6 +196,7 @@ class PropertyDock(QDockWidget):
             self._h_spin.setValue(1)
             self._rot_spin.setValue(0)
             self._color_btn.setStyleSheet("background-color: #808080; border-radius: 4px; border: 1px solid #e2e8f0;")
+            self._custom_svg_widget.setVisible(False)
         else:
             it = wrapper.item
             is_target = it.item_type in _TARGET_TYPES
@@ -202,6 +228,13 @@ class PropertyDock(QDockWidget):
                 self._amp_spin.parentWidget().setVisible(it.item_type == ItemType.SWINGER)
                 self._dist_spin.parentWidget().setVisible(it.item_type == ItemType.MOVER)
                 self._fall_spin.parentWidget().setVisible(it.item_type == ItemType.DROP_TURNER)
+            # Bersaglio personalizzato
+            self._custom_svg_widget.setVisible(is_target)
+            if is_target:
+                custom_path = it.properties.get("custom_svg_path", "")
+                self._custom_svg_combo.blockSignals(True)
+                self._populate_custom_svg_combo(custom_path)
+                self._custom_svg_combo.blockSignals(False)
         self._block_signals = False
 
     @Slot(object, object)
@@ -223,8 +256,10 @@ class PropertyDock(QDockWidget):
             self._h_spin.setValue(1)
             self._rot_spin.setValue(0)
             self._mobility_group.setVisible(False)
+            self._custom_svg_widget.setVisible(False)
         else:
             self.setEnabled(True)
+            self._custom_svg_widget.setVisible(False)
             marker_type = props['type']
             if marker_type == 'shooting_position':
                 self._title.setText(f"Posizione #{props.get('label', '?')}")
@@ -320,3 +355,77 @@ class PropertyDock(QDockWidget):
             hex_color = color.name()
             self._update_color_btn(hex_color)
             self._emit(color=hex_color)
+
+    # ── Bersaglio personalizzato ────────────────────────────────────────
+
+    def _populate_custom_svg_combo(self, current_path: str):
+        """Popola la QComboBox con gli SVG disponibili.
+
+        current_path: il percorso attuale (o "" per default).
+        Se il percorso non è nella lista, lo aggiunge come "Altro…".
+        """
+        self._custom_svg_combo.clear()
+        self._custom_svg_combo.addItem("Default IPSC", "")
+
+        ensure_custom_dir()
+        found = False
+        if os.path.isdir(CUSTOM_TARGETS_DIR):
+            for fname in sorted(os.listdir(CUSTOM_TARGETS_DIR)):
+                if fname.lower().endswith(".svg"):
+                    full_path = os.path.join(CUSTOM_TARGETS_DIR, fname)
+                    self._custom_svg_combo.addItem(fname, full_path)
+                    if current_path and os.path.samefile(full_path, current_path):
+                        found = True
+
+        # Se il percorso corrente non è nella lista (file esterno)
+        if current_path and not found:
+            self._custom_svg_combo.addItem(
+                os.path.basename(current_path), current_path
+            )
+            idx = self._custom_svg_combo.count() - 1
+        elif current_path:
+            # Trova l'indice del percorso corrente
+            idx = self._custom_svg_combo.findData(current_path)
+        else:
+            idx = 0  # Default IPSC
+
+        self._custom_svg_combo.setCurrentIndex(max(0, idx))
+
+    def _on_custom_svg_combo_changed(self, index: int):
+        """Cambia il bersaglio personalizzato in base alla selezione combo."""
+        if self._block_signals or self._wrapper is None:
+            return
+        path = self._custom_svg_combo.itemData(index)
+        if path is None:
+            path = ""
+        self._emit(properties={"custom_svg_path": path})
+
+    def _on_browse_custom_svg(self):
+        """Apre un file dialog per selezionare un SVG personalizzato."""
+        start_dir = CUSTOM_TARGETS_DIR if os.path.isdir(CUSTOM_TARGETS_DIR) else os.path.expanduser("~")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Seleziona SVG bersaglio", start_dir,
+            "SVG (*.svg);;Tutti i file (*)"
+        )
+        if not path:
+            return
+        if self._wrapper is None:
+            return
+        self._custom_svg_combo.blockSignals(True)
+        # Aggiunge il file selezionato alla combo (se non già presente)
+        idx = self._custom_svg_combo.findData(path)
+        if idx < 0:
+            self._custom_svg_combo.addItem(os.path.basename(path), path)
+            idx = self._custom_svg_combo.count() - 1
+        self._custom_svg_combo.setCurrentIndex(idx)
+        self._custom_svg_combo.blockSignals(False)
+        self._emit(properties={"custom_svg_path": path})
+
+    def _on_reset_custom_svg(self):
+        """Resetta il bersaglio a default IPSC."""
+        if self._wrapper is None:
+            return
+        self._custom_svg_combo.blockSignals(True)
+        self._custom_svg_combo.setCurrentIndex(0)  # "Default IPSC"
+        self._custom_svg_combo.blockSignals(False)
+        self._emit(properties={"custom_svg_path": ""})

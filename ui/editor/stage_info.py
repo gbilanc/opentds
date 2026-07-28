@@ -28,7 +28,7 @@ class StageInfoPanel(QWidget):
         layout.setSpacing(10)
 
         # Titolo
-        title = QLabel("📊 Info Stage")
+        title = QLabel("Info Stage")
         title.setStyleSheet("font-weight: 700; font-size: 15px; color: #0f172a;")
         layout.addWidget(title)
 
@@ -83,7 +83,7 @@ class StageInfoPanel(QWidget):
         layout.addWidget(self._violations_area, 1)
 
         # Label nessuna violazione
-        self._no_violations = QLabel("✅ Nessuna violazione")
+        self._no_violations = QLabel("Nessuna violazione")
         self._no_violations.setStyleSheet("font-size: 11px; color: #16a34a; padding: 8px;")
         self._violations_layout.addWidget(self._no_violations)
 
@@ -150,7 +150,7 @@ class StageInfoPanel(QWidget):
         self._no_violations.hide()
 
         for v in violations:
-            label = QLabel(f"⚠️ {v}")
+            label = QLabel(f"‼ {v}")
             label.setWordWrap(True)
             label.setStyleSheet("""
                 font-size: 10px;

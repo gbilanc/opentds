@@ -10,6 +10,7 @@ Architettura:
 from __future__ import annotations
 from typing import Optional, Callable
 import math
+import os
 from PySide6.QtCore import Qt, Signal, QObject, QPointF, QRectF
 from PySide6.QtGui import (
     QPen, QBrush, QColor, QPainter, QPainterPath, QPixmap,
@@ -679,7 +680,7 @@ class GridItem(QGraphicsItem):
         painter.setPen(QPen(QColor("#64748b"), 1))
         painter.drawText(4, 14, "UP-RANGE (ingresso tiratore)")
         painter.setPen(QPen(QColor("#ef4444"), 1))
-        painter.drawText(4, int(h - 22), "🔴 DOWN-RANGE (verso parapalle)")
+        painter.drawText(4, int(h - 22), "DOWN-RANGE (verso parapalle)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1297,7 +1298,12 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         self.update_from_model()
 
     def _get_pixmap(self) -> QPixmap | None:
-        """Ottiene il pixmap SVG renderizzato per le dimensioni correnti."""
+        """Ottiene il pixmap SVG renderizzato per le dimensioni correnti.
+
+        Se l\'item ha una proprietà "custom_svg_path", usa il file SVG
+        personalizzato (senza tinta, per rispettare i colori delle zone).
+        Altrimenti usa lo SVG standard IPSC con tinta colore.
+        """
         it = self.wrapper.item
         w_px = max(1, int(it.width * self.scale))
         h_px = max(1, int(it.height * self.scale))
@@ -1306,7 +1312,15 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
             return self._cached_pixmap
 
         manager = TargetSvgManager.instance()
-        pixmap = manager.get_pixmap(it.item_type, w_px, h_px)
+
+        # SVG personalizzato?
+        custom_path = it.properties.get("custom_svg_path", "")
+        if custom_path and os.path.isfile(custom_path):
+            # Nessuna tinta: rispetta i colori delle zone definiti dall'utente
+            pixmap = manager.get_custom_pixmap(custom_path, w_px, h_px, tint_color=None)
+        else:
+            pixmap = manager.get_pixmap(it.item_type, w_px, h_px)
+
         if pixmap is not None and not pixmap.isNull():
             self._cached_pixmap = pixmap
             self._cached_size = (w_px, h_px)
@@ -1835,7 +1849,7 @@ class StageScene(QGraphicsScene):
         for v_text in self._last_violations:
             import re
             if re.search(rf'#{item_id}\b', v_text):
-                return f"⚠️ {v_text}"
+                return f"‼ {v_text}"
         return None
 
     def set_violations(self, item_ids: set[int], violations: list[str] | None = None):
@@ -2052,7 +2066,12 @@ class StageScene(QGraphicsScene):
             return
         changed = False
         for k, v in kwargs.items():
-            if hasattr(it, k) and getattr(it, k) != v:
+            if k == 'properties':
+                # Merge del dizionario proprietà (non sostituzione)
+                if isinstance(v, dict):
+                    it.properties.update(v)
+                    changed = True
+            elif hasattr(it, k) and getattr(it, k) != v:
                 setattr(it, k, v)
                 changed = True
         if changed:

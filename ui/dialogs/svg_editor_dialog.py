@@ -35,6 +35,7 @@ from core.target_designer import (
     make_ipsc_silhouette, ensure_custom_dir,
     CUSTOM_TARGETS_DIR,
 )
+from ui.icons import load_icon
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -349,7 +350,7 @@ class SvgEditorDialog(QDialog):
         self._setting_properties = False  # lock per evitare ricorsione proprietà
         self._setting_selection = False  # lock per evitare ricorsione selezione
 
-        self.setWindowTitle(f"✏️ Editor Bersagli SVG — {self._design.name}")
+        self.setWindowTitle(f"Editor Bersagli SVG — {self._design.name}")
         self.setMinimumSize(950, 650)
         self.resize(1100, 750)
         self._setup_ui()
@@ -371,26 +372,26 @@ class SvgEditorDialog(QDialog):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
 
-        self._btn_select = QPushButton("↖ Seleziona")
+        self._btn_select = QPushButton(load_icon("shooting_position"), "Seleziona")
         self._btn_select.setCheckable(True)
         self._btn_select.setChecked(True)
         self._btn_select.clicked.connect(lambda: self._set_tool("select"))
         self._style_tool_btn(self._btn_select)
         toolbar.addWidget(self._btn_select)
 
-        self._btn_rect = QPushButton("▭ Rett.")
+        self._btn_rect = QPushButton("Rett.")
         self._btn_rect.setCheckable(True)
         self._btn_rect.clicked.connect(lambda: self._set_tool("rect"))
         self._style_tool_btn(self._btn_rect)
         toolbar.addWidget(self._btn_rect)
 
-        self._btn_ellipse = QPushButton("⬭ Ell.")
+        self._btn_ellipse = QPushButton("Ell.")
         self._btn_ellipse.setCheckable(True)
         self._btn_ellipse.clicked.connect(lambda: self._set_tool("ellipse"))
         self._style_tool_btn(self._btn_ellipse)
         toolbar.addWidget(self._btn_ellipse)
 
-        self._btn_hex = QPushButton("⬡ Ottag.")
+        self._btn_hex = QPushButton("Ottag.")
         self._btn_hex.setCheckable(True)
         self._btn_hex.clicked.connect(lambda: self._set_tool("octagon"))
         self._style_tool_btn(self._btn_hex)
@@ -422,11 +423,43 @@ class SvgEditorDialog(QDialog):
             toolbar.addWidget(btn)
 
         toolbar.addSpacing(8)
-        self._btn_delete = QPushButton("🗑")
+        self._btn_delete = QPushButton(load_icon("delete"), "")
         self._btn_delete.setToolTip("Elimina zona selezionata (Canc)")
         self._btn_delete.clicked.connect(self._delete_selected)
         self._btn_delete.setFixedWidth(32)
         toolbar.addWidget(self._btn_delete)
+
+        self._btn_duplicate = QPushButton(load_icon("duplicate"), "Duplica")
+        self._btn_duplicate.setToolTip("Duplica zona selezionata (Ctrl+D)")
+        self._btn_duplicate.clicked.connect(self._duplicate_selected)
+        toolbar.addWidget(self._btn_duplicate)
+
+        toolbar.addSpacing(8)
+        palette_label = QLabel("Colore:")
+        palette_label.setStyleSheet("font-size: 11px; color: #64748b;")
+        toolbar.addWidget(palette_label)
+
+        for color_hex, tooltip in [
+            ("#16a34a", "Verde (zona A)"),
+            ("#2563eb", "Blu (zona B)"),
+            ("#ca8a04", "Giallo (zona C)"),
+            ("#dc2626", "Rosso (zona D)"),
+        ]:
+            btn = QPushButton()
+            btn.setFixedSize(22, 22)
+            btn.setStyleSheet(
+                f"background: {color_hex}; border: 2px solid #e2e8f0; "
+                f"border-radius: 11px;"
+            )
+            btn.setToolTip(tooltip)
+            btn.clicked.connect(lambda checked, c=color_hex: self._set_selected_zone_color(c))
+            toolbar.addWidget(btn)
+
+        btn_custom_color = QPushButton(load_icon("color"), "")
+        btn_custom_color.setFixedSize(28, 24)
+        btn_custom_color.setToolTip("Colore personalizzato…")
+        btn_custom_color.clicked.connect(self._pick_zone_color_for_selected)
+        toolbar.addWidget(btn_custom_color)
 
         left_layout.addLayout(toolbar)
 
@@ -446,7 +479,7 @@ class SvgEditorDialog(QDialog):
 
         status = QHBoxLayout()
         self._info_label = QLabel(
-            f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
+            f"{self._design.width:.0f}×{self._design.height:.0f}  |  "
             f"Zoom rotella  |  Clicca per selezionare"
         )
         self._info_label.setStyleSheet("font-size: 11px; color: #64748b;")
@@ -532,20 +565,32 @@ class SvgEditorDialog(QDialog):
 
         rl.addWidget(prop_gb)
 
-        btn_layout = QHBoxLayout()
+        btn_layout = QVBoxLayout()
         btn_layout.setSpacing(6)
-        btn_load = QPushButton("📂 Carica")
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_load = QPushButton(load_icon("open"), "Carica")
         btn_load.setToolTip("Carica SVG esistente per modificarlo")
         btn_load.clicked.connect(self._load_svg)
-        btn_layout.addWidget(btn_load)
-        btn_save = QPushButton("💾 Salva")
+        btn_row.addWidget(btn_load)
+        btn_save = QPushButton(load_icon("save"), "Salva")
         btn_save.setStyleSheet(
             "QPushButton { background: #2563eb; color: white; border: none; "
             "border-radius: 6px; padding: 8px 20px; font-weight: 600; }"
             "QPushButton:hover { background: #1d4ed8; }"
         )
         btn_save.clicked.connect(self._save_svg)
-        btn_layout.addWidget(btn_save)
+        btn_row.addWidget(btn_save)
+        btn_layout.addLayout(btn_row)
+        btn_save_as = QPushButton(load_icon("save_as"), "Salva con nome…")
+        btn_save_as.setToolTip("Salva in un percorso a scelta (non chiude l\u2019editor)")
+        btn_save_as.setStyleSheet(
+            "QPushButton { background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; "
+            "border-radius: 6px; padding: 8px 20px; font-weight: 500; }"
+            "QPushButton:hover { background: #f1f5f9; border-color: #94a3b8; }"
+        )
+        btn_save_as.clicked.connect(self._save_svg_as)
+        btn_layout.addWidget(btn_save_as)
         rl.addLayout(btn_layout)
         rl.addStretch()
         layout.addWidget(right)
@@ -553,6 +598,7 @@ class SvgEditorDialog(QDialog):
     @staticmethod
     def _style_tool_btn(btn: QPushButton):
         btn.setFixedHeight(30)
+        btn.setIconSize(QSize(16, 16))
         btn.setStyleSheet(
             "QPushButton { padding: 3px 10px; font-size: 11px; font-weight: 500; "
             "border: 1px solid #e2e8f0; border-radius: 5px; "
@@ -578,12 +624,12 @@ class SvgEditorDialog(QDialog):
 
         if tool in ("rect", "ellipse", "octagon"):
             self._info_label.setText(
-                f"✏️ Clicca area vuota per aggiungere {SHAPE_NAMES.get(tool, tool)}  |  "
+                f"Clicca area vuota per aggiungere {SHAPE_NAMES.get(tool, tool)}  |  "
                 f"Clicca zona per selezionare/spostare/ridimensionare"
             )
         else:
             self._info_label.setText(
-                f"📐 {self._design.width:.0f}×{self._design.height:.0f}  |  "
+                f"{self._design.width:.0f}×{self._design.height:.0f}  |  "
                 f"Clicca per selezionare, trascina angoli per ridimensionare"
             )
 
@@ -672,6 +718,26 @@ class SvgEditorDialog(QDialog):
             self._scene.removeItem(item)
             self._zone_items.remove(item)
         self._refresh_zone_list()
+
+    def _duplicate_selected(self):
+        """Duplica la zona selezionata con un offset di +15px/+15px."""
+        selected = [it for it in self._zone_items if it.isSelected()]
+        if not selected:
+            return
+        for item in selected:
+            z = item.zone
+            new_zone = SvgZone(
+                label=z.label, color=z.color, points=z.points,
+                shape_type=z.shape_type,
+                x=z.x + 15, y=z.y + 15,
+                width=z.width, height=z.height,
+            )
+            self._design.add_zone(new_zone)
+            new_item = self._add_zone_item(new_zone)
+            new_item.setSelected(True)
+            item.setSelected(False)
+        self._refresh_zone_list()
+        self._zone_list.setCurrentRow(len(self._design.zones) - 1)
 
     # ── Zone properties ────────────────────────────────────────────────
 
@@ -770,11 +836,41 @@ class SvgEditorDialog(QDialog):
             self._zone_items[row].update()
             self._refresh_zone_list()
 
+    def _set_selected_zone_color(self, color_hex: str):
+        """Cambia il colore di tutte le zone selezionate (paletta rapida)."""
+        selected = [it for it in self._zone_items if it.isSelected()]
+        if not selected:
+            return
+        for item in selected:
+            item.zone.color = color_hex
+            item.update()
+        self._sync_property_panel()
+        self._refresh_zone_list()
+        # Aggiorna anche il pulsante colore nel pannello proprietà
+        row = self._zone_list.currentRow()
+        if 0 <= row < len(self._design.zones):
+            zone = self._design.zones[row]
+            self._zone_color_btn.setText(f"  {zone.color}")
+            self._zone_color_btn.setStyleSheet(
+                f"background: {zone.color}; color: white; "
+                f"border-radius: 4px; font-weight: 500;"
+            )
+
+    def _pick_zone_color_for_selected(self):
+        """Apre il color dialog per la prima zona selezionata."""
+        selected = [it for it in self._zone_items if it.isSelected()]
+        if not selected:
+            return
+        zone = selected[0].zone
+        color = QColorDialog.getColor(QColor(zone.color), self, "Colore zona")
+        if color.isValid():
+            self._set_selected_zone_color(color.name())
+
     # ── Nome ───────────────────────────────────────────────────────────
 
     def _on_name_changed(self, text: str):
         self._design.name = text or "Bersaglio"
-        self.setWindowTitle(f"✏️ Editor Bersagli SVG — {self._design.name}")
+        self.setWindowTitle(f"Editor Bersagli SVG — {self._design.name}")
 
     def _on_desc_changed(self, text: str):
         self._design.description = text
@@ -796,7 +892,7 @@ class SvgEditorDialog(QDialog):
         self._name_input.setText(design.name)
         self._desc_input.setText(design.description)
         self._sync_to_scene()
-        self.setWindowTitle(f"✏️ Editor Bersagli SVG — {design.name}")
+        self.setWindowTitle(f"Editor Bersagli SVG — {design.name}")
 
     def _save_svg(self):
         ensure_custom_dir()
@@ -817,10 +913,24 @@ class SvgEditorDialog(QDialog):
             f.write(self._design.to_svg())
 
         QMessageBox.information(
-            self, "✅ Salvato",
+            self, "Salvato",
             f"Bersaglio salvato:\n{filepath}\n\nRiavvia l'app per usarlo.",
         )
         self.accept()
+
+    def _save_svg_as(self):
+        """Salva il bersaglio in un percorso arbitrario scelto dall'utente.
+        A differenza di _save_svg, non chiude il dialog.
+        """
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Salva bersaglio con nome",
+            os.path.expanduser("~"), "SVG (*.svg);;Tutti i file (*)"
+        )
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(self._design.to_svg())
+        self._info_label.setText(f"Salvato: {path}")
 
     def get_design(self) -> SvgTargetDesign:
         return self._design
