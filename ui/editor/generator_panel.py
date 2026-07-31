@@ -988,6 +988,32 @@ class StageWizard(QWidget):
 
         return QIcon(pix)
 
+    def on_stage_loaded(self, stage_name: str = "Stage"):
+        """Prepara il wizard per l'editing dopo il caricamento di uno stage.
+
+        Imposta lo stato come se la Fase 1 fosse completata e naviga
+        direttamente alla Fase 3 (aggiunta bersagli) per editing rapido.
+        """
+        self._phase1_done = True
+        self._btn_gen_area.setEnabled(True)
+        self._btn_gen_area.setText("Area Generata — Rigenera")
+        self._btn_gen_area.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px; font-size: 14px; font-weight: 600;
+                background-color: #f59e0b; color: white;
+                border: none; border-radius: 8px;
+            }
+            QPushButton:hover { background-color: #d97706; }
+        """)
+        self._p1_status.setText(f"Stage caricato: {stage_name}")
+        self._p1_status.setStyleSheet("font-size: 12px; color: #16a34a;")
+        self._connect_live_preview()
+        # Naviga direttamente alla Fase 3 (aggiunta bersagli)
+        self._stack.setCurrentIndex(2)
+        self._btn_back.setEnabled(True)
+        self._btn_next.setEnabled(False)
+        self._step_label.setText("Passo 3 di 3: Aggiunta bersagli")
+
     def reset(self):
         """Resetta il wizard allo stato iniziale."""
         self._stack.setCurrentIndex(0)
@@ -997,7 +1023,17 @@ class StageWizard(QWidget):
         self._step_label.setText("Passo 1 di 3: Area di tiro")
         self._btn_gen_area.setEnabled(True)
         self._btn_gen_area.setText("▶ Genera Area di Tiro")
+        self._btn_gen_area.setStyleSheet("""
+            QPushButton {
+                padding: 10px 20px; font-size: 14px; font-weight: 600;
+                background-color: #22c55e; color: white;
+                border: none; border-radius: 8px;
+            }
+            QPushButton:hover { background-color: #16a34a; }
+            QPushButton:disabled { background-color: #94a3b8; }
+        """)
         self._p1_status.setText("")
+        self._p1_status.setStyleSheet("font-size: 12px; color: #64748b;")
         self._pos_list.clear()
 
 

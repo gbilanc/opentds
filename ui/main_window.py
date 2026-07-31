@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.generator import Phase1Config
-from core.models import Stage
+from core.models import ItemType, Stage
 from services.exporter import export_pdf, export_png
 from services.library import StageLibrary
 from services.openscad_exporter import (
@@ -112,6 +112,29 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Strumenti")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
+
+        # ── Quick-add buttons ──
+        btn_add_target = QPushButton(load_icon("target_paper"), "+Paper")
+        btn_add_target.setToolTip("Aggiungi Paper Target al centro (Ctrl+1)")
+        btn_add_target.clicked.connect(self._on_add_paper_target)
+        toolbar.addWidget(btn_add_target)
+
+        btn_add_steel = QPushButton(load_icon("target_steel"), "+Steel")
+        btn_add_steel.setToolTip("Aggiungi Steel Target al centro (Ctrl+2)")
+        btn_add_steel.clicked.connect(self._on_add_steel_target)
+        toolbar.addWidget(btn_add_steel)
+
+        btn_add_wall = QPushButton(load_icon("wall"), "+Muro")
+        btn_add_wall.setToolTip("Aggiungi Muro al centro (Ctrl+3)")
+        btn_add_wall.clicked.connect(self._on_add_wall)
+        toolbar.addWidget(btn_add_wall)
+
+        btn_add_noshoot = QPushButton(load_icon("no_shoot"), "+No-Shoot")
+        btn_add_noshoot.setToolTip("Aggiungi No-Shoot al centro (Ctrl+4)")
+        btn_add_noshoot.clicked.connect(self._on_add_no_shoot)
+        toolbar.addWidget(btn_add_noshoot)
+
+        toolbar.addSeparator()
 
         btn_del = QPushButton(load_icon("delete"), "Elimina")
         btn_del.setToolTip("Elimina oggetti selezionati")
@@ -556,6 +579,30 @@ class MainWindow(QMainWindow):
 
     # ── Blender Export ──────────────────────────────────────────────────
 
+    def _on_add_paper_target(self):
+        """Aggiunge un Paper Target al centro dello stage."""
+        cx, cy = self._stage.width / 2, self._stage.depth / 2
+        self._scene.add_target(cx, cy, 0.45, 0.75, ItemType.PAPER_TARGET)
+        self._refresh_info()
+
+    def _on_add_steel_target(self):
+        """Aggiunge uno Steel Target (popper) al centro dello stage."""
+        cx, cy = self._stage.width / 2, self._stage.depth / 2
+        self._scene.add_popper(cx, cy)
+        self._refresh_info()
+
+    def _on_add_wall(self):
+        """Aggiunge un Muro al centro dello stage."""
+        cx, cy = self._stage.width / 2, self._stage.depth / 2
+        self._scene.add_wall(cx, cy, 3.0, 0.2)
+        self._refresh_info()
+
+    def _on_add_no_shoot(self):
+        """Aggiunge un No-Shoot al centro dello stage."""
+        cx, cy = self._stage.width / 2, self._stage.depth / 2
+        self._scene.add_no_shoot(cx, cy)
+        self._refresh_info()
+
     # ── Helpers: applica trasformazioni al poligono base ─────────────────
 
     @staticmethod
@@ -632,6 +679,56 @@ class MainWindow(QMainWindow):
 
         self._scene._update_shooting_area()
         self._refresh_info()
+
+    def _sync_wizard_positions(self):
+        """Popola la lista posizioni del wizard dalle shooting positions caricate."""
+        self._gen_panel._pos_list.clear()
+        for sp in self._stage.shooting_positions:
+            x, y = sp.x, sp.y
+            is_start = sp.is_start
+
+            # Callback quando l'utente clicca sulla riga della lista
+            def _on_pos_deleted(item, saved_x=x, saved_y=y):
+                for gi in list(self._scene.items()):
+                    if hasattr(gi, "pos_m") and hasattr(gi, "_label"):
+                        pm = gi.pos_m
+                        if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
+                            self._scene.removeItem(gi)
+                            break
+                self._sync_shooting_positions()
+
+            def _renumber_markers(labels, saved_x=x, saved_y=y):
+                lst = self._gen_panel._pos_list
+                for gi in self._scene.items():
+                    if not hasattr(gi, "pos_m") or not hasattr(gi, "_is_start"):
+                        continue
+                    pm = gi.pos_m
+                    for j in range(lst.count()):
+                        item = lst.item(j)
+                        text = self._gen_panel._find_item_text(item)
+                        if not text:
+                            continue
+                        try:
+                            rest = text.split(" ", 1)[1] if " " in text else ""
+                            rest = rest.strip("()")
+                            parts = rest.split(",")
+                            if len(parts) >= 2:
+                                ix = float(parts[0].strip())
+                                iy = float(parts[1].strip())
+                                if abs(ix - pm[0]) < 0.5 and abs(iy - pm[1]) < 0.5:
+                                    if j < len(labels):
+                                        gi._label = labels[j].lstrip("#")
+                                        gi.update()
+                                    break
+                        except (ValueError, IndexError):
+                            continue
+                self._sync_shooting_positions()
+
+            self._gen_panel.add_shooting_position(
+                x, y, is_start,
+                on_delete_clicked=_on_pos_deleted,
+                on_renumbered=_renumber_markers,
+            )
 
     # ── Fase 1: generazione iniziale ──────────────────────────────────
 
@@ -902,3 +999,11 @@ class MainWindow(QMainWindow):
         self._view.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self._prop_dock.set_item(None)
         self._refresh_info()
+        # ── Prepara wizard e marker per editing (solo se caricamento esterno) ──
+        if new_stage is not self._stage:
+            self._gen_panel.on_stage_loaded(self._stage.name)
+            self._sync_wizard_positions()
+            self._scene.sync_shooting_positions()
+            # Ricostruisci _base_poly dal perimetro salvato
+            self._base_poly = self._stage.properties.get("perimeter_poly")
+            self._current_poly = self._base_poly
