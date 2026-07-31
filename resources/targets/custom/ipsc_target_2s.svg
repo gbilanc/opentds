@@ -4,7 +4,7 @@
   <desc>Bersaglio personalizzato</desc>
 
   <!-- Silhouette principale (tintabile con currentColor) -->
-  <path d="     M 50 2     C 65 2, 78 8, 85 18     C 92 28, 96 38, 98 46     L 98 64     C 96 72, 92 82, 85 90     C 80 95, 72 98, 65 98     L 35 98     C 28 98, 20 95, 15 90     C 8 82, 4 72, 2 64     L 2 46     C 4 38, 8 28, 15 18     C 22 8, 35 2, 50 2     Z   " fill="currentColor"/>
+  <path d="     M 50 2     C 65 2, 78 8, 85 18     C 92 28, 96 38, 98 46     L 98 64     C 96 72, 92 82, 85 90     C 80 95, 72 98, 65 98     L 35 98     C 28 98, 20 95, 15 90     C 8 82, 4 72, 2 64     L 2 46     C 4 38, 8 28, 15 18     C 22 8, 35 2, 50 2     Z   " fill="none"/>
 
   <!-- Zone di punteggio -->
   <polygon points="70.3,24.9 70.3,46.1 57.8,61.1 40.2,61.1 27.7,46.1 27.7,24.9 40.2,9.9 57.8,9.9" fill="#ca8a04" stroke="#fff" stroke-width="1" opacity="0.85"/>

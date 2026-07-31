@@ -400,8 +400,12 @@ class PropertyDock(QDockWidget):
                 if fname.lower().endswith(".svg"):
                     full_path = os.path.join(CUSTOM_TARGETS_DIR, fname)
                     self._custom_svg_combo.addItem(fname, full_path)
-                    if current_path and os.path.samefile(full_path, current_path):
-                        found = True
+                    if current_path:
+                        try:
+                            if os.path.samefile(full_path, current_path):
+                                found = True
+                        except FileNotFoundError:
+                            pass
 
         # Se il percorso corrente non è nella lista (file esterno)
         if current_path and not found:
