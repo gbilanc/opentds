@@ -1,45 +1,69 @@
 # ui/editor/property_dock.py
 """Dock widget per editare le proprietà dell'oggetto selezionato."""
+
 from __future__ import annotations
+
+import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDockWidget, QWidget, QFormLayout, QLineEdit, QDoubleSpinBox,
-    QSpinBox, QLabel, QPushButton, QHBoxLayout, QColorDialog,
-    QComboBox, QVBoxLayout, QGroupBox, QFileDialog
+    QColorDialog,
+    QComboBox,
+    QDockWidget,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
-import os
-from core.models import StageItem, ItemType
-from ui.editor.stage_scene import StageItemWrapper, SvgTargetGraphicsItem
+from core.models import ItemType
 from core.target_designer import CUSTOM_TARGETS_DIR, ensure_custom_dir
+from ui.editor.stage_scene import StageItemWrapper, SvgTargetGraphicsItem
 from ui.icons import load_icon
-import math
 
 # Tipi bersaglio: colore e forma sono definiti centralmente, non modificabili per item
 _TARGET_TYPES = {
-    ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
-    ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-    ItemType.NO_SHOOT, ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+    ItemType.PAPER_TARGET,
+    ItemType.STEEL_TARGET,
+    ItemType.POPPER,
+    ItemType.METAL_PLATE,
+    ItemType.MINI_TARGET,
+    ItemType.MICRO_TARGET,
+    ItemType.NO_SHOOT,
+    ItemType.SWINGER,
+    ItemType.DROP_TURNER,
+    ItemType.MOVER,
     # Compositi
-    ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-    ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
-    ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER,
+    ItemType.DOUBLET_SIDE,
+    ItemType.DOUBLET_OVERLAP,
+    ItemType.DOUBLET_SIDE_HOSTAGE,
+    ItemType.DOUBLET_OVERLAP_HOSTAGE,
+    ItemType.BOBBER_PLATE,
+    ItemType.DOUBLE_BOBBER,
     ItemType.TARGET_PLUS_NOSHOOT,
 }
 
 
 class PropertyDock(QDockWidget):
     """Dock laterale per editing proprietà oggetto stage."""
+
     propertyChanged = Signal(int, dict)  # item_id, {field: value}
     markerChanged = Signal(dict)  # {field: value}, per marker scene
 
     def __init__(self, parent=None):
         super().__init__("Proprietà", parent)
-        self.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable |
-                         QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+        self.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
         self._wrapper: Optional[StageItemWrapper] = None
         self._marker_ref: object = None
 
@@ -195,7 +219,9 @@ class PropertyDock(QDockWidget):
             self._w_spin.setValue(1)
             self._h_spin.setValue(1)
             self._rot_spin.setValue(0)
-            self._color_btn.setStyleSheet("background-color: #808080; border-radius: 4px; border: 1px solid #e2e8f0;")
+            self._color_btn.setStyleSheet(
+                "background-color: #808080; border-radius: 4px; border: 1px solid #e2e8f0;"
+            )
             self._custom_svg_widget.setVisible(False)
         else:
             it = wrapper.item
@@ -260,14 +286,14 @@ class PropertyDock(QDockWidget):
         else:
             self.setEnabled(True)
             self._custom_svg_widget.setVisible(False)
-            marker_type = props['type']
-            if marker_type == 'shooting_position':
+            marker_type = props["type"]
+            if marker_type == "shooting_position":
                 self._title.setText(f"Posizione #{props.get('label', '?')}")
                 self._type_label.setText("Posizione di tiro")
-                self._id_label.setText("#" + props.get('label', '?'))
+                self._id_label.setText("#" + props.get("label", "?"))
                 self._label_edit.setText(f"Pos #{props.get('label', '?')}")
-                self._x_spin.setValue(props['x'])
-                self._y_spin.setValue(props['y'])
+                self._x_spin.setValue(props["x"])
+                self._y_spin.setValue(props["y"])
                 self._w_spin.setEnabled(False)
                 self._w_spin.setValue(0.5)
                 self._h_spin.setEnabled(False)
@@ -277,26 +303,26 @@ class PropertyDock(QDockWidget):
                 self._color_btn.setEnabled(False)
                 self._color_btn.setStyleSheet(
                     "background-color: #22c55e; border-radius: 4px;"
-                    if props.get('is_start') else
-                    "background-color: #3b82f6; border-radius: 4px;"
+                    if props.get("is_start")
+                    else "background-color: #3b82f6; border-radius: 4px;"
                 )
                 self._mobility_group.setVisible(False)
-            elif marker_type == 'obstacle':
-                tipo = "Muro" if props.get('is_wall') else "Barriera"
+            elif marker_type == "obstacle":
+                tipo = "Muro" if props.get("is_wall") else "Barriera"
                 self._title.setText(f"{tipo} {props.get('label', '')}")
                 self._type_label.setText(tipo)
                 self._id_label.setText("—")
                 self._label_edit.setText(tipo)
-                self._x_spin.setValue(props['x'])
-                self._y_spin.setValue(props['y'])
+                self._x_spin.setValue(props["x"])
+                self._y_spin.setValue(props["y"])
                 self._w_spin.setEnabled(True)
-                self._w_spin.setValue(props.get('width', 3.0))
+                self._w_spin.setValue(props.get("width", 3.0))
                 self._h_spin.setEnabled(False)
                 self._h_spin.setValue(0.2)
                 self._rot_spin.setEnabled(True)
-                self._rot_spin.setValue(props.get('rotation', 0.0))
+                self._rot_spin.setValue(props.get("rotation", 0.0))
                 self._color_btn.setEnabled(False)
-                bg = "#475569" if props.get('is_wall') else "#fbbf24"
+                bg = "#475569" if props.get("is_wall") else "#fbbf24"
                 self._color_btn.setStyleSheet(f"background-color: {bg}; border-radius: 4px;")
                 self._mobility_group.setVisible(False)
         self._block_signals = False
@@ -311,7 +337,7 @@ class PropertyDock(QDockWidget):
             return
         if self._wrapper is not None:
             self.propertyChanged.emit(self._wrapper.item.id, kwargs)
-        elif hasattr(self, '_marker_ref') and self._marker_ref is not None:
+        elif hasattr(self, "_marker_ref") and self._marker_ref is not None:
             self.markerChanged.emit(kwargs)
 
     def _on_label_changed(self):
@@ -379,9 +405,7 @@ class PropertyDock(QDockWidget):
 
         # Se il percorso corrente non è nella lista (file esterno)
         if current_path and not found:
-            self._custom_svg_combo.addItem(
-                os.path.basename(current_path), current_path
-            )
+            self._custom_svg_combo.addItem(os.path.basename(current_path), current_path)
             idx = self._custom_svg_combo.count() - 1
         elif current_path:
             # Trova l'indice del percorso corrente
@@ -404,10 +428,11 @@ class PropertyDock(QDockWidget):
 
     def _on_browse_custom_svg(self):
         """Apre un file dialog per selezionare un SVG personalizzato."""
-        start_dir = CUSTOM_TARGETS_DIR if os.path.isdir(CUSTOM_TARGETS_DIR) else os.path.expanduser("~")
+        start_dir = (
+            CUSTOM_TARGETS_DIR if os.path.isdir(CUSTOM_TARGETS_DIR) else os.path.expanduser("~")
+        )
         path, _ = QFileDialog.getOpenFileName(
-            self, "Seleziona SVG bersaglio", start_dir,
-            "SVG (*.svg);;Tutti i file (*)"
+            self, "Seleziona SVG bersaglio", start_dir, "SVG (*.svg);;Tutti i file (*)"
         )
         if not path:
             return

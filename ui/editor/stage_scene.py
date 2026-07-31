@@ -7,31 +7,44 @@ Architettura:
   ┣━ EllipseItem  → bersagli cartacei, metallici, no-shoot
   ┗━ FaultLineItem → linea personalizzata
 """
+
 from __future__ import annotations
-from typing import Optional, Callable
+
 import math
 import os
-from PySide6.QtCore import Qt, Signal, QObject, QPointF, QRectF
+from typing import Optional
+
+from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
-    QPen, QBrush, QColor, QPainter, QPainterPath, QPixmap,
-    QUndoStack, QUndoCommand,
+    QBrush,
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QUndoCommand,
+    QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QGraphicsScene, QGraphicsRectItem, QGraphicsEllipseItem,
-    QGraphicsItem, QGraphicsPixmapItem,
+    QGraphicsEllipseItem,
+    QGraphicsItem,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsScene,
 )
+from shapely.geometry import Point as ShapelyPoint
+from shapely.geometry import box as shapely_box
 
-from core.models import Stage, StageItem, ItemType
-from core.collision import make_obb, item_obb, overlaps as shapely_overlaps
-from shapely.geometry import box as shapely_box, Point as ShapelyPoint
-
-from ui.editor.target_images import TargetSvgManager
+from core.collision import item_obb, make_obb
+from core.collision import overlaps as shapely_overlaps
+from core.models import ItemType, Stage, StageItem
 from ui.editor.path_editor import PathPolylineItem
-
+from ui.editor.target_images import TargetSvgManager
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Utility: ricostruzione poligono area di tiro da fault-line
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _build_polygon_from_fault_lines(items: list[StageItem]) -> list[tuple[float, float]] | None:
     """Ricostruisce il poligono dell'area di tiro dalle fault-line perimetrali.
@@ -44,8 +57,7 @@ def _build_polygon_from_fault_lines(items: list[StageItem]) -> list[tuple[float,
         Lista di vertici (x, y) o None se non ci sono abbastanza fault-line.
     """
     fault_lines = [
-        it for it in items
-        if it.item_type == ItemType.FAULT_LINE and it.properties.get("perimeter")
+        it for it in items if it.item_type == ItemType.FAULT_LINE and it.properties.get("perimeter")
     ]
     if len(fault_lines) < 3:
         return None
@@ -108,6 +120,7 @@ def _build_polygon_from_fault_lines(items: list[StageItem]) -> list[tuple[float,
 #  ShootingPositionMarker — marker per posizione di tiro
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class ShootingPositionMarker(QGraphicsItem):
     """Marker circolare per una shooting position.
 
@@ -122,11 +135,18 @@ class ShootingPositionMarker(QGraphicsItem):
     - Callback on_deleted per rimuovere dalla lista
     """
 
-    def __init__(self, x: float, y: float, scale: float,
-                 label: str = "S", is_start: bool = True,
-                 index: int = 1, parent=None,
-                 on_changed: callable = None,
-                 on_deleted: callable = None):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        scale: float,
+        label: str = "S",
+        is_start: bool = True,
+        index: int = 1,
+        parent=None,
+        on_changed: callable = None,
+        on_deleted: callable = None,
+    ):
         super().__init__(parent)
         self._x = x
         self._y = y
@@ -195,6 +215,7 @@ class ShootingPositionMarker(QGraphicsItem):
 #  EngagementAreaItem — area di ingaggio 90° per posizione di tiro
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class EngagementAreaItem(QGraphicsItem):
     """Mostra l'area di ingaggio di 180° da una posizione di tiro.
 
@@ -203,14 +224,21 @@ class EngagementAreaItem(QGraphicsItem):
     che intersecano il cono generano zone d'ombra (aree non visibili).
     """
 
-    def __init__(self, pos_x: float, pos_y: float, scale: float,
-                 angle: float = 90.0, range_m: float = 30.0,
-                 obstacles: list = None, parent=None):
+    def __init__(
+        self,
+        pos_x: float,
+        pos_y: float,
+        scale: float,
+        angle: float = 90.0,
+        range_m: float = 30.0,
+        obstacles: list = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._px = pos_x
         self._py = pos_y
         self._scale = scale
-        self._angle = angle  # direzione di ingaggio in gradi (0=destra, 90=su/y+)  
+        self._angle = angle  # direzione di ingaggio in gradi (0=destra, 90=su/y+)
         self._range = range_m
         self._obstacles = obstacles or []
         self.setZValue(5)  # sopra shooting area, sotto marker
@@ -310,8 +338,7 @@ class EngagementAreaItem(QGraphicsItem):
             cos_r, sin_r = math.cos(rot_rad), math.sin(rot_rad)
             corners = []
             for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]:
-                corners.append((ocx + lx * cos_r - ly * sin_r,
-                                ocy + lx * sin_r + ly * cos_r))
+                corners.append((ocx + lx * cos_r - ly * sin_r, ocy + lx * sin_r + ly * cos_r))
 
             # Proiezioni radiali dei vertici al bordo del cono
             proj = []
@@ -364,6 +391,7 @@ class EngagementAreaItem(QGraphicsItem):
 #  ObstacleMarker — marker per ostacoli posizionati dall'utente
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class ObstacleMarker(QGraphicsItem):
     """Marker per ostacoli (muri/barriere) posizionati dall'utente.
 
@@ -373,11 +401,19 @@ class ObstacleMarker(QGraphicsItem):
     - Callback on_changed per sincronizzare la lista
     """
 
-    def __init__(self, x: float, y: float, scale: float,
-                 width: float = 3.0, rotation: float = 0.0,
-                 is_wall: bool = True, label: str = "",
-                 on_changed: callable = None,
-                 on_deleted: callable = None, parent=None):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        scale: float,
+        width: float = 3.0,
+        rotation: float = 0.0,
+        is_wall: bool = True,
+        label: str = "",
+        on_changed: callable = None,
+        on_deleted: callable = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._x = x
         self._y = y
@@ -475,7 +511,8 @@ class ObstacleMarker(QGraphicsItem):
             origin = self.scenePos()
             mouse_scene = self.mapToScene(event.pos())
             self._start_scene_angle = math.atan2(
-                mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x())
+                mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x()
+            )
             self._start_rotation = self.rotation()
             event.accept()
             return
@@ -485,8 +522,7 @@ class ObstacleMarker(QGraphicsItem):
         if self._is_rotating:
             origin = self.scenePos()
             mouse_scene = self.mapToScene(event.pos())
-            current_angle = math.atan2(
-                mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x())
+            current_angle = math.atan2(mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x())
             delta = math.degrees(current_angle - self._start_scene_angle)
             new_rotation = (self._start_rotation + delta) % 360
             self.setRotation(new_rotation)
@@ -540,6 +576,7 @@ class ObstacleMarker(QGraphicsItem):
 #  ShootingAreaItem — evidenziazione area di tiro
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class ShootingAreaItem(QGraphicsItem):
     """Evidenzia l'area di tiro (delimitata dalle fault-line) in verde."""
 
@@ -564,8 +601,7 @@ class ShootingAreaItem(QGraphicsItem):
             return QRectF()
         xs = [p[0] * self._scale for p in self._polygon]
         ys = [p[1] * self._scale for p in self._polygon]
-        return QRectF(min(xs) - 2, min(ys) - 2,
-                       max(xs) - min(xs) + 4, max(ys) - min(ys) + 4)
+        return QRectF(min(xs) - 2, min(ys) - 2, max(xs) - min(xs) + 4, max(ys) - min(ys) + 4)
 
     def paint(self, painter: QPainter, option, widget=None):
         if len(self._polygon) < 3:
@@ -594,17 +630,34 @@ class ShootingAreaItem(QGraphicsItem):
 # Helper per classificazione tipi (condivisa con generator)
 def _is_paper_like(t: ItemType) -> bool:
     return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
+
+
 def _is_steel_like(t: ItemType) -> bool:
     return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
+
+
 def _is_scoring_target(t: ItemType) -> bool:
-    return _is_paper_like(t) or _is_steel_like(t) or t in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    return (
+        _is_paper_like(t)
+        or _is_steel_like(t)
+        or t in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    )
+
+
 def _is_obstacle(t: ItemType) -> bool:
-    return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER, ItemType.SOFT_COVER)
+    return t in (
+        ItemType.WALL,
+        ItemType.BARRIER,
+        ItemType.DOOR,
+        ItemType.HARD_COVER,
+        ItemType.SOFT_COVER,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Utilities
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _snap_pos(pos: QPointF, scale: float) -> QPointF:
     """Snap a metà della griglia (0.5 m · scale)."""
@@ -618,8 +671,10 @@ def _snap_pos(pos: QPointF, scale: float) -> QPointF:
 #  Wrapper
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class StageItemWrapper(QObject):
     """Wrapper Qt per uno StageItem — emette changed quando l'item viene modificato."""
+
     changed = Signal()
 
     def __init__(self, item: StageItem, parent=None):
@@ -631,8 +686,10 @@ class StageItemWrapper(QObject):
 #  Griglia
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class GridItem(QGraphicsItem):
     """Griglia metrica sullo sfondo con confini, parapalle e indicazioni direzionali."""
+
     def __init__(self, width_m: float, depth_m: float, scale: float = 40.0, parent=None):
         super().__init__(parent)
         self.width_m = width_m
@@ -643,9 +700,12 @@ class GridItem(QGraphicsItem):
 
     def boundingRect(self):
         margin = 60
-        return QRectF(-margin, -margin,
-                       self.width_m * self.scale + margin * 2,
-                       self.depth_m * self.scale + margin * 2)
+        return QRectF(
+            -margin,
+            -margin,
+            self.width_m * self.scale + margin * 2,
+            self.depth_m * self.scale + margin * 2,
+        )
 
     def paint(self, painter, option, widget=None):
         w = self.width_m * self.scale
@@ -687,6 +747,7 @@ class GridItem(QGraphicsItem):
 #  StageItemMixin — logica comune a tutti gli item grafici
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class StageItemMixin:
     """Mixin che fornisce a ogni item grafico:
     - snap alla griglia durante il drag
@@ -704,9 +765,9 @@ class StageItemMixin:
         self.scale = scale
         self._is_rotating = False
         self.setFlags(
-            QGraphicsItem.GraphicsItemFlag.ItemIsMovable |
-            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
-            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+            QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
         self.setAcceptHoverEvents(True)
 
@@ -724,11 +785,16 @@ class StageItemMixin:
     _OBSTACLE_TYPES = {ItemType.WALL, ItemType.BARRIER, ItemType.DOOR}
     # Tipi di bersaglio che non devono essere coperti da ostacoli
     _TARGET_TYPES = {
-        ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-        ItemType.POPPER, ItemType.METAL_PLATE,
-        ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-        ItemType.NO_SHOOT, ItemType.SWINGER,
-        ItemType.DROP_TURNER, ItemType.MOVER,
+        ItemType.PAPER_TARGET,
+        ItemType.STEEL_TARGET,
+        ItemType.POPPER,
+        ItemType.METAL_PLATE,
+        ItemType.MINI_TARGET,
+        ItemType.MICRO_TARGET,
+        ItemType.NO_SHOOT,
+        ItemType.SWINGER,
+        ItemType.DROP_TURNER,
+        ItemType.MOVER,
     }
 
     def _would_collide_with_obstacles(self, new_pos: QPointF) -> bool:
@@ -744,9 +810,7 @@ class StageItemMixin:
 
         new_x = new_pos.x() / self.scale
         new_y = new_pos.y() / self.scale
-        new_obb = make_obb(new_x, new_y,
-                           max(it.width, 0.05), max(it.height, 0.05),
-                           it.rotation)
+        new_obb = make_obb(new_x, new_y, max(it.width, 0.05), max(it.height, 0.05), it.rotation)
 
         MIN_GAP = 0.05  # 5 cm
 
@@ -754,7 +818,7 @@ class StageItemMixin:
         for other_id, other_g in scene._items.items():
             if other_id == it.id:
                 continue
-            other_it = getattr(other_g, 'wrapper', None)
+            other_it = getattr(other_g, "wrapper", None)
             if other_it is None:
                 continue
             other_it = other_it.item
@@ -769,7 +833,7 @@ class StageItemMixin:
         for other_id, other_g in scene._items.items():
             if other_id == it.id:
                 continue
-            other_it = getattr(other_g, 'wrapper', None)
+            other_it = getattr(other_g, "wrapper", None)
             if other_it is None:
                 continue
             other_it = other_it.item
@@ -802,20 +866,18 @@ class StageItemMixin:
         if not scene.stage.shooting_positions:
             return False
 
-        from shapely import union_all, difference
+        from shapely import difference, union_all
 
         new_x = new_pos.x() / self.scale
         new_y = new_pos.y() / self.scale
-        new_obb = make_obb(new_x, new_y,
-                           max(it.width, 0.05), max(it.height, 0.05),
-                           it.rotation)
+        new_obb = make_obb(new_x, new_y, max(it.width, 0.05), max(it.height, 0.05), it.rotation)
 
         # Raccogli TUTTI gli ostacoli (incluso questo nella nuova posizione)
         obstacles = [new_obb]
         for other_id, other_g in scene._items.items():
             if other_id == it.id:
                 continue
-            other_it = getattr(other_g, 'wrapper', None)
+            other_it = getattr(other_g, "wrapper", None)
             if other_it is None:
                 continue
             other_it = other_it.item
@@ -841,14 +903,11 @@ class StageItemMixin:
 
         # Se ci sono più regioni separate, verifica che ogni shooting position
         # sia nella stessa regione (nessuna isolata)
-        if hasattr(accessible, 'geoms'):
+        if hasattr(accessible, "geoms"):
             regions = list(accessible.geoms)
             if len(regions) > 1:
                 # Raccogli shooting positions
-                sp_points = [
-                    ShapelyPoint(sp.x, sp.y)
-                    for sp in scene.stage.shooting_positions
-                ]
+                sp_points = [ShapelyPoint(sp.x, sp.y) for sp in scene.stage.shooting_positions]
                 if sp_points:
                     # Trova in quale regione sta la prima shooting position
                     first_sp = sp_points[0]
@@ -866,15 +925,6 @@ class StageItemMixin:
                                 return True  # Shooting position isolata!
 
         return False
-
-    # ---- Sincronia posizione / modello ----
-
-    def update_from_model(self):
-        """Aggiorna posizione e rotazione dal modello. Le sottoclassi
-        sovrascrivono per impostare anche la forma (rect/ellisse)."""
-        it = self.wrapper.item
-        self.setPos(it.x * self.scale, it.y * self.scale)
-        self.setRotation(it.rotation)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
@@ -915,10 +965,7 @@ class StageItemMixin:
         painter.setBrush(Qt.BrushStyle.NoBrush)
         br = self.boundingRect()
         margin = 6.0
-        painter.drawRoundedRect(
-            br.adjusted(-margin, -margin, margin, margin),
-            8, 8
-        )
+        painter.drawRoundedRect(br.adjusted(-margin, -margin, margin, margin), 8, 8)
         painter.restore()
 
     def _draw_rotation_handle(self, painter: QPainter):
@@ -965,9 +1012,7 @@ class StageItemMixin:
         if self._is_rotating:
             origin = self.scenePos()
             mouse_scene = self.mapToScene(event.pos())
-            current_angle = math.atan2(
-                mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x()
-            )
+            current_angle = math.atan2(mouse_scene.y() - origin.y(), mouse_scene.x() - origin.x())
             delta = math.degrees(current_angle - self._start_scene_angle)
             new_rotation = self._start_rotation + delta
             self.setRotation(new_rotation)
@@ -1017,8 +1062,10 @@ class StageItemMixin:
             painter.setBrush(brush)
             s = 5.0
             for corner in [
-                br.topLeft(), br.topRight(),
-                br.bottomLeft(), br.bottomRight(),
+                br.topLeft(),
+                br.topRight(),
+                br.bottomLeft(),
+                br.bottomRight(),
             ]:
                 painter.drawRect(QRectF(corner.x() - s / 2, corner.y() - s / 2, s, s))
 
@@ -1033,14 +1080,14 @@ class StageItemMixin:
         s = self._resize_handle_size
         half = s / 2
         return [
-            QRectF(br.left() - half, br.top() - half, s, s),       # TL
-            QRectF(br.center().x() - half, br.top() - half, s, s), # TC
-            QRectF(br.right() - half, br.top() - half, s, s),      # TR
-            QRectF(br.left() - half, br.center().y() - half, s, s),# LC
-            QRectF(br.right() - half, br.center().y() - half, s, s),# RC
-            QRectF(br.left() - half, br.bottom() - half, s, s),    # BL
-            QRectF(br.center().x() - half, br.bottom() - half, s, s),# BC
-            QRectF(br.right() - half, br.bottom() - half, s, s),   # BR
+            QRectF(br.left() - half, br.top() - half, s, s),  # TL
+            QRectF(br.center().x() - half, br.top() - half, s, s),  # TC
+            QRectF(br.right() - half, br.top() - half, s, s),  # TR
+            QRectF(br.left() - half, br.center().y() - half, s, s),  # LC
+            QRectF(br.right() - half, br.center().y() - half, s, s),  # RC
+            QRectF(br.left() - half, br.bottom() - half, s, s),  # BL
+            QRectF(br.center().x() - half, br.bottom() - half, s, s),  # BC
+            QRectF(br.right() - half, br.bottom() - half, s, s),  # BR
         ]
 
     def _draw_resize_handles(self, painter: QPainter):
@@ -1073,6 +1120,7 @@ class StageItemMixin:
 
 # ── Helper: bounding rect esteso per includere handle rotazione ──
 
+
 def _with_rotation_handle(br: QRectF) -> QRectF:
     """Estende un QRectF verso l'alto per includere l'handle di rotazione."""
     top = br.top() - 24  # spazio per handle (12px) + margine
@@ -1082,10 +1130,17 @@ def _with_rotation_handle(br: QRectF) -> QRectF:
 class RectGraphicsItem(StageItemMixin, QGraphicsRectItem):
     """Classe base per item con forma rettangolare: muro, barriera, porta, bersagli mobili."""
 
-    def __init__(self, wrapper: StageItemWrapper, scale: float,
-                 color: str, pen_color: str = "#0f172a", pen_width: int = 2,
-                 brush_alpha: int = 255, pen_style: Qt.PenStyle = Qt.PenStyle.SolidLine,
-                 parent=None):
+    def __init__(
+        self,
+        wrapper: StageItemWrapper,
+        scale: float,
+        color: str,
+        pen_color: str = "#0f172a",
+        pen_width: int = 2,
+        brush_alpha: int = 255,
+        pen_style: Qt.PenStyle = Qt.PenStyle.SolidLine,
+        parent=None,
+    ):
         QGraphicsRectItem.__init__(self, parent)
         self.stage_item_init(wrapper, scale)
         self._rect_brush = QBrush(QColor(color))
@@ -1128,9 +1183,16 @@ class EllipseGraphicsItem(StageItemMixin, QGraphicsEllipseItem):
     def boundingRect(self) -> QRectF:
         return _with_rotation_handle(super().boundingRect())
 
-    def __init__(self, wrapper: StageItemWrapper, scale: float,
-                 color: str, pen_color: str = "#0f172a", pen_width: int = 2,
-                 brush_alpha: int = 255, parent=None):
+    def __init__(
+        self,
+        wrapper: StageItemWrapper,
+        scale: float,
+        color: str,
+        pen_color: str = "#0f172a",
+        pen_width: int = 2,
+        brush_alpha: int = 255,
+        parent=None,
+    ):
         QGraphicsEllipseItem.__init__(self, parent)
         self.stage_item_init(wrapper, scale)
         c = QColor(color)
@@ -1164,10 +1226,10 @@ class EllipseGraphicsItem(StageItemMixin, QGraphicsEllipseItem):
 
 # ─── Implementazioni concrete ────────────────────────────────────────────────
 
+
 class WallGraphicsItem(RectGraphicsItem):
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
+        super().__init__(wrapper, scale, wrapper.item.color, pen_color="#0f172a", pen_width=2)
 
 
 class FaultLineGraphicsItem(StageItemMixin, QGraphicsItem):
@@ -1216,17 +1278,22 @@ class BarrierGraphicsItem(RectGraphicsItem):
     """Barriera: rettangolo giallo tratteggiato semitrasparente."""
 
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#f59e0b", pen_width=2, brush_alpha=80,
-                         pen_style=Qt.PenStyle.DashLine)
+        super().__init__(
+            wrapper,
+            scale,
+            wrapper.item.color,
+            pen_color="#f59e0b",
+            pen_width=2,
+            brush_alpha=80,
+            pen_style=Qt.PenStyle.DashLine,
+        )
 
 
 class DoorGraphicsItem(RectGraphicsItem):
     """Porta: rettangolo con maniglia."""
 
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2)
+        super().__init__(wrapper, scale, wrapper.item.color, pen_color="#0f172a", pen_width=2)
 
     def _paint_decoration(self, painter: QPainter):
         r = self.rect()
@@ -1245,9 +1312,11 @@ class DoorGraphicsItem(RectGraphicsItem):
 
 class HardCoverGraphicsItem(RectGraphicsItem):
     """Hard Cover: copertura impenetrabile (Reg. 4.1.4.1)."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#0f172a", pen_width=2, brush_alpha=200)
+        super().__init__(
+            wrapper, scale, wrapper.item.color, pen_color="#0f172a", pen_width=2, brush_alpha=200
+        )
 
     def _paint_decoration(self, painter: QPainter):
         r = self.rect()
@@ -1259,15 +1328,23 @@ class HardCoverGraphicsItem(RectGraphicsItem):
 
 class SoftCoverGraphicsItem(RectGraphicsItem):
     """Soft Cover: copertura visiva semitrasparente (Reg. 4.1.4.2)."""
+
     def __init__(self, wrapper: StageItemWrapper, scale: float, parent=None):
-        super().__init__(wrapper, scale, wrapper.item.color,
-                         pen_color="#475569", pen_width=1, brush_alpha=60,
-                         pen_style=Qt.PenStyle.DashLine)
+        super().__init__(
+            wrapper,
+            scale,
+            wrapper.item.color,
+            pen_color="#475569",
+            pen_width=1,
+            brush_alpha=60,
+            pen_style=Qt.PenStyle.DashLine,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SvgTargetGraphicsItem — bersaglio vettoriale unificato (SVG)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
     """Bersaglio renderizzato da SVG vettoriale con tinta colore.
@@ -1289,8 +1366,9 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         ItemType.MOVER,
     }
 
-    def __init__(self, wrapper: StageItemWrapper, scale: float,
-                 parent: QGraphicsItem | None = None):
+    def __init__(
+        self, wrapper: StageItemWrapper, scale: float, parent: QGraphicsItem | None = None
+    ):
         QGraphicsItem.__init__(self, parent)
         self.stage_item_init(wrapper, scale)
         self._cached_pixmap: QPixmap | None = None
@@ -1416,12 +1494,16 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
             pen = QPen(QColor("#dc2626"), 2)
             painter.setPen(pen)
             painter.drawLine(
-                tr.left() + margin, tr.top() + margin,
-                tr.right() - margin, tr.bottom() - margin,
+                tr.left() + margin,
+                tr.top() + margin,
+                tr.right() - margin,
+                tr.bottom() - margin,
             )
             painter.drawLine(
-                tr.right() - margin, tr.top() + margin,
-                tr.left() + margin, tr.bottom() - margin,
+                tr.right() - margin,
+                tr.top() + margin,
+                tr.left() + margin,
+                tr.bottom() - margin,
             )
 
         elif it.item_type == ItemType.SWINGER:
@@ -1434,8 +1516,9 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
             r = min(tr.width(), tr.height()) * 0.6
             start_angle = -amp - self.rotation()
             span = amp * 2
-            painter.drawArc(QRectF(cx - r, cy - r, r * 2, r * 2),
-                            int(start_angle * 16), int(span * 16))
+            painter.drawArc(
+                QRectF(cx - r, cy - r, r * 2, r * 2), int(start_angle * 16), int(span * 16)
+            )
 
         elif it.item_type == ItemType.DROP_TURNER:
             # Freccia caduta (centrata sul bersaglio)
@@ -1478,6 +1561,7 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
 #  CompositeTargetGraphicsItem — bersagli compositi (doppi, bobber, ecc.)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
     """Renderizza bersagli compositi: doppietti, bobber, ecc.
 
@@ -1485,8 +1569,9 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
     no-shoot) disegnati come rettangoli colorati con etichette.
     """
 
-    def __init__(self, wrapper: StageItemWrapper, scale: float,
-                 parent: QGraphicsItem | None = None):
+    def __init__(
+        self, wrapper: StageItemWrapper, scale: float, parent: QGraphicsItem | None = None
+    ):
         QGraphicsItem.__init__(self, parent)
         self.stage_item_init(wrapper, scale)
         self.update_from_model()
@@ -1506,6 +1591,7 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
 
         # Determina la composizione
         from core.scoring import get_composite_info
+
         info = get_composite_info(it.item_type)
         if not info:
             painter.restore()
@@ -1527,8 +1613,9 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
                 painter.drawRoundedRect(QRectF(cx - pw / 2, cy - ph / 2, pw, ph), 4, 4)
                 # Label
                 painter.setPen(QPen(QColor("white"), 1))
-                painter.drawText(QRectF(cx - pw / 2, cy - ph / 2, pw, ph),
-                                 Qt.AlignmentFlag.AlignCenter, label)
+                painter.drawText(
+                    QRectF(cx - pw / 2, cy - ph / 2, pw, ph), Qt.AlignmentFlag.AlignCenter, label
+                )
 
             elif sub_type == ItemType.NO_SHOOT:
                 # Rettangolo giallo con X
@@ -1544,8 +1631,9 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
                 painter.drawLine(cx + pw / 4, cy - ph / 4, cx - pw / 4, cy + ph / 4)
                 # Label
                 painter.setPen(QPen(QColor("#5c2e0d"), 1))
-                painter.drawText(QRectF(cx - pw / 2, cy - ph / 2, pw, ph),
-                                 Qt.AlignmentFlag.AlignCenter, label)
+                painter.drawText(
+                    QRectF(cx - pw / 2, cy - ph / 2, pw, ph), Qt.AlignmentFlag.AlignCenter, label
+                )
 
             elif sub_type == ItemType.METAL_PLATE:
                 # Cerchio arancione (bobber) o grigio
@@ -1570,8 +1658,9 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
                 f.setPointSize(7)
                 f.setBold(True)
                 painter.setFont(f)
-                painter.drawText(QRectF(cx - r, cy - r, r * 2, r * 2),
-                                 Qt.AlignmentFlag.AlignCenter, label)
+                painter.drawText(
+                    QRectF(cx - r, cy - r, r * 2, r * 2), Qt.AlignmentFlag.AlignCenter, label
+                )
 
         # Etichetta riepilogativa sotto il composito
         desc = info.get("description", "")
@@ -1582,8 +1671,9 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
             f.setBold(False)
             painter.setFont(f)
             pw_tot = it.width * s
-            painter.drawText(QRectF(-pw_tot / 2, s * 0.4, pw_tot, 14),
-                             Qt.AlignmentFlag.AlignCenter, desc)
+            painter.drawText(
+                QRectF(-pw_tot / 2, s * 0.4, pw_tot, 14), Qt.AlignmentFlag.AlignCenter, desc
+            )
 
         painter.restore()
 
@@ -1601,9 +1691,9 @@ class CompositeTargetGraphicsItem(StageItemMixin, QGraphicsItem):
 #  Undo Commands
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class AddItemCommand(QUndoCommand):
-    def __init__(self, scene: "StageScene", item: StageItem,
-                 description: str = "Aggiungi oggetto"):
+    def __init__(self, scene: "StageScene", item: StageItem, description: str = "Aggiungi oggetto"):
         super().__init__(description)
         self.scene = scene
         self.item = item
@@ -1619,8 +1709,7 @@ class AddItemCommand(QUndoCommand):
 
 
 class RemoveItemCommand(QUndoCommand):
-    def __init__(self, scene: "StageScene", item_id: int,
-                 description: str = "Rimuovi oggetto"):
+    def __init__(self, scene: "StageScene", item_id: int, description: str = "Rimuovi oggetto"):
         super().__init__(description)
         self.scene = scene
         self.item_id = item_id
@@ -1643,8 +1732,10 @@ class RemoveItemCommand(QUndoCommand):
 #  StageScene
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class StageScene(QGraphicsScene):
     """Scena editor 2D con griglia, undo/redo, e factory di item grafici."""
+
     itemAdded = Signal(StageItemWrapper)
     itemRemoved = Signal(int)
     itemUpdated = Signal(int)
@@ -1674,7 +1765,7 @@ class StageScene(QGraphicsScene):
 
     def _setup_grid(self):
         # Rimuovi grid e shooting area precedenti (se ancora validi)
-        if hasattr(self, 'grid') and self.grid is not None:
+        if hasattr(self, "grid") and self.grid is not None:
             try:
                 self.removeItem(self.grid)
             except RuntimeError:
@@ -1700,7 +1791,8 @@ class StageScene(QGraphicsScene):
         self.addItem(self._shooting_area)
         self.addItem(self._path_item)
         self.setSceneRect(
-            0, 0,
+            0,
+            0,
             self.stage.width * self.scale,
             self.stage.depth * self.scale,
         )
@@ -1727,6 +1819,7 @@ class StageScene(QGraphicsScene):
     def reload_all_targets(self):
         """Ricarica tutti i bersagli dopo un cambio di configurazione aspetto."""
         from ui.editor.target_images import TargetSvgManager
+
         manager = TargetSvgManager.instance()
         # Invalida cache per tutti i SVG personalizzati in uso
         for item_id, gitem in self._items.items():
@@ -1749,31 +1842,31 @@ class StageScene(QGraphicsScene):
 
     _GRAPHICS_ITEM_CLASSES: dict[ItemType, tuple[type, str | None]] = {
         # Ostacoli (forme geometriche)
-        ItemType.WALL:          (WallGraphicsItem, None),
-        ItemType.BARRIER:       (BarrierGraphicsItem, None),
-        ItemType.DOOR:          (DoorGraphicsItem, None),
-        ItemType.HARD_COVER:    (HardCoverGraphicsItem, None),
-        ItemType.SOFT_COVER:    (SoftCoverGraphicsItem, None),
-        ItemType.FAULT_LINE:    (FaultLineGraphicsItem, None),
+        ItemType.WALL: (WallGraphicsItem, None),
+        ItemType.BARRIER: (BarrierGraphicsItem, None),
+        ItemType.DOOR: (DoorGraphicsItem, None),
+        ItemType.HARD_COVER: (HardCoverGraphicsItem, None),
+        ItemType.SOFT_COVER: (SoftCoverGraphicsItem, None),
+        ItemType.FAULT_LINE: (FaultLineGraphicsItem, None),
         # Bersagli standard (SVG vettoriali unificati)
-        ItemType.PAPER_TARGET:  (SvgTargetGraphicsItem, None),
-        ItemType.STEEL_TARGET:  (SvgTargetGraphicsItem, None),
-        ItemType.POPPER:        (SvgTargetGraphicsItem, None),
-        ItemType.METAL_PLATE:   (SvgTargetGraphicsItem, None),
-        ItemType.MINI_TARGET:   (SvgTargetGraphicsItem, None),
-        ItemType.MICRO_TARGET:  (SvgTargetGraphicsItem, None),
-        ItemType.NO_SHOOT:      (SvgTargetGraphicsItem, None),
-        ItemType.SWINGER:       (SvgTargetGraphicsItem, None),
-        ItemType.DROP_TURNER:   (SvgTargetGraphicsItem, None),
-        ItemType.MOVER:         (SvgTargetGraphicsItem, None),
+        ItemType.PAPER_TARGET: (SvgTargetGraphicsItem, None),
+        ItemType.STEEL_TARGET: (SvgTargetGraphicsItem, None),
+        ItemType.POPPER: (SvgTargetGraphicsItem, None),
+        ItemType.METAL_PLATE: (SvgTargetGraphicsItem, None),
+        ItemType.MINI_TARGET: (SvgTargetGraphicsItem, None),
+        ItemType.MICRO_TARGET: (SvgTargetGraphicsItem, None),
+        ItemType.NO_SHOOT: (SvgTargetGraphicsItem, None),
+        ItemType.SWINGER: (SvgTargetGraphicsItem, None),
+        ItemType.DROP_TURNER: (SvgTargetGraphicsItem, None),
+        ItemType.MOVER: (SvgTargetGraphicsItem, None),
         # Bersagli compositi (disegnati proceduralmente)
-        ItemType.DOUBLET_SIDE:             (CompositeTargetGraphicsItem, None),
-        ItemType.DOUBLET_OVERLAP:          (CompositeTargetGraphicsItem, None),
-        ItemType.DOUBLET_SIDE_HOSTAGE:     (CompositeTargetGraphicsItem, None),
-        ItemType.DOUBLET_OVERLAP_HOSTAGE:  (CompositeTargetGraphicsItem, None),
-        ItemType.BOBBER_PLATE:             (CompositeTargetGraphicsItem, None),
-        ItemType.DOUBLE_BOBBER:            (CompositeTargetGraphicsItem, None),
-        ItemType.TARGET_PLUS_NOSHOOT:        (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_SIDE: (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_OVERLAP: (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_SIDE_HOSTAGE: (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLET_OVERLAP_HOSTAGE: (CompositeTargetGraphicsItem, None),
+        ItemType.BOBBER_PLATE: (CompositeTargetGraphicsItem, None),
+        ItemType.DOUBLE_BOBBER: (CompositeTargetGraphicsItem, None),
+        ItemType.TARGET_PLUS_NOSHOOT: (CompositeTargetGraphicsItem, None),
     }
 
     def _make_graphics_item(self, item: StageItem) -> QGraphicsItem:
@@ -1809,30 +1902,36 @@ class StageScene(QGraphicsScene):
         sel = self.selectedItems()
         if len(sel) == 1:
             g = sel[0]
-            if hasattr(g, 'wrapper'):
+            if hasattr(g, "wrapper"):
                 self.selectionChangedWrapper.emit(g.wrapper)
                 self._hide_engagement_area()
             elif isinstance(g, ShootingPositionMarker):
                 self.selectionChangedWrapper.emit(None)
-                self.markerSelected.emit({
-                    'type': 'shooting_position',
-                    'x': g.pos_m[0],
-                    'y': g.pos_m[1],
-                    'is_start': g._is_start,
-                    'label': g._label,
-                }, g)
+                self.markerSelected.emit(
+                    {
+                        "type": "shooting_position",
+                        "x": g.pos_m[0],
+                        "y": g.pos_m[1],
+                        "is_start": g._is_start,
+                        "label": g._label,
+                    },
+                    g,
+                )
                 self._show_engagement_area(g)
             elif isinstance(g, ObstacleMarker):
                 self.selectionChangedWrapper.emit(None)
-                self.markerSelected.emit({
-                    'type': 'obstacle',
-                    'x': g.pos_m[0],
-                    'y': g.pos_m[1],
-                    'width': g.width_m,
-                    'rotation': g.rotation_deg,
-                    'is_wall': g._is_wall,
-                    'label': g._label,
-                }, g)
+                self.markerSelected.emit(
+                    {
+                        "type": "obstacle",
+                        "x": g.pos_m[0],
+                        "y": g.pos_m[1],
+                        "width": g.width_m,
+                        "rotation": g.rotation_deg,
+                        "is_wall": g._is_wall,
+                        "label": g._label,
+                    },
+                    g,
+                )
                 self._hide_engagement_area()
             else:
                 self.selectionChangedWrapper.emit(None)
@@ -1845,7 +1944,7 @@ class StageScene(QGraphicsScene):
         # Forza repaint per aggiornare handle e bounding box
         self.invalidate()
         for g in self._items.values():
-            if hasattr(g, 'update'):
+            if hasattr(g, "update"):
                 g.update()
 
     # ── Public API con undo ──────────────────────────────────────────────────
@@ -1857,7 +1956,7 @@ class StageScene(QGraphicsScene):
         if len(sel) < 2:
             return
         # Calcola bounding box collettiva
-        has_wrapper = all(hasattr(g, 'wrapper') for g in sel)
+        has_wrapper = all(hasattr(g, "wrapper") for g in sel)
         if not has_wrapper:
             return
         br = None
@@ -1873,10 +1972,7 @@ class StageScene(QGraphicsScene):
         painter.setPen(pen)
         painter.setBrush(QBrush(QColor("#6366f1"), Qt.BrushStyle.Dense4Pattern))
         margin = 8.0
-        painter.drawRoundedRect(
-            br.adjusted(-margin, -margin, margin, margin),
-            6, 6
-        )
+        painter.drawRoundedRect(br.adjusted(-margin, -margin, margin, margin), 6, 6)
         # Etichetta col conteggio
         font = painter.font()
         font.setPointSize(9)
@@ -1904,7 +2000,8 @@ class StageScene(QGraphicsScene):
             return None
         for v_text in self._last_violations:
             import re
-            if re.search(rf'#{item_id}\b', v_text):
+
+            if re.search(rf"#{item_id}\b", v_text):
                 return f"‼ {v_text}"
         return None
 
@@ -1917,7 +2014,7 @@ class StageScene(QGraphicsScene):
         self._violation_ids = set(item_ids)
         self.violationsChanged.emit()
         for g in self._items.values():
-            if hasattr(g, 'update'):
+            if hasattr(g, "update"):
                 g.update()
 
     # ── Area di ingaggio (per shooting position) ───────────────────────
@@ -1942,8 +2039,11 @@ class StageScene(QGraphicsScene):
                 break
 
         self._engagement_area = EngagementAreaItem(
-            marker.pos_m[0], marker.pos_m[1], self.scale,
-            angle=sp_angle, range_m=max(self.stage.width, self.stage.depth) * 1.2,
+            marker.pos_m[0],
+            marker.pos_m[1],
+            self.scale,
+            angle=sp_angle,
+            range_m=max(self.stage.width, self.stage.depth) * 1.2,
             obstacles=obstacles,
         )
         self.addItem(self._engagement_area)
@@ -1982,7 +2082,7 @@ class StageScene(QGraphicsScene):
     def _remove_marker(self, g):
         """Rimuove un marker e notifica il callback."""
         self.removeItem(g)
-        if hasattr(g, '_on_deleted') and g._on_deleted:
+        if hasattr(g, "_on_deleted") and g._on_deleted:
             g._on_deleted(g)
 
     def remove_marker_by_item(self, g):
@@ -1998,9 +2098,16 @@ class StageScene(QGraphicsScene):
         item = StageItem(0, ItemType.WALL, x, y, w, h, 0, "#475569", "Muro")
         self.push_add_item(item)
 
-    def add_target(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
-                   item_type: ItemType = ItemType.PAPER_TARGET):
+    def add_target(
+        self,
+        x: float,
+        y: float,
+        w: float = 0.45,
+        h: float = 0.45,
+        item_type: ItemType = ItemType.PAPER_TARGET,
+    ):
         from core.constants import TARGET_COLORS
+
         if item_type == ItemType.PAPER_TARGET:
             color = TARGET_COLORS.get("paper", "#8B4513")
             label = "Paper"
@@ -2012,48 +2119,115 @@ class StageScene(QGraphicsScene):
 
     def add_fault_line(self, x: float, y: float, length: float = 3.0):
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.FAULT_LINE, x, y, length, 0.0, 0,
-                         TARGET_COLORS.get("fault_line", "#dc2626"), "Fault Line")
+
+        item = StageItem(
+            0,
+            ItemType.FAULT_LINE,
+            x,
+            y,
+            length,
+            0.0,
+            0,
+            TARGET_COLORS.get("fault_line", "#dc2626"),
+            "Fault Line",
+        )
         self.push_add_item(item)
 
     def add_no_shoot(self, x: float, y: float, w: float = 0.45, h: float = 0.45):
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.NO_SHOOT, x, y, w, h, 0,
-                         TARGET_COLORS.get("no_shoot", "#eab308"), "No-Shoot")
+
+        item = StageItem(
+            0,
+            ItemType.NO_SHOOT,
+            x,
+            y,
+            w,
+            h,
+            0,
+            TARGET_COLORS.get("no_shoot", "#eab308"),
+            "No-Shoot",
+        )
         self.push_add_item(item)
 
     def add_barrier(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.BARRIER, x, y, w, h, 0,
-                         TARGET_COLORS.get("barrier", "#fbbf24"), "Barriera")
+
+        item = StageItem(
+            0, ItemType.BARRIER, x, y, w, h, 0, TARGET_COLORS.get("barrier", "#fbbf24"), "Barriera"
+        )
         self.push_add_item(item)
 
     def add_door(self, x: float, y: float, w: float = 1.0, h: float = 0.1):
         item = StageItem(0, ItemType.DOOR, x, y, w, h, 0, "#92400e", "Porta")
         self.push_add_item(item)
 
-    def add_swinger(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
-                    amplitude: float = 45.0, speed: float = 1.0):
+    def add_swinger(
+        self,
+        x: float,
+        y: float,
+        w: float = 0.45,
+        h: float = 0.45,
+        amplitude: float = 45.0,
+        speed: float = 1.0,
+    ):
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.SWINGER, x, y, w, h, 0,
-                         TARGET_COLORS.get("swinger", "#A0522D"), "Swinger",
-                         properties={"amplitude": amplitude, "speed": speed, "axis": "y"})
+
+        item = StageItem(
+            0,
+            ItemType.SWINGER,
+            x,
+            y,
+            w,
+            h,
+            0,
+            TARGET_COLORS.get("swinger", "#A0522D"),
+            "Swinger",
+            properties={"amplitude": amplitude, "speed": speed, "axis": "y"},
+        )
         self.push_add_item(item)
 
-    def add_drop_turner(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
-                        fall_time: float = 0.5):
+    def add_drop_turner(
+        self, x: float, y: float, w: float = 0.45, h: float = 0.45, fall_time: float = 0.5
+    ):
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.DROP_TURNER, x, y, w, h, 0,
-                         TARGET_COLORS.get("drop_turner", "#8B6914"), "Drop Turner",
-                         properties={"trigger": "hit", "fall_time": fall_time})
+
+        item = StageItem(
+            0,
+            ItemType.DROP_TURNER,
+            x,
+            y,
+            w,
+            h,
+            0,
+            TARGET_COLORS.get("drop_turner", "#8B6914"),
+            "Drop Turner",
+            properties={"trigger": "hit", "fall_time": fall_time},
+        )
         self.push_add_item(item)
 
-    def add_mover(self, x: float, y: float, w: float = 0.45, h: float = 0.45,
-                  distance: float = 3.0, speed: float = 1.5):
+    def add_mover(
+        self,
+        x: float,
+        y: float,
+        w: float = 0.45,
+        h: float = 0.45,
+        distance: float = 3.0,
+        speed: float = 1.5,
+    ):
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.MOVER, x, y, w, h, 0,
-                         TARGET_COLORS.get("mover", "#CD853F"), "Mover",
-                         properties={"distance": distance, "speed": speed, "direction": 0})
+
+        item = StageItem(
+            0,
+            ItemType.MOVER,
+            x,
+            y,
+            w,
+            h,
+            0,
+            TARGET_COLORS.get("mover", "#CD853F"),
+            "Mover",
+            properties={"distance": distance, "speed": speed, "direction": 0},
+        )
         self.push_add_item(item)
 
     # ── Nuovi tipi IPSC ──────────────────────────────────────────────────────
@@ -2061,59 +2235,129 @@ class StageScene(QGraphicsScene):
     def add_popper(self, x: float, y: float, diameter: float = 0.30):
         """Aggiunge un Popper (bersaglio metallico calibrato, App. C1-C2)."""
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.POPPER, x, y, diameter, diameter, 0,
-                         TARGET_COLORS.get("popper", "#d1d5db"), "Popper",
-                         properties={"calibrated": True, "calibration_pf": 125})
+
+        item = StageItem(
+            0,
+            ItemType.POPPER,
+            x,
+            y,
+            diameter,
+            diameter,
+            0,
+            TARGET_COLORS.get("popper", "#d1d5db"),
+            "Popper",
+            properties={"calibrated": True, "calibration_pf": 125},
+        )
         self.push_add_item(item)
 
     def add_metal_plate(self, x: float, y: float, diameter: float = 0.20):
         """Aggiunge un piatto metallico (non calibrato, App. C3)."""
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.METAL_PLATE, x, y, diameter, diameter, 0,
-                         TARGET_COLORS.get("metal_plate", "#e5e7eb"), "Piatto",
-                         properties={"calibrated": False, "diameter": diameter})
+
+        item = StageItem(
+            0,
+            ItemType.METAL_PLATE,
+            x,
+            y,
+            diameter,
+            diameter,
+            0,
+            TARGET_COLORS.get("metal_plate", "#e5e7eb"),
+            "Piatto",
+            properties={"calibrated": False, "diameter": diameter},
+        )
         self.push_add_item(item)
 
     def add_mini_target(self, x: float, y: float):
         """Aggiunge un Mini Target IPSC (bersaglio cartaceo ridotto, App. B3)."""
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.MINI_TARGET, x, y, 0.30, 0.30, 0,
-                         TARGET_COLORS.get("mini", "#8B4513"), "Mini Target",
-                         properties={"scale": 0.75})
+
+        item = StageItem(
+            0,
+            ItemType.MINI_TARGET,
+            x,
+            y,
+            0.30,
+            0.30,
+            0,
+            TARGET_COLORS.get("mini", "#8B4513"),
+            "Mini Target",
+            properties={"scale": 0.75},
+        )
         self.push_add_item(item)
 
     def add_micro_target(self, x: float, y: float):
         """Aggiunge un Micro Target IPSC."""
         from core.constants import TARGET_COLORS
-        item = StageItem(0, ItemType.MICRO_TARGET, x, y, 0.20, 0.20, 0,
-                         TARGET_COLORS.get("micro", "#8B4513"), "Micro Target",
-                         properties={"scale": 0.50})
+
+        item = StageItem(
+            0,
+            ItemType.MICRO_TARGET,
+            x,
+            y,
+            0.20,
+            0.20,
+            0,
+            TARGET_COLORS.get("micro", "#8B4513"),
+            "Micro Target",
+            properties={"scale": 0.50},
+        )
         self.push_add_item(item)
 
     def add_composite(self, x: float, y: float, item_type: ItemType):
         """Aggiunge un bersaglio composito (doppietti, bobber, target+noshoot)."""
-        from core.constants import TARGET_DIMENSIONS, TARGET_COLORS
+        from core.constants import TARGET_COLORS, TARGET_DIMENSIONS
         from core.scoring import get_composite_info
+
         key = item_type.name.lower()
         w, h = TARGET_DIMENSIONS.get(key, (0.70, 0.75))
         color = TARGET_COLORS.get(key, "#808080")
         info = get_composite_info(item_type)
         props = dict(info.get("props", {})) if info else {}
-        item = StageItem(0, item_type, x, y, w, h, 0, color, info.get("description", "") if info else "", properties=props)
+        item = StageItem(
+            0,
+            item_type,
+            x,
+            y,
+            w,
+            h,
+            0,
+            color,
+            info.get("description", "") if info else "",
+            properties=props,
+        )
         self.push_add_item(item)
 
     def add_hard_cover(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
         """Aggiunge Hard Cover (copertura impenetrabile, Reg. 4.1.4.1)."""
-        item = StageItem(0, ItemType.HARD_COVER, x, y, w, h, 0,
-                         "#1e293b", "Hard Cover",
-                         properties={"impenetrable": True, "height": 2.0})
+        item = StageItem(
+            0,
+            ItemType.HARD_COVER,
+            x,
+            y,
+            w,
+            h,
+            0,
+            "#1e293b",
+            "Hard Cover",
+            properties={"impenetrable": True, "height": 2.0},
+        )
         self.push_add_item(item)
 
     def add_soft_cover(self, x: float, y: float, w: float = 2.0, h: float = 0.2):
         """Aggiunge Soft Cover (copertura visiva, Reg. 4.1.4.2)."""
-        item = StageItem(0, ItemType.SOFT_COVER, x, y, w, h, 0,
-                         "#94a3b8", "Soft Cover",
-                         properties={"impenetrable": False, "height": 2.0})
+        item = StageItem(
+            0,
+            ItemType.SOFT_COVER,
+            x,
+            y,
+            w,
+            h,
+            0,
+            "#94a3b8",
+            "Soft Cover",
+            properties={"impenetrable": False, "height": 2.0},
+        )
         self.push_add_item(item)
 
     def update_item_from_properties(self, item_id: int, **kwargs):
@@ -2122,7 +2366,7 @@ class StageScene(QGraphicsScene):
             return
         changed = False
         for k, v in kwargs.items():
-            if k == 'properties':
+            if k == "properties":
                 # Merge del dizionario proprietà (non sostituzione)
                 if isinstance(v, dict):
                     it.properties.update(v)
@@ -2132,7 +2376,7 @@ class StageScene(QGraphicsScene):
                 changed = True
         if changed:
             g = self._items.get(item_id)
-            if g and hasattr(g, 'update_from_model'):
+            if g and hasattr(g, "update_from_model"):
                 g.update_from_model()
             self.itemUpdated.emit(item_id)
 
@@ -2140,20 +2384,27 @@ class StageScene(QGraphicsScene):
     #  Shooting position markers (Fase 2)
     # ══════════════════════════════════════════════════════════════════════
 
-    def add_shooting_position_marker(self, x: float, y: float,
-                                      is_start: bool = True,
-                                      index: int = 1,
-                                      on_changed: callable = None,
-                                      on_deleted: callable = None,
-                                      ) -> ShootingPositionMarker:
+    def add_shooting_position_marker(
+        self,
+        x: float,
+        y: float,
+        is_start: bool = True,
+        index: int = 1,
+        on_changed: callable = None,
+        on_deleted: callable = None,
+    ) -> ShootingPositionMarker:
         """Aggiunge un marker visivo per una shooting position.
         Mostra il numero progressivo (1, 2, 3...).
         Il colore verde indica la posizione di partenza (Start).
         """
         label = str(index)
         marker = ShootingPositionMarker(
-            x, y, self.scale,
-            label=label, is_start=is_start, index=index,
+            x,
+            y,
+            self.scale,
+            label=label,
+            is_start=is_start,
+            index=index,
             on_changed=on_changed,
             on_deleted=on_deleted,
         )
@@ -2168,7 +2419,7 @@ class StageScene(QGraphicsScene):
             if isinstance(item, ShootingPositionMarker):
                 self.removeItem(item)
                 count += 1
-            elif hasattr(item, 'pos_m') and hasattr(item, '_is_start'):
+            elif hasattr(item, "pos_m") and hasattr(item, "_is_start"):
                 # Fallback: qualunque item con attributi da shooting position
                 self.removeItem(item)
                 count += 1
@@ -2180,24 +2431,36 @@ class StageScene(QGraphicsScene):
         self.clear_shooting_position_markers()
         for i, sp in enumerate(self.stage.shooting_positions):
             self.add_shooting_position_marker(
-                sp.x, sp.y, is_start=sp.is_start, index=i + 1,
+                sp.x,
+                sp.y,
+                is_start=sp.is_start,
+                index=i + 1,
             )
 
     # ══════════════════════════════════════════════════════════════════════
     #  Obstacle markers (Fase 2)
     # ══════════════════════════════════════════════════════════════════════
 
-    def add_obstacle_marker(self, x: float, y: float,
-                             width: float = 3.0, rotation: float = 0.0,
-                             is_wall: bool = True,
-                             label: str = "",
-                             on_changed: callable = None,
-                             on_deleted: callable = None) -> ObstacleMarker:
+    def add_obstacle_marker(
+        self,
+        x: float,
+        y: float,
+        width: float = 3.0,
+        rotation: float = 0.0,
+        is_wall: bool = True,
+        label: str = "",
+        on_changed: callable = None,
+        on_deleted: callable = None,
+    ) -> ObstacleMarker:
         """Aggiunge un marker visivo per un ostacolo posizionato dall'utente."""
         marker = ObstacleMarker(
-            x, y, self.scale,
-            width=width, rotation=rotation,
-            is_wall=is_wall, label=label,
+            x,
+            y,
+            self.scale,
+            width=width,
+            rotation=rotation,
+            is_wall=is_wall,
+            label=label,
             on_changed=on_changed,
             on_deleted=on_deleted,
         )
@@ -2219,7 +2482,8 @@ class StageScene(QGraphicsScene):
             if it.properties.get("user_placed"):
                 is_wall = it.item_type == ItemType.WALL
                 self.add_obstacle_marker(
-                    it.x, it.y,
+                    it.x,
+                    it.y,
                     width=it.width,
                     rotation=it.rotation,
                     is_wall=is_wall,

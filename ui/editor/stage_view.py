@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPainter, QKeyEvent, QMouseEvent, QCursor
+from PySide6.QtGui import QCursor, QKeyEvent, QMouseEvent, QPainter
 from PySide6.QtWidgets import QGraphicsView
 
 
@@ -24,9 +24,9 @@ class StageView(QGraphicsView):
     def __init__(self, scene, parent=None):
         super().__init__(scene, parent)
         self.setRenderHints(
-            self.renderHints() |
-            QPainter.RenderHint.Antialiasing |
-            QPainter.RenderHint.SmoothPixmapTransform
+            self.renderHints()
+            | QPainter.RenderHint.Antialiasing
+            | QPainter.RenderHint.SmoothPixmapTransform
         )
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -65,8 +65,9 @@ class StageView(QGraphicsView):
 
     # ── Modalità posizionamento ostacoli ───────────────────────────
 
-    def set_placing_obstacle_mode(self, active: bool, is_wall: bool = True,
-                                    width: float = 3.0, rotation: float = 0.0):
+    def set_placing_obstacle_mode(
+        self, active: bool, is_wall: bool = True, width: float = 3.0, rotation: float = 0.0
+    ):
         """Attiva/disattiva la modalità posizionamento ostacoli.
 
         Args:
@@ -126,7 +127,7 @@ class StageView(QGraphicsView):
         if self._placing_position and event.button() == Qt.MouseButton.LeftButton:
             scene_pos = self.mapToScene(event.pos())
             x, y = self._snap_to_grid(scene_pos)
-            is_start = (self._pos_count == 0)
+            is_start = self._pos_count == 0
             self._pos_count += 1
             self.shootingPositionPlaced.emit(x, y, is_start)
             event.accept()
@@ -137,7 +138,8 @@ class StageView(QGraphicsView):
             scene_pos = self.mapToScene(event.pos())
             x, y = self._snap_to_grid(scene_pos)
             self.obstaclePlaced.emit(
-                x, y,
+                x,
+                y,
                 self._placing_obstacle_width,
                 self._placing_obstacle_rotation,
                 self._placing_is_wall,
@@ -180,7 +182,7 @@ class StageView(QGraphicsView):
         scene = self.scene()
         if scene is None:
             return
-        if hasattr(scene, 'push_remove_selected'):
+        if hasattr(scene, "push_remove_selected"):
             scene.push_remove_selected()
 
     def _rotate_selected(self, degrees: float):
@@ -189,11 +191,11 @@ class StageView(QGraphicsView):
         if scene is None:
             return
         for g_item in scene.selectedItems():
-            wrapper = getattr(g_item, 'wrapper', None)
+            wrapper = getattr(g_item, "wrapper", None)
             if wrapper is None:
                 continue
             wrapper.item.rotation = (wrapper.item.rotation + degrees) % 360
             g_item.setRotation(wrapper.item.rotation)
             wrapper.changed.emit()
-        if hasattr(scene, 'invalidate'):
+        if hasattr(scene, "invalidate"):
             scene.invalidate()

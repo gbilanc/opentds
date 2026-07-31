@@ -17,15 +17,14 @@ Usage:
 
 Requires PyInstaller: pip install pyinstaller
 """
+
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 SPEC_FILE = PROJECT_DIR / "opentds.spec"
@@ -36,9 +35,13 @@ BUILD_DIR = PROJECT_DIR / "build"
 def main():
     parser = argparse.ArgumentParser(description="Build OpenTDS standalone executable")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
-    parser.add_argument("--clean", action="store_true", help="Clean build artifacts before building")
+    parser.add_argument(
+        "--clean", action="store_true", help="Clean build artifacts before building"
+    )
     parser.add_argument("--app", action="store_true", help="Build macOS .app bundle")
-    parser.add_argument("--onefile", action="store_true", help="Build single-file executable (experimental)")
+    parser.add_argument(
+        "--onefile", action="store_true", help="Build single-file executable (experimental)"
+    )
     args = parser.parse_args()
 
     # ── Check prerequisites ─────────────────────────────────────────────
@@ -78,7 +81,9 @@ def main():
     print(f"   Output: {DIST_DIR}")
 
     cmd = [
-        sys.executable, "-m", "PyInstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         str(SPEC_FILE),
         "--noconfirm",
     ]
@@ -152,9 +157,9 @@ def _print_output_info(is_app: bool, is_onefile: bool):
 
     print()
     print("   Per distribuire:")
-    print(f"     Linux:   tar czf opentds-linux.tar.gz -C dist OpenTDS")
-    print(f"     macOS:   zip -r opentds-macos.zip dist/OpenTDS.app")
-    print(f"     Windows: compress-archive dist/OpenTDS opentds-windows.zip")
+    print("     Linux:   tar czf opentds-linux.tar.gz -C dist OpenTDS")
+    print("     macOS:   zip -r opentds-macos.zip dist/OpenTDS.app")
+    print("     Windows: compress-archive dist/OpenTDS opentds-windows.zip")
 
 
 def _dir_size(path: Path) -> int:

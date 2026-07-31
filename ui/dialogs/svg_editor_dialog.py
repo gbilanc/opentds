@@ -11,33 +11,53 @@ Caratteristiche:
 - Importa SVG esistente per modifica
 - Esporta in resources/targets/custom/
 """
+
 from __future__ import annotations
 
 import math
 import os
 
-from PySide6.QtCore import Qt, QRectF, QPointF, QSize
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QPolygonF,
-    QKeySequence,
+    QBrush,
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QGraphicsView, QGraphicsScene,
-    QGraphicsItem, QGraphicsRectItem,
-    QListWidget, QListWidgetItem,
-    QColorDialog, QSpinBox, QLineEdit, QFormLayout,
-    QGroupBox, QMessageBox, QWidget, QFileDialog,
+    QColorDialog,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QGraphicsItem,
+    QGraphicsRectItem,
+    QGraphicsScene,
+    QGraphicsView,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from core.target_designer import (
-    SvgTargetDesign, SvgZone, ZONE_COLORS,
-    make_ipsc_silhouette, ensure_custom_dir,
     CUSTOM_TARGETS_DIR,
+    ZONE_COLORS,
+    SvgTargetDesign,
+    SvgZone,
+    ensure_custom_dir,
+    make_ipsc_silhouette,
 )
 from ui.editor.target_images import TargetSvgManager
 from ui.icons import load_icon
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Costanti
@@ -59,8 +79,8 @@ SHAPE_ICONS = {
 #  SilhouetteItem
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class SilhouetteItem(QGraphicsRectItem):
 
+class SilhouetteItem(QGraphicsRectItem):
     def __init__(self, design: SvgTargetDesign, scale: float, parent=None):
         w = design.width * scale
         h = design.height * scale
@@ -101,18 +121,25 @@ class SilhouetteItem(QGraphicsRectItem):
 #  Hexagon utility
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _octagon_polygon(w: float, h: float) -> QPolygonF:
     """Calcola gli 8 vertici dell'ottagono inscritto nel rettangolo w×h."""
     cx, cy = w / 2, h / 2
     rx, ry = w / 2, h / 2
-    return QPolygonF([
-        QPointF(cx + rx * math.cos(math.pi * 2 * i / 8 - math.pi / 8),
-                cy + ry * math.sin(math.pi * 2 * i / 8 - math.pi / 8))
-        for i in range(8)
-    ])
+    return QPolygonF(
+        [
+            QPointF(
+                cx + rx * math.cos(math.pi * 2 * i / 8 - math.pi / 8),
+                cy + ry * math.sin(math.pi * 2 * i / 8 - math.pi / 8),
+            )
+            for i in range(8)
+        ]
+    )
 
 
-def _build_shape_path(zone: SvgZone, w: float, h: float, include_handles: bool = False) -> QPainterPath:
+def _build_shape_path(
+    zone: SvgZone, w: float, h: float, include_handles: bool = False
+) -> QPainterPath:
     """Crea il QPainterPath per la forma della zona.
     Se include_handles=True, include anche l'area degli handle angolari.
     """
@@ -134,6 +161,7 @@ def _build_shape_path(zone: SvgZone, w: float, h: float, include_handles: bool =
 #  ZoneGraphicsItem
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class ZoneGraphicsItem(QGraphicsItem):
     """Zona interattiva: sposta, ridimensiona, seleziona."""
 
@@ -146,7 +174,9 @@ class ZoneGraphicsItem(QGraphicsItem):
         self._resizing = False
         self._resize_corner = ""
         self._drag_start_zone = None
-        self._on_changed = on_changed  # callback(zone) quando modificata  # snapshot all'avvio del resize
+        self._on_changed = (
+            on_changed  # callback(zone) quando modificata  # snapshot all'avvio del resize
+        )
 
         self.setPos(zone.x * scale, zone.y * scale)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
@@ -162,8 +192,9 @@ class ZoneGraphicsItem(QGraphicsItem):
     def boundingRect(self):
         w = self._zone.width * self._scale
         h = self._zone.height * self._scale
-        return QRectF(-self.HANDLE_SIZE, -self.HANDLE_SIZE,
-                       w + self.HANDLE_SIZE * 2, h + self.HANDLE_SIZE * 2)
+        return QRectF(
+            -self.HANDLE_SIZE, -self.HANDLE_SIZE, w + self.HANDLE_SIZE * 2, h + self.HANDLE_SIZE * 2
+        )
 
     def shape(self):
         return _build_shape_path(
@@ -196,8 +227,7 @@ class ZoneGraphicsItem(QGraphicsItem):
         f.setPointSize(max(8, min(int(min(w, h) / 4), 36)))
         f.setBold(True)
         painter.setFont(f)
-        painter.drawText(QRectF(0, 0, w, h),
-                         Qt.AlignmentFlag.AlignCenter, self._zone.label)
+        painter.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, self._zone.label)
 
         # Cornice selezione + handle
         if self.isSelected():
@@ -233,16 +263,20 @@ class ZoneGraphicsItem(QGraphicsItem):
             pos = event.pos()
             hs = self.HANDLE_SIZE
             corners = {
-                "tl": (0, 0), "tr": (w, 0),
-                "bl": (0, h), "br": (w, h),
+                "tl": (0, 0),
+                "tr": (w, 0),
+                "bl": (0, h),
+                "br": (w, h),
             }
             for name, (cx, cy) in corners.items():
                 if abs(pos.x() - cx) <= hs and abs(pos.y() - cy) <= hs:
                     self._resizing = True
                     self._resize_corner = name
                     self._drag_start_zone = {
-                        "x": self._zone.x, "y": self._zone.y,
-                        "w": self._zone.width, "h": self._zone.height,
+                        "x": self._zone.x,
+                        "y": self._zone.y,
+                        "w": self._zone.width,
+                        "h": self._zone.height,
                     }
                     event.accept()
                     return
@@ -298,10 +332,7 @@ class ZoneGraphicsItem(QGraphicsItem):
             abs(pos.x() - cx) <= hs and abs(pos.y() - cy) <= hs
             for cx, cy in [(0, 0), (w, 0), (0, h), (w, h)]
         )
-        self.setCursor(
-            Qt.CursorShape.SizeFDiagCursor if on_corner
-            else Qt.CursorShape.ArrowCursor
-        )
+        self.setCursor(Qt.CursorShape.SizeFDiagCursor if on_corner else Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
 
 
@@ -309,8 +340,8 @@ class ZoneGraphicsItem(QGraphicsItem):
 #  SvgEditorScene
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class SvgEditorScene(QGraphicsScene):
 
+class SvgEditorScene(QGraphicsScene):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.editor: SvgEditorDialog | None = None
@@ -319,7 +350,9 @@ class SvgEditorScene(QGraphicsScene):
         dialog = self.editor
         if dialog and dialog._current_tool in ("rect", "ellipse", "octagon"):
             # Clic su zona esistente → permetti selezione/spostamento/ridimensionamento
-            item = self.itemAt(event.scenePos(), self.views()[0].transform()) if self.views() else None
+            item = (
+                self.itemAt(event.scenePos(), self.views()[0].transform()) if self.views() else None
+            )
             if item and isinstance(item, ZoneGraphicsItem):
                 super().mousePressEvent(event)
                 return
@@ -338,8 +371,8 @@ class SvgEditorScene(QGraphicsScene):
 #  SvgEditorDialog
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class SvgEditorDialog(QDialog):
 
+class SvgEditorDialog(QDialog):
     def __init__(self, parent=None, design: SvgTargetDesign | None = None):
         super().__init__(parent)
         self._design = design or SvgTargetDesign(
@@ -415,10 +448,14 @@ class SvgEditorDialog(QDialog):
             )
             btn.setToolTip(f"Aggiungi zona {lbl} {w}×{h}")
             btn.clicked.connect(
-                lambda checked, l=lbl, c=color, w=w, h=h:
-                self._add_zone(
+                lambda checked, label=lbl, c=color, w=w, h=h: self._add_zone(
                     self._current_tool if self._current_tool != "select" else "rect",
-                    20, 20, w, h, label=l, color=c,
+                    20,
+                    20,
+                    w,
+                    h,
+                    label=label,
+                    color=c,
                 )
             )
             toolbar.addWidget(btn)
@@ -449,8 +486,7 @@ class SvgEditorDialog(QDialog):
             btn = QPushButton()
             btn.setFixedSize(22, 22)
             btn.setStyleSheet(
-                f"background: {color_hex}; border: 2px solid #e2e8f0; "
-                f"border-radius: 11px;"
+                f"background: {color_hex}; border: 2px solid #e2e8f0; border-radius: 11px;"
             )
             btn.setToolTip(tooltip)
             btn.clicked.connect(lambda checked, c=color_hex: self._set_selected_zone_color(c))
@@ -692,17 +728,30 @@ class SvgEditorDialog(QDialog):
 
     # ── Zone ops ───────────────────────────────────────────────────────
 
-    def _add_zone(self, shape_type: str, x: float, y: float,
-                  w: float = 40.0, h: float = 40.0,
-                  label: str = "", color: str = ""):
+    def _add_zone(
+        self,
+        shape_type: str,
+        x: float,
+        y: float,
+        w: float = 40.0,
+        h: float = 40.0,
+        label: str = "",
+        color: str = "",
+    ):
         if not label:
             label = chr(65 + len(self._design.zones))
         if not color:
             colors = list(ZONE_COLORS.values())
             color = colors[len(self._design.zones) % len(colors)]
         zone = SvgZone(
-            label=label, color=color, points=5,
-            shape_type=shape_type, x=x, y=y, width=w, height=h,
+            label=label,
+            color=color,
+            points=5,
+            shape_type=shape_type,
+            x=x,
+            y=y,
+            width=w,
+            height=h,
         )
         self._design.add_zone(zone)
         self._add_zone_item(zone)
@@ -728,10 +777,14 @@ class SvgEditorDialog(QDialog):
         for item in selected:
             z = item.zone
             new_zone = SvgZone(
-                label=z.label, color=z.color, points=z.points,
+                label=z.label,
+                color=z.color,
+                points=z.points,
                 shape_type=z.shape_type,
-                x=z.x + 15, y=z.y + 15,
-                width=z.width, height=z.height,
+                x=z.x + 15,
+                y=z.y + 15,
+                width=z.width,
+                height=z.height,
             )
             self._design.add_zone(new_zone)
             new_item = self._add_zone_item(new_zone)
@@ -831,8 +884,7 @@ class SvgEditorDialog(QDialog):
             zone.color = color.name()
             self._zone_color_btn.setText(f"  {zone.color}")
             self._zone_color_btn.setStyleSheet(
-                f"background: {zone.color}; color: white; "
-                f"border-radius: 4px; font-weight: 500;"
+                f"background: {zone.color}; color: white; border-radius: 4px; font-weight: 500;"
             )
             self._zone_items[row].update()
             self._refresh_zone_list()
@@ -853,8 +905,7 @@ class SvgEditorDialog(QDialog):
             zone = self._design.zones[row]
             self._zone_color_btn.setText(f"  {zone.color}")
             self._zone_color_btn.setStyleSheet(
-                f"background: {zone.color}; color: white; "
-                f"border-radius: 4px; font-weight: 500;"
+                f"background: {zone.color}; color: white; border-radius: 4px; font-weight: 500;"
             )
 
     def _pick_zone_color_for_selected(self):
@@ -879,7 +930,9 @@ class SvgEditorDialog(QDialog):
     # ── Load / Save ────────────────────────────────────────────────────
 
     def _load_svg(self):
-        start_dir = CUSTOM_TARGETS_DIR if os.path.isdir(CUSTOM_TARGETS_DIR) else os.path.expanduser("~")
+        start_dir = (
+            CUSTOM_TARGETS_DIR if os.path.isdir(CUSTOM_TARGETS_DIR) else os.path.expanduser("~")
+        )
         path, _ = QFileDialog.getOpenFileName(
             self, "Carica SVG bersaglio", start_dir, "SVG (*.svg);;Tutti i file (*)"
         )
@@ -903,7 +956,8 @@ class SvgEditorDialog(QDialog):
 
         if os.path.isfile(filepath):
             reply = QMessageBox.question(
-                self, "Sovrascrivere?",
+                self,
+                "Sovrascrivere?",
                 f"'{name}.svg' esiste già. Sovrascrivere?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -917,7 +971,8 @@ class SvgEditorDialog(QDialog):
         TargetSvgManager.instance().invalidate_custom(filepath)
 
         QMessageBox.information(
-            self, "Salvato",
+            self,
+            "Salvato",
             f"Bersaglio salvato:\n{filepath}\n\nDisponibile immediatamente.",
         )
         self.accept()
@@ -927,8 +982,10 @@ class SvgEditorDialog(QDialog):
         A differenza di _save_svg, non chiude il dialog.
         """
         path, _ = QFileDialog.getSaveFileName(
-            self, "Salva bersaglio con nome",
-            os.path.expanduser("~"), "SVG (*.svg);;Tutti i file (*)"
+            self,
+            "Salva bersaglio con nome",
+            os.path.expanduser("~"),
+            "SVG (*.svg);;Tutti i file (*)",
         )
         if not path:
             return

@@ -5,6 +5,7 @@ Ogni forma è definita come lista di vertici in coordinate normalizzate (0-1)
 in senso antiorario. (0,0) = angolo basso-sinistra dello stage.
 La forma viene scalata alle dimensioni dello stage e perturbata.
 """
+
 from __future__ import annotations
 
 import math
@@ -12,19 +13,17 @@ import random
 from typing import List, Tuple
 
 from core.constants import (
-    MIN_TARGET_TO_EDGE,
-    MIN_BACKSTOP_DEPTH,
-    MIN_STEEL_PLACEMENT_DISTANCE,
-    MIN_POLY_DIM,
     FRONT_OPEN_GAP,
+    MIN_BACKSTOP_DEPTH,
+    MIN_POLY_DIM,
+    MIN_STEEL_PLACEMENT_DISTANCE,
+    MIN_TARGET_TO_EDGE,
     TARGET_COLORS,
 )
-from core.models import Stage, StageItem, ItemType
 from core.geometry import (
-    segments_intersect,
-    point_in_polygon,
     validate_polygon,
 )
+from core.models import ItemType, Stage, StageItem
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Forme alfabetiche per l'area di tiro
@@ -32,86 +31,178 @@ from core.geometry import (
 
 LETTER_SHAPES: dict[str, List[Tuple[float, float]]] = {
     "L": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.35),
-        (0.35, 0.35), (0.35, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 0.35),
+        (0.35, 0.35),
+        (0.35, 1.00),
+        (0.00, 1.00),
     ],
     "T": [
-        (0.00, 0.65), (0.35, 0.65), (0.35, 0.00),
-        (0.65, 0.00), (0.65, 0.65), (1.00, 0.65),
-        (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.65),
+        (0.35, 0.65),
+        (0.35, 0.00),
+        (0.65, 0.00),
+        (0.65, 0.65),
+        (1.00, 0.65),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "U": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00),
-        (0.70, 1.00), (0.70, 0.25), (0.30, 0.25),
-        (0.30, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.70, 1.00),
+        (0.70, 0.25),
+        (0.30, 0.25),
+        (0.30, 1.00),
+        (0.00, 1.00),
     ],
     "C": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.20),
-        (0.20, 0.20), (0.20, 0.80), (1.00, 0.80),
-        (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 0.20),
+        (0.20, 0.20),
+        (0.20, 0.80),
+        (1.00, 0.80),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "H": [
-        (0.00, 0.00), (0.30, 0.00), (0.30, 0.35),
-        (0.70, 0.35), (0.70, 0.00), (1.00, 0.00),
-        (1.00, 1.00), (0.70, 1.00), (0.70, 0.65),
-        (0.30, 0.65), (0.30, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (0.30, 0.00),
+        (0.30, 0.35),
+        (0.70, 0.35),
+        (0.70, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.70, 1.00),
+        (0.70, 0.65),
+        (0.30, 0.65),
+        (0.30, 1.00),
+        (0.00, 1.00),
     ],
     "F": [
-        (0.25, 0.00), (1.00, 0.00), (1.00, 0.25),
-        (0.55, 0.25), (0.55, 0.50), (1.00, 0.50),
-        (1.00, 0.75), (0.55, 0.75), (0.55, 1.00),
-        (0.25, 1.00), (0.25, 0.00),
+        (0.25, 0.00),
+        (1.00, 0.00),
+        (1.00, 0.25),
+        (0.55, 0.25),
+        (0.55, 0.50),
+        (1.00, 0.50),
+        (1.00, 0.75),
+        (0.55, 0.75),
+        (0.55, 1.00),
+        (0.25, 1.00),
+        (0.25, 0.00),
     ],
     "O": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "Z": [
-        (0.00, 0.65), (0.65, 0.65), (0.00, 0.00),
-        (1.00, 0.00), (0.35, 0.65), (1.00, 0.65),
-        (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.65),
+        (0.65, 0.65),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (0.35, 0.65),
+        (1.00, 0.65),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "S": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.20),
-        (0.25, 0.20), (0.25, 0.40), (1.00, 0.40),
-        (1.00, 0.60), (0.25, 0.60), (0.25, 0.80),
-        (1.00, 0.80), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 0.20),
+        (0.25, 0.20),
+        (0.25, 0.40),
+        (1.00, 0.40),
+        (1.00, 0.60),
+        (0.25, 0.60),
+        (0.25, 0.80),
+        (1.00, 0.80),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "X": [
-        (0.35, 0.00), (0.65, 0.00), (0.65, 0.35),
-        (1.00, 0.35), (1.00, 0.65), (0.65, 0.65),
-        (0.65, 1.00), (0.35, 1.00), (0.35, 0.65),
-        (0.00, 0.65), (0.00, 0.35), (0.35, 0.35),
+        (0.35, 0.00),
+        (0.65, 0.00),
+        (0.65, 0.35),
+        (1.00, 0.35),
+        (1.00, 0.65),
+        (0.65, 0.65),
+        (0.65, 1.00),
+        (0.35, 1.00),
+        (0.35, 0.65),
+        (0.00, 0.65),
+        (0.00, 0.35),
+        (0.35, 0.35),
     ],
     "Y": [
-        (0.40, 0.00), (0.60, 0.00), (0.60, 0.40),
-        (1.00, 0.70), (1.00, 1.00), (0.00, 1.00),
-        (0.00, 0.70), (0.40, 0.40),
+        (0.40, 0.00),
+        (0.60, 0.00),
+        (0.60, 0.40),
+        (1.00, 0.70),
+        (1.00, 1.00),
+        (0.00, 1.00),
+        (0.00, 0.70),
+        (0.40, 0.40),
     ],
     "M": [
-        (0.00, 0.00), (0.25, 0.00), (0.25, 1.00),
-        (0.50, 0.50), (0.75, 1.00), (0.75, 0.00),
-        (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (0.25, 0.00),
+        (0.25, 1.00),
+        (0.50, 0.50),
+        (0.75, 1.00),
+        (0.75, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "N": [
-        (0.00, 0.00), (0.25, 0.00), (0.25, 0.70),
-        (0.75, 0.00), (1.00, 0.00), (1.00, 1.00),
-        (0.75, 1.00), (0.75, 0.30), (0.25, 1.00),
+        (0.00, 0.00),
+        (0.25, 0.00),
+        (0.25, 0.70),
+        (0.75, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.75, 1.00),
+        (0.75, 0.30),
+        (0.25, 1.00),
         (0.00, 1.00),
     ],
     "E": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 0.25),
-        (0.30, 0.25), (0.30, 0.40), (1.00, 0.40),
-        (1.00, 0.60), (0.30, 0.60), (0.30, 0.75),
-        (1.00, 0.75), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 0.25),
+        (0.30, 0.25),
+        (0.30, 0.40),
+        (1.00, 0.40),
+        (1.00, 0.60),
+        (0.30, 0.60),
+        (0.30, 0.75),
+        (1.00, 0.75),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     "W": [
-        (0.00, 0.00), (0.25, 0.00), (0.25, 0.50),
-        (0.50, 1.00), (0.75, 0.50), (0.75, 0.00),
-        (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (0.25, 0.00),
+        (0.25, 0.50),
+        (0.50, 1.00),
+        (0.75, 0.50),
+        (0.75, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
     # Quadrato: stessi vertici di O ma scaling uniforme (gestito in generate_perimeter_polygon)
     "Q": [
-        (0.00, 0.00), (1.00, 0.00), (1.00, 1.00), (0.00, 1.00),
+        (0.00, 0.00),
+        (1.00, 0.00),
+        (1.00, 1.00),
+        (0.00, 1.00),
     ],
 }
 
@@ -120,8 +211,10 @@ LETTER_SHAPES: dict[str, List[Tuple[float, float]]] = {
 #  Helper geometrici
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _clamp_poly(poly: List[Tuple[float, float]],
-                w: float, d_eff: float, margin: float) -> List[Tuple[float, float]]:
+
+def _clamp_poly(
+    poly: List[Tuple[float, float]], w: float, d_eff: float, margin: float
+) -> List[Tuple[float, float]]:
     """Blocca i vertici dentro i confini dello stage."""
     result = []
     for px, py in poly:
@@ -131,8 +224,9 @@ def _clamp_poly(poly: List[Tuple[float, float]],
     return result
 
 
-def _rotate_poly(poly: List[Tuple[float, float]], angle_deg: float,
-                 cx: float, cy: float) -> List[Tuple[float, float]]:
+def _rotate_poly(
+    poly: List[Tuple[float, float]], angle_deg: float, cx: float, cy: float
+) -> List[Tuple[float, float]]:
     """Ruota il poligono attorno al punto (cx, cy)."""
     angle = math.radians(angle_deg)
     cos_a = math.cos(angle)
@@ -147,8 +241,9 @@ def _rotate_poly(poly: List[Tuple[float, float]], angle_deg: float,
     return result
 
 
-def _scale_poly(poly: List[Tuple[float, float]], factor: float,
-                cx: float, cy: float) -> List[Tuple[float, float]]:
+def _scale_poly(
+    poly: List[Tuple[float, float]], factor: float, cx: float, cy: float
+) -> List[Tuple[float, float]]:
     """Scala il poligono uniformemente attorno al punto (cx, cy)."""
     result = []
     for px, py in poly:
@@ -160,7 +255,9 @@ def _scale_poly(poly: List[Tuple[float, float]], factor: float,
     return result
 
 
-def _perturb_poly(poly: List[Tuple[float, float]], amount: float = 0.3) -> List[Tuple[float, float]]:
+def _perturb_poly(
+    poly: List[Tuple[float, float]], amount: float = 0.3
+) -> List[Tuple[float, float]]:
     """Applica una leggera perturbazione casuale ai vertici."""
     result = []
     for px, py in poly:
@@ -173,6 +270,7 @@ def _perturb_poly(poly: List[Tuple[float, float]], amount: float = 0.3) -> List[
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Generazione poligono area di tiro
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def generate_perimeter_polygon(
     stage: Stage,
@@ -316,7 +414,7 @@ def perimeter_to_items(
     # Per barriere/walls: trova il segmento frontale (y minima) da accorciare
     if is_blocking:
         best_idx = -1
-        best_y = float('inf')
+        best_y = float("inf")
         for i in range(n):
             x1, y1 = poly[i]
             x2, y2 = poly[(i + 1) % n]
@@ -333,11 +431,9 @@ def perimeter_to_items(
             x2, y2 = poly[(best_idx + 1) % n]
             seg_len = math.hypot(x2 - x1, y2 - y1)
             gap_half = max(0.05, (seg_len - FRONT_OPEN_GAP) / 2 / seg_len)
-            for (sx1, sy1, sx2, sy2) in [
-                (x1, y1,
-                 x1 + (x2 - x1) * gap_half, y1 + (y2 - y1) * gap_half),
-                (x1 + (x2 - x1) * (1 - gap_half), y1 + (y2 - y1) * (1 - gap_half),
-                 x2, y2)
+            for sx1, sy1, sx2, sy2 in [
+                (x1, y1, x1 + (x2 - x1) * gap_half, y1 + (y2 - y1) * gap_half),
+                (x1 + (x2 - x1) * (1 - gap_half), y1 + (y2 - y1) * (1 - gap_half), x2, y2),
             ]:
                 cx = (sx1 + sx2) / 2
                 cy = (sy1 + sy2) / 2
@@ -346,9 +442,19 @@ def perimeter_to_items(
                     continue
                 angle = math.degrees(math.atan2(sy2 - sy1, sx2 - sx1))
                 if style == "mixed":
-                    itype, thick, color, label = ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"
+                    itype, thick, color, label = (
+                        ItemType.FAULT_LINE,
+                        0.0,
+                        TARGET_COLORS["fault_line"],
+                        "Fault Line",
+                    )
                 elif style == "barriers":
-                    itype, thick, color, label = ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"
+                    itype, thick, color, label = (
+                        ItemType.BARRIER,
+                        0.15,
+                        TARGET_COLORS["barrier"],
+                        "Barriera",
+                    )
                 else:
                     itype, thick, color, label = ItemType.WALL, 0.2, TARGET_COLORS["wall"], "Muro"
                 item = StageItem(0, itype, cx, cy, seg_len, thick, angle, color, label)
@@ -360,8 +466,8 @@ def perimeter_to_items(
     # Genera i segmenti rimanenti
     style_map = {
         "fault_lines": (ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"),
-        "barriers":    (ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"),
-        "walls":       (ItemType.WALL, 0.2, TARGET_COLORS["wall"], "Muro"),
+        "barriers": (ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"),
+        "walls": (ItemType.WALL, 0.2, TARGET_COLORS["wall"], "Muro"),
     }
 
     for i in range(n):
@@ -378,9 +484,19 @@ def perimeter_to_items(
 
         if style == "mixed":
             if abs(cy - stage_depth / 2) > abs(cx - stage_width / 2):
-                itype, thick, color, label = ItemType.BARRIER, 0.15, TARGET_COLORS["barrier"], "Barriera"
+                itype, thick, color, label = (
+                    ItemType.BARRIER,
+                    0.15,
+                    TARGET_COLORS["barrier"],
+                    "Barriera",
+                )
             else:
-                itype, thick, color, label = ItemType.FAULT_LINE, 0.0, TARGET_COLORS["fault_line"], "Fault Line"
+                itype, thick, color, label = (
+                    ItemType.FAULT_LINE,
+                    0.0,
+                    TARGET_COLORS["fault_line"],
+                    "Fault Line",
+                )
         else:
             itype, thick, color, label = style_map.get(style, style_map["fault_lines"])
 
@@ -400,4 +516,5 @@ def polygon_to_shapely(poly: List[Tuple[float, float]]):
     if not poly or len(poly) < 3:
         return None
     from shapely.geometry import Polygon as ShapelyPolygon
+
     return ShapelyPolygon(poly)

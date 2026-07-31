@@ -4,22 +4,24 @@ Line-of-sight and visibility utilities for IPSC stage generation.
 Pure functions — no state, no side effects. Used by PlacementEngine,
 RepairEngine, and StageGenerator.
 """
+
 from __future__ import annotations
 
 import math
 import random
 from typing import List, Tuple
 
-from core.models import StageItem, ItemType
-from core.geometry import point_in_polygon, polygon_center, line_intersects_rect
 from core.constants import INTERIOR_SAMPLE_COUNT, SAME_LINE_OF_FIRE_THRESHOLD_DEG
+from core.geometry import line_intersects_rect, point_in_polygon, polygon_center
+from core.models import ItemType, StageItem
 from core.scoring import is_scoring_target
 
 
 def get_blocking_walls(items: List[StageItem]) -> List[StageItem]:
     """Return items that block line of sight (walls, barriers, doors, hard cover)."""
     return [
-        it for it in items
+        it
+        for it in items
         if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
     ]
 
@@ -35,8 +37,13 @@ def is_target_visible(
         visible = True
         for wall in blockers:
             if line_intersects_rect(
-                (obs_x, obs_y), target_pos,
-                wall.x, wall.y, wall.width, wall.height, wall.rotation,
+                (obs_x, obs_y),
+                target_pos,
+                wall.x,
+                wall.y,
+                wall.width,
+                wall.height,
+                wall.rotation,
             ):
                 visible = False
                 break
@@ -46,7 +53,8 @@ def is_target_visible(
 
 
 def targets_on_same_line(
-    target_x: float, target_y: float,
+    target_x: float,
+    target_y: float,
     existing: List[StageItem],
     perimeter_poly: List[Tuple[float, float]],
     threshold_deg: float = SAME_LINE_OF_FIRE_THRESHOLD_DEG,
@@ -76,7 +84,8 @@ def targets_on_same_line(
 
 
 def is_behind_shooting_area(
-    target_x: float, target_y: float,
+    target_x: float,
+    target_y: float,
     poly: List[Tuple[float, float]],
 ) -> bool:
     """True if target is in the sector behind the shooting area (outside safe engagement).
@@ -148,10 +157,15 @@ def ensure_target_visibility(
     If an obstacle blocks more targets than it frees, it gets removed.
     """
     targets = [
-        it for it in items
-        if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+        it
+        for it in items
+        if it.item_type
+        in (
+            ItemType.PAPER_TARGET,
+            ItemType.STEEL_TARGET,
+            ItemType.SWINGER,
+            ItemType.DROP_TURNER,
+            ItemType.MOVER,
         )
     ]
     if not targets or not interior_samples:
@@ -172,11 +186,15 @@ def ensure_target_visibility(
         best_item: StageItem | None = None
         for b in blockers:
             test_items = [it for it in items if it is not b]
-            test_blockers = [x for x in get_blocking_walls(test_items) if not x.properties.get("protected")]
+            test_blockers = [
+                x for x in get_blocking_walls(test_items) if not x.properties.get("protected")
+            ]
             all_blockers = test_blockers + [
                 x for x in get_blocking_walls(test_items) if x.properties.get("protected")
             ]
-            test_visible = sum(1 for t in targets if is_target_visible(t, all_blockers, interior_samples))
+            test_visible = sum(
+                1 for t in targets if is_target_visible(t, all_blockers, interior_samples)
+            )
             gain = test_visible - visible
             if gain > best_gain:
                 best_gain = gain
@@ -190,7 +208,8 @@ def ensure_target_visibility(
                 wall_map[id(w)] = w
 
             invisible = [
-                t for t in targets
+                t
+                for t in targets
                 if not is_target_visible(
                     t,
                     [x for x in get_blocking_walls(items) if not x.properties.get("protected")],
@@ -201,8 +220,13 @@ def ensure_target_visibility(
                 for ox, oy in interior_samples:
                     for w in blockers:
                         if line_intersects_rect(
-                            (ox, oy), (t.x, t.y),
-                            w.x, w.y, w.width, w.height, w.rotation,
+                            (ox, oy),
+                            (t.x, t.y),
+                            w.x,
+                            w.y,
+                            w.width,
+                            w.height,
+                            w.rotation,
                         ):
                             wall_hits[id(w)] = wall_hits.get(id(w), 0) + 1
 

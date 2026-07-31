@@ -5,17 +5,14 @@ Permette di definire sagome IPSC con zone di punteggio (A/B/C/D),
 esportarle come SVG con fill="currentColor" per la tinta automatica,
 e reimportarle per modifica.
 """
+
 from __future__ import annotations
 
 import math
-import math
 import os
-import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
-
+from typing import List, Optional
 from xml.etree import ElementTree as ET
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Modelli
@@ -30,6 +27,7 @@ class SvgZone:
     coordinates: per rect: (x, y, w, h); per ellipse: (cx, cy, rx, ry);
                 per path: stringa d-path
     """
+
     label: str = "A"
     color: str = "#000000"
     points: int = 5
@@ -72,7 +70,7 @@ class SvgZone:
                 py = cy + ry * math.sin(angle)
                 points.append(f"{px:.1f},{py:.1f}")
             return (
-                f'<polygon points="{' '.join(points)}" '
+                f'<polygon points="{" ".join(points)}" '
                 f'fill="{self.color}" stroke="#fff" stroke-width="1" opacity="0.85"/>'
             )
         elif self.shape_type == "path":
@@ -89,6 +87,7 @@ class SvgTargetDesign:
 
     Può essere esportato come file SVG valido per l'uso nell'app.
     """
+
     name: str = "Nuovo Bersaglio"
     width: float = 100.0  # viewBox width
     height: float = 100.0  # viewBox height
@@ -107,17 +106,14 @@ class SvgTargetDesign:
         """Genera il documento SVG completo."""
         lines = [
             '<?xml version="1.0" encoding="UTF-8"?>',
-            f'<svg xmlns="http://www.w3.org/2000/svg" '
-            f'viewBox="0 0 {self.width} {self.height}">',
-            f'  <!-- {self.name} -->',
-            f'  <desc>{self.description or "Bersaglio personalizzato"}</desc>',
-            '',
-            '  <!-- Silhouette principale (tintabile con currentColor) -->',
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.width} {self.height}">',
+            f"  <!-- {self.name} -->",
+            f"  <desc>{self.description or 'Bersaglio personalizzato'}</desc>",
+            "",
+            "  <!-- Silhouette principale (tintabile con currentColor) -->",
         ]
         if self.silhouette_path:
-            lines.append(
-                f'  <path d="{self.silhouette_path}" fill="currentColor"/>'
-            )
+            lines.append(f'  <path d="{self.silhouette_path}" fill="currentColor"/>')
         else:
             # Default: rettangolo arrotondato
             lines.append(
@@ -125,12 +121,12 @@ class SvgTargetDesign:
                 f'height="{self.height - 4}" rx="8" fill="currentColor"/>'
             )
 
-        lines.append('')
-        lines.append('  <!-- Zone di punteggio -->')
+        lines.append("")
+        lines.append("  <!-- Zone di punteggio -->")
         for zone in self.zones:
             elem = zone.to_svg_element()
             if elem:
-                lines.append(f'  {elem}')
+                lines.append(f"  {elem}")
                 # Label della zona
                 cx = zone.x + zone.width / 2
                 cy = zone.y + zone.height / 2
@@ -140,8 +136,8 @@ class SvgTargetDesign:
                     f'font-size="14" font-weight="bold">{zone.label}</text>'
                 )
 
-        lines.append('</svg>')
-        return '\n'.join(lines)
+        lines.append("</svg>")
+        return "\n".join(lines)
 
     def to_svg_bytes(self) -> bytes:
         return self.to_svg().encode("utf-8")
@@ -209,8 +205,10 @@ class SvgTargetDesign:
                     ry = float(elem.get("ry", 20))
                     zone = SvgZone(
                         shape_type="ellipse",
-                        x=cx - rx, y=cy - ry,
-                        width=rx * 2, height=ry * 2,
+                        x=cx - rx,
+                        y=cy - ry,
+                        width=rx * 2,
+                        height=ry * 2,
                         color=fill,
                     )
                     for text_elem in root.findall(".//svg:text", ns):
@@ -239,8 +237,10 @@ class SvgTargetDesign:
                         shape = "octagon" if len(pts) == 8 else "polygon"
                         zone = SvgZone(
                             shape_type=shape,
-                            x=min_x, y=min_y,
-                            width=max_x - min_x, height=max_y - min_y,
+                            x=min_x,
+                            y=min_y,
+                            width=max_x - min_x,
+                            height=max_y - min_y,
                             color=fill,
                         )
                         # Cerca label al centro del poligono
@@ -255,8 +255,9 @@ class SvgTargetDesign:
                         design.zones.append(zone)
 
             return design
-        except Exception as e:
+        except Exception:
             import traceback
+
             traceback.print_exc()
             return None
 
@@ -293,17 +294,19 @@ class SvgTargetDesign:
             description=data.get("description", ""),
         )
         for zd in data.get("zones", []):
-            design.zones.append(SvgZone(
-                label=zd.get("label", "A"),
-                color=zd.get("color", "#000000"),
-                points=zd.get("points", 5),
-                shape_type=zd.get("shape_type", "rect"),
-                x=zd.get("x", 0),
-                y=zd.get("y", 0),
-                width=zd.get("width", 30),
-                height=zd.get("height", 30),
-                path_data=zd.get("path_data", ""),
-            ))
+            design.zones.append(
+                SvgZone(
+                    label=zd.get("label", "A"),
+                    color=zd.get("color", "#000000"),
+                    points=zd.get("points", 5),
+                    shape_type=zd.get("shape_type", "rect"),
+                    x=zd.get("x", 0),
+                    y=zd.get("y", 0),
+                    width=zd.get("width", 30),
+                    height=zd.get("height", 30),
+                    path_data=zd.get("path_data", ""),
+                )
+            )
         return design
 
 
@@ -322,7 +325,9 @@ ZONE_COLORS: dict[str, str] = {
 # Cartella di default per i bersagli personalizzati
 CUSTOM_TARGETS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "resources", "targets", "custom",
+    "resources",
+    "targets",
+    "custom",
 )
 
 

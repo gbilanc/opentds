@@ -5,31 +5,40 @@ Provides:
 - PathPolylineItem: QGraphicsItem rendering the shooter's path as a polyline
 - PathEditorPanel: QDockWidget for managing waypoints and engagements
 """
+
 from __future__ import annotations
 
 import math
-from typing import Callable, List, Optional
 
-from ui.icons import load_icon
-
-from PySide6.QtCore import Qt, QRectF, QPointF, Signal, Slot
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
-    QPainter, QPainterPath, QColor, QPen, QBrush, QFont, QFontMetrics,
+    QBrush,
+    QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
 )
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QCheckBox, QFrame,
-    QGraphicsItem, QGraphicsScene, QSizePolicy,
+    QCheckBox,
+    QFrame,
+    QGraphicsItem,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QVBoxLayout,
 )
 
-from core.models import Stage, StageItem, ItemType
-from core.path import ShootingPath, PathWaypoint
-from core.scoring import is_scoring_target, is_blocking_wall
-
+from core.models import Stage
+from core.path import ShootingPath
+from core.scoring import is_blocking_wall, is_scoring_target
+from ui.icons import load_icon
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  PathPolylineItem — rendering della polilinea sulla scena QGraphics
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class PathPolylineItem(QGraphicsItem):
     """Rende il percorso del tiratore come polilinea con frecce e distanze.
@@ -80,7 +89,8 @@ class PathPolylineItem(QGraphicsItem):
         ys = [p[1] * self._scale for p in self._waypoints]
         margin = 30
         return QRectF(
-            min(xs) - margin, min(ys) - margin,
+            min(xs) - margin,
+            min(ys) - margin,
             max(xs) - min(xs) + margin * 2,
             max(ys) - min(ys) + margin * 2,
         )
@@ -175,6 +185,7 @@ class PathPolylineItem(QGraphicsItem):
 #  PathEditorPanel — pannello di controllo del percorso
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class PathEditorPanel(QFrame):
     """Pannello per editare il percorso di tiro.
 
@@ -204,8 +215,10 @@ class PathEditorPanel(QFrame):
         title.setStyleSheet("font-weight: 600; font-size: 14px; color: #0f172a;")
         layout.addWidget(title)
 
-        desc = QLabel("Disegna il percorso che il tiratore segue nello stage.\n"
-                      "Usa le posizioni di tiro come waypoint.")
+        desc = QLabel(
+            "Disegna il percorso che il tiratore segue nello stage.\n"
+            "Usa le posizioni di tiro come waypoint."
+        )
         desc.setStyleSheet("font-size: 11px; color: #64748b;")
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -268,10 +281,7 @@ class PathEditorPanel(QFrame):
         """
         if not self._shooting_path:
             return []
-        return [
-            (wp.x, wp.y, wp.label, wp.is_start)
-            for wp in self._shooting_path.ordered_waypoints
-        ]
+        return [(wp.x, wp.y, wp.label, wp.is_start) for wp in self._shooting_path.ordered_waypoints]
 
     def sync_from_stage(self):
         """Sync path from stage.shooting_positions (after external changes)."""
@@ -354,10 +364,7 @@ class PathEditorPanel(QFrame):
             engaged_count = len(wp.engaged_target_ids)
             visible_count = len(wp.visible_target_ids)
             start_mark = " [START]" if wp.is_start else ""
-            text = (
-                f"#{wp.order + 1}{start_mark} — "
-                f"({wp.x:.1f}, {wp.y:.1f})"
-            )
+            text = f"#{wp.order + 1}{start_mark} — ({wp.x:.1f}, {wp.y:.1f})"
             if engaged_count > 0:
                 text += f" [{engaged_count} bersagli]"
             elif visible_count > 0:
@@ -385,6 +392,5 @@ class PathEditorPanel(QFrame):
                     ordered[i].y - ordered[i - 1].y,
                 )
             self._status_label.setText(
-                f"{n} waypoint{'i' if n != 1 else 'o'} · "
-                f"{total_dist:.1f}m totali"
+                f"{n} waypoint{'i' if n != 1 else 'o'} · {total_dist:.1f}m totali"
             )

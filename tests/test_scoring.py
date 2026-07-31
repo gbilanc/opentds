@@ -1,18 +1,19 @@
 """
 Test unitari per core/scoring.py — scoring, metadati, attivatori, conteggi.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from core.models import Stage, StageItem, ItemType
+from core.models import ItemType, Stage, StageItem
 from core.scoring import (
-    is_paper_like,
-    is_steel_like,
-    is_scoring_target,
-    is_obstacle,
-    is_composite,
     get_composite_info,
+    is_composite,
+    is_obstacle,
+    is_paper_like,
+    is_scoring_target,
+    is_steel_like,
     resolve_target_counts,
     score_stage,
 )
@@ -83,9 +84,14 @@ class TestTypeHelpers:
 class TestResolveTargetCounts:
     def test_auto_distribution_short(self):
         result = resolve_target_counts(
-            num_targets=0, num_steel=0, num_poppers=0, num_plates=0,
-            num_mini=0, num_moving=0,
-            auto_distribution=True, course_type="short",
+            num_targets=0,
+            num_steel=0,
+            num_poppers=0,
+            num_plates=0,
+            num_mini=0,
+            num_moving=0,
+            auto_distribution=True,
+            course_type="short",
         )
         assert result["paper"] == 5
         assert result["poppers"] == 1
@@ -95,7 +101,14 @@ class TestResolveTargetCounts:
 
     def test_auto_distribution_medium(self):
         result = resolve_target_counts(
-            0, 0, 0, 0, 0, 0, True, "medium",
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+            "medium",
         )
         assert result["paper"] == 11
         assert result["poppers"] == 1
@@ -104,7 +117,14 @@ class TestResolveTargetCounts:
 
     def test_auto_distribution_long(self):
         result = resolve_target_counts(
-            0, 0, 0, 0, 0, 0, True, "long",
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+            "long",
         )
         assert result["paper"] == 15
         assert result["poppers"] == 2
@@ -112,9 +132,14 @@ class TestResolveTargetCounts:
 
     def test_explicit_values_override_auto(self):
         result = resolve_target_counts(
-            num_targets=8, num_steel=0, num_poppers=3, num_plates=4,
-            num_mini=2, num_moving=3,
-            auto_distribution=True, course_type="short",
+            num_targets=8,
+            num_steel=0,
+            num_poppers=3,
+            num_plates=4,
+            num_mini=2,
+            num_moving=3,
+            auto_distribution=True,
+            course_type="short",
         )
         assert result["paper"] == 8
         assert result["poppers"] == 3
@@ -124,7 +149,14 @@ class TestResolveTargetCounts:
 
     def test_no_auto_distribution(self):
         result = resolve_target_counts(
-            10, 2, 0, 0, 1, 2, False, "",
+            10,
+            2,
+            0,
+            0,
+            1,
+            2,
+            False,
+            "",
         )
         assert result["paper"] == 10
         assert result["poppers"] >= 1  # 60% di 2
@@ -134,7 +166,14 @@ class TestResolveTargetCounts:
 
     def test_explicit_steel_without_auto(self):
         result = resolve_target_counts(
-            6, 0, 2, 3, 0, 0, False, "",
+            6,
+            0,
+            2,
+            3,
+            0,
+            0,
+            False,
+            "",
         )
         assert result["paper"] == 6
         assert result["poppers"] == 2
@@ -142,28 +181,53 @@ class TestResolveTargetCounts:
 
     def test_zero_steel(self):
         result = resolve_target_counts(
-            5, 0, 0, 0, 0, 0, False, "",
+            5,
+            0,
+            0,
+            0,
+            0,
+            0,
+            False,
+            "",
         )
         assert result["poppers"] == 0
         assert result["plates"] == 0
 
     def test_unknown_course_type_fallsback_to_default(self):
         result = resolve_target_counts(
-            0, 0, 0, 0, 0, 0, True, "unknown",
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+            "unknown",
         )
         # Fallback: default distribution
         assert result["paper"] >= 5
 
-    @pytest.mark.parametrize("course,expected_paper,expected_poppers,expected_plates", [
-        ("short", 5, 1, 1),
-        ("medium", 11, 1, 2),
-        ("long", 15, 2, 2),
-    ])
-    def test_auto_distribution_all_courses(self, course, expected_paper,
-                                            expected_poppers, expected_plates):
+    @pytest.mark.parametrize(
+        "course,expected_paper,expected_poppers,expected_plates",
+        [
+            ("short", 5, 1, 1),
+            ("medium", 11, 1, 2),
+            ("long", 15, 2, 2),
+        ],
+    )
+    def test_auto_distribution_all_courses(
+        self, course, expected_paper, expected_poppers, expected_plates
+    ):
         """Distribuzione automatica per tutti i tipi corso."""
         result = resolve_target_counts(
-            0, 0, 0, 0, 0, 0, True, course,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+            course,
         )
         assert result["paper"] == expected_paper
         assert result["poppers"] == expected_poppers
@@ -174,7 +238,8 @@ class TestScoreStage:
     def test_empty_stage_score_zero(self):
         stage = Stage()
         score = score_stage(
-            stage, [],
+            stage,
+            [],
             perimeter_poly=None,
             interior_samples=[],
             get_blocking_walls_fn=lambda: [],
@@ -190,7 +255,8 @@ class TestScoreStage:
             StageItem(2, ItemType.PAPER_TARGET, 8, 5),
         ]
         score = score_stage(
-            stage, items,
+            stage,
+            items,
             perimeter_poly=[(2, 2), (18, 2), (18, 13), (2, 13)],
             interior_samples=[(10, 7)],
             get_blocking_walls_fn=lambda: [],
@@ -206,15 +272,19 @@ class TestScoreStage:
             StageItem(2, ItemType.POPPER, 10, 5),
         ]
         score_easy = score_stage(
-            stage, items,
-            perimeter_poly=None, interior_samples=[],
+            stage,
+            items,
+            perimeter_poly=None,
+            interior_samples=[],
             get_blocking_walls_fn=lambda: [],
             is_target_visible_fn=lambda t, b: True,
             config_difficulty="easy",
         )
         score_hard = score_stage(
-            stage, items,
-            perimeter_poly=None, interior_samples=[],
+            stage,
+            items,
+            perimeter_poly=None,
+            interior_samples=[],
             get_blocking_walls_fn=lambda: [],
             is_target_visible_fn=lambda t, b: True,
             config_difficulty="hard",
@@ -228,15 +298,19 @@ class TestScoreStage:
             StageItem(2, ItemType.PAPER_TARGET, 10, 5),
         ]
         score_all_visible = score_stage(
-            stage, items,
-            perimeter_poly=None, interior_samples=[],
+            stage,
+            items,
+            perimeter_poly=None,
+            interior_samples=[],
             get_blocking_walls_fn=lambda: [],
             is_target_visible_fn=lambda t, b: True,
             config_difficulty="easy",
         )
         score_none_visible = score_stage(
-            stage, items,
-            perimeter_poly=None, interior_samples=[],
+            stage,
+            items,
+            perimeter_poly=None,
+            interior_samples=[],
             get_blocking_walls_fn=lambda: [],
             is_target_visible_fn=lambda t, b: False,
             config_difficulty="easy",

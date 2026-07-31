@@ -8,22 +8,23 @@ Provides targeted fixes for common validation violations:
 - Backstop too shallow → push targets forward
 - Medium/Long: all targets visible from one position → add dividers
 """
+
 from __future__ import annotations
 
 import math
 import random
 import re
-from typing import List, Optional
+from typing import List
 
 from shapely.geometry import LineString as SLine
 
-from core.models import Stage, StageItem, ItemType
+from core.collision import item_obb
 from core.constants import TARGET_COLORS
-from core.collision import item_obb, min_distance_between as obb_distance
 from core.geometry import line_intersects_rect, point_in_polygon
-from core.scoring import is_scoring_target, is_paper_like
 from core.ipsc_rules import IPSCRulesEngine
+from core.models import ItemType, Stage, StageItem
 from core.placement import PlacementEngine
+from core.scoring import is_paper_like, is_scoring_target
 from core.visibility import get_blocking_walls, is_target_visible
 
 
@@ -124,8 +125,13 @@ class RepairEngine:
                 visible = True
                 for w in all_blockers:
                     if line_intersects_rect(
-                        (obs_x, obs_y), (t.x, t.y),
-                        w.x, w.y, w.width, w.height, w.rotation,
+                        (obs_x, obs_y),
+                        (t.x, t.y),
+                        w.x,
+                        w.y,
+                        w.width,
+                        w.height,
+                        w.rotation,
                     ):
                         visible = False
                         break
@@ -133,8 +139,9 @@ class RepairEngine:
                     visible_targets.append(t)
 
             total_hits = sum(
-                2 if is_paper_like(t.item_type) or
-                     t.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                2
+                if is_paper_like(t.item_type)
+                or t.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
                 else 1
                 for t in visible_targets
             )
@@ -151,10 +158,14 @@ class RepairEngine:
                 if len(new_walls) >= max_walls:
                     break
 
-                hits_this = 2 if (is_paper_like(t.item_type) or
-                                  t.item_type in (ItemType.SWINGER,
-                                                   ItemType.DROP_TURNER,
-                                                   ItemType.MOVER)) else 1
+                hits_this = (
+                    2
+                    if (
+                        is_paper_like(t.item_type)
+                        or t.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    )
+                    else 1
+                )
                 if total_hits - hits_this < max_hits:
                     continue
 
@@ -173,17 +184,24 @@ class RepairEngine:
                     continue
 
                 margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
-                if not (margin <= wx <= stage.width - margin and
-                        margin <= wy <= stage.depth - margin):
+                if not (
+                    margin <= wx <= stage.width - margin and margin <= wy <= stage.depth - margin
+                ):
                     continue
 
                 wall_angle = math.degrees(math.atan2(ny, nx)) + 90
                 wall_len = random.uniform(1.5, 3.0)
 
                 new_wall = StageItem(
-                    0, ItemType.BARRIER, wx, wy,
-                    wall_len, 0.2, wall_angle,
-                    TARGET_COLORS.get("barrier", "#fbbf24"), "Barriera ristr.",
+                    0,
+                    ItemType.BARRIER,
+                    wx,
+                    wy,
+                    wall_len,
+                    0.2,
+                    wall_angle,
+                    TARGET_COLORS.get("barrier", "#fbbf24"),
+                    "Barriera ristr.",
                 )
 
                 test_items = existing + new_walls
@@ -196,8 +214,13 @@ class RepairEngine:
                     vis = True
                     for w in test_blockers:
                         if line_intersects_rect(
-                            (ox2, oy2), (t.x, t.y),
-                            w.x, w.y, w.width, w.height, w.rotation,
+                            (ox2, oy2),
+                            (t.x, t.y),
+                            w.x,
+                            w.y,
+                            w.width,
+                            w.height,
+                            w.rotation,
                         ):
                             vis = False
                             break
@@ -205,7 +228,9 @@ class RepairEngine:
                         still_visible = True
                         break
 
-                if still_visible and not self._placement.blocks_entrance_corridor(new_wall, stage.width):
+                if still_visible and not self._placement.blocks_entrance_corridor(
+                    new_wall, stage.width
+                ):
                     new_walls.append(new_wall)
                     total_hits -= hits_this
                     all_blockers = get_blocking_walls(existing) + new_walls
@@ -215,9 +240,12 @@ class RepairEngine:
     # ── Repair implementations ──────────────────────────────────────────
 
     def _repair_target_too_close_to_wall(
-        self, stage: Stage, v_text: str, engine: IPSCRulesEngine,
+        self,
+        stage: Stage,
+        v_text: str,
+        engine: IPSCRulesEngine,
     ) -> bool:
-        m = re.search(r'#(\d+)', v_text)
+        m = re.search(r"#(\d+)", v_text)
         if not m:
             return False
         target_id = int(m.group(1))
@@ -225,14 +253,17 @@ class RepairEngine:
         if not target:
             return False
 
-        walls = [it for it in stage.items
-                 if it.item_type in (ItemType.WALL, ItemType.BARRIER,
-                                     ItemType.DOOR, ItemType.HARD_COVER)]
+        walls = [
+            it
+            for it in stage.items
+            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
+        ]
         for w in walls:
             t_obb = item_obb(target)
             w_obb = item_obb(w)
             if t_obb and w_obb:
                 from core.collision import min_distance_between
+
                 dist = min_distance_between(t_obb, w_obb)
                 if dist < engine.MIN_TARGET_TO_WALL:
                     stage.remove_item(w.id)
@@ -240,9 +271,12 @@ class RepairEngine:
         return False
 
     def _repair_too_many_hits(
-        self, stage: Stage, v_text: str, engine: IPSCRulesEngine,
+        self,
+        stage: Stage,
+        v_text: str,
+        engine: IPSCRulesEngine,
     ) -> bool:
-        m = re.search(r'\(([\d.]+),\s*([\d.]+)\)', v_text)
+        m = re.search(r"\(([\d.]+),\s*([\d.]+)\)", v_text)
         if not m:
             return False
         px, py = float(m.group(1)), float(m.group(2))
@@ -265,8 +299,9 @@ class RepairEngine:
                 visible_targets.append(t)
 
         total_hits = sum(
-            2 if is_paper_like(t.item_type) or
-                 t.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+            2
+            if is_paper_like(t.item_type)
+            or t.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
             else 1
             for t in visible_targets
         )
@@ -292,29 +327,41 @@ class RepairEngine:
             wx = px + nx * dist * 0.4
             wy = py + ny * dist * 0.4
             margin = engine.MIN_TARGET_TO_EDGE
-            if not (margin <= wx <= stage.width - margin and
-                    margin <= wy <= stage.depth - margin):
+            if not (margin <= wx <= stage.width - margin and margin <= wy <= stage.depth - margin):
                 continue
 
-            from core.geometry import line_intersects_rect
-            wall = StageItem(0, ItemType.BARRIER, wx, wy,
-                             1.5, 0.2,
-                             math.degrees(math.atan2(ny, nx)),
-                             TARGET_COLORS.get("barrier", "#fbbf24"), "Barriera ripar.")
+            wall = StageItem(
+                0,
+                ItemType.BARRIER,
+                wx,
+                wy,
+                1.5,
+                0.2,
+                math.degrees(math.atan2(ny, nx)),
+                TARGET_COLORS.get("barrier", "#fbbf24"),
+                "Barriera ripar.",
+            )
             test_blockers = get_blocking_walls(stage.items + [wall])
             if is_target_visible(t_block, test_blockers, self._placement._interior_samples):
                 stage.add_item(wall)
                 repaired = True
-                hits_blocked = 2 if (is_paper_like(t_block.item_type) or
-                                     t_block.item_type in (ItemType.SWINGER,
-                                                          ItemType.DROP_TURNER,
-                                                          ItemType.MOVER)) else 1
+                hits_blocked = (
+                    2
+                    if (
+                        is_paper_like(t_block.item_type)
+                        or t_block.item_type
+                        in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    )
+                    else 1
+                )
                 total_hits -= hits_blocked
 
         return repaired
 
     def _repair_insufficient_targets(
-        self, stage: Stage, engine: IPSCRulesEngine,
+        self,
+        stage: Stage,
+        engine: IPSCRulesEngine,
     ) -> bool:
         min_t = IPSCRulesEngine.MIN_TARGETS
         current = len([it for it in stage.items if is_scoring_target(it.item_type)])
@@ -322,8 +369,7 @@ class RepairEngine:
 
         repaired = False
         for _ in range(needed * 2):
-            it = self._placement.place_target_around(
-                stage.items, ItemType.PAPER_TARGET, engine)
+            it = self._placement.place_target_around(stage.items, ItemType.PAPER_TARGET, engine)
             if it:
                 stage.add_item(it)
                 repaired = True
@@ -333,7 +379,9 @@ class RepairEngine:
         return repaired
 
     def _repair_backstop(
-        self, stage: Stage, engine: IPSCRulesEngine,
+        self,
+        stage: Stage,
+        engine: IPSCRulesEngine,
     ) -> bool:
         targets = [it for it in stage.items if is_scoring_target(it.item_type)]
         max_allowed_y = stage.depth - IPSCRulesEngine.MIN_BACKSTOP_DEPTH + 0.3
@@ -345,9 +393,11 @@ class RepairEngine:
         return repaired
 
     def _repair_obstacles_too_close(
-        self, stage: Stage, v_text: str,
+        self,
+        stage: Stage,
+        v_text: str,
     ) -> bool:
-        m = re.findall(r'#(\d+)', v_text)
+        m = re.findall(r"#(\d+)", v_text)
         if len(m) >= 2:
             id2 = int(m[1])
             item2 = stage.get_item(id2)
@@ -357,9 +407,12 @@ class RepairEngine:
         return False
 
     def _repair_all_visible(
-        self, stage: Stage, v_text: str, engine: IPSCRulesEngine,
+        self,
+        stage: Stage,
+        v_text: str,
+        engine: IPSCRulesEngine,
     ) -> bool:
-        m = re.search(r'\(([\d.]+),\s*([\d.]+)\)', v_text)
+        m = re.search(r"\(([\d.]+),\s*([\d.]+)\)", v_text)
         if not m:
             return False
         px, py = float(m.group(1)), float(m.group(2))
@@ -368,8 +421,7 @@ class RepairEngine:
         if not targets:
             return False
 
-        farthest = max(targets,
-                       key=lambda t: math.hypot(t.x - px, t.y - py))
+        farthest = max(targets, key=lambda t: math.hypot(t.x - px, t.y - py))
         dx = farthest.x - px
         dy = farthest.y - py
         dist = math.hypot(dx, dy)
@@ -380,13 +432,19 @@ class RepairEngine:
         wx = px + nx * dist * 0.4
         wy = py + ny * dist * 0.4
         margin = engine.MIN_TARGET_TO_EDGE
-        if not (margin <= wx <= stage.width - margin and
-                margin <= wy <= stage.depth - margin):
+        if not (margin <= wx <= stage.width - margin and margin <= wy <= stage.depth - margin):
             return False
 
-        wall = StageItem(0, ItemType.BARRIER, wx, wy,
-                         2.0, 0.2,
-                         math.degrees(math.atan2(ny, nx)),
-                         TARGET_COLORS.get("barrier", "#fbbf24"), "Barriera div.")
+        wall = StageItem(
+            0,
+            ItemType.BARRIER,
+            wx,
+            wy,
+            2.0,
+            0.2,
+            math.degrees(math.atan2(ny, nx)),
+            TARGET_COLORS.get("barrier", "#fbbf24"),
+            "Barriera div.",
+        )
         stage.add_item(wall)
         return True

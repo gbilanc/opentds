@@ -4,6 +4,7 @@ Costanti regolamentari IPSC centralizzate.
 Tutte le distanze sono in metri, angoli in gradi.
 Riferimenti: Regolamento IPSC Handgun 2025 (https://www.ipsc.org).
 """
+
 from __future__ import annotations
 
 from typing import Final
@@ -108,15 +109,15 @@ MAX_STAGE_DEPTH: Final = 30.0
 # Dimensioni minime per disciplina
 MIN_STAGE_DIMENSIONS: Final[dict[str, tuple[float, float]]] = {
     "ipsc_pistol": (10.0, 8.0),
-    "mini_rifle":  (15.0, 10.0),
-    "shotgun":      (8.0, 8.0),
+    "mini_rifle": (15.0, 10.0),
+    "shotgun": (8.0, 8.0),
 }
 
 # Massimo numero bersagli per disciplina
 MAX_TARGETS_BY_DISCIPLINE: Final[dict[str, int]] = {
     "ipsc_pistol": 32,
-    "mini_rifle":  40,
-    "shotgun":     32,
+    "mini_rifle": 40,
+    "shotgun": 32,
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -124,9 +125,9 @@ MAX_TARGETS_BY_DISCIPLINE: Final[dict[str, int]] = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 COURSE_MAX_ROUNDS: Final[dict[str, int]] = {
-    "short":  12,
+    "short": 12,
     "medium": 24,
-    "long":   32,
+    "long": 32,
 }
 
 # Colpi per bersaglio (default per calcolo punteggio)
@@ -140,46 +141,46 @@ HITS_PER_MOVING: Final = 2  # i mobili sono su supporto cartaceo
 
 # Dimensioni standard IPSC per bersagli (larghezza, altezza in metri)
 TARGET_DIMENSIONS: Final[dict[str, tuple[float, float]]] = {
-    "paper":        (0.45, 0.45),
-    "mini":         (0.34, 0.34),
-    "micro":        (0.23, 0.23),
-    "popper":       (0.30, 0.30),
-    "metal_plate":  (0.20, 0.20),
-    "steel_generic":(0.30, 0.30),
-    "swinger":      (0.45, 0.45),
-    "drop_turner":  (0.45, 0.45),
-    "mover":        (0.45, 0.45),
+    "paper": (0.45, 0.45),
+    "mini": (0.34, 0.34),
+    "micro": (0.23, 0.23),
+    "popper": (0.30, 0.30),
+    "metal_plate": (0.20, 0.20),
+    "steel_generic": (0.30, 0.30),
+    "swinger": (0.45, 0.45),
+    "drop_turner": (0.45, 0.45),
+    "mover": (0.45, 0.45),
     # Compositi
-    "doublet_side":         (0.95, 0.75),
-    "doublet_overlap":      (0.50, 1.30),  # paper 0.45×0.75 sovrapposti verticalmente
+    "doublet_side": (0.95, 0.75),
+    "doublet_overlap": (0.50, 1.30),  # paper 0.45×0.75 sovrapposti verticalmente
     "doublet_side_hostage": (1.20, 0.75),
     "doublet_overlap_hostage": (0.55, 1.50),  # due paper + no-shoot sovrapposti verticalmente
-    "bobber_plate":  (0.20, 0.20),
+    "bobber_plate": (0.20, 0.20),
     "double_bobber": (0.50, 0.20),
     "target_plus_noshoot": (0.70, 0.75),
 }
 
 # Colori IPSC standard
 TARGET_COLORS: Final[dict[str, str]] = {
-    "paper":       "#8B4513",  # marrone — bersaglio carta
-    "mini":        "#A0522D",
-    "micro":       "#8B4513",
-    "popper":      "#d1d5db",  # grigio chiaro — acciaio
+    "paper": "#8B4513",  # marrone — bersaglio carta
+    "mini": "#A0522D",
+    "micro": "#8B4513",
+    "popper": "#d1d5db",  # grigio chiaro — acciaio
     "metal_plate": "#e5e7eb",
-    "steel_generic":"#d1d5db",
-    "swinger":     "#A0522D",
+    "steel_generic": "#d1d5db",
+    "swinger": "#A0522D",
     "drop_turner": "#8B6914",
-    "mover":       "#CD853F",
-    "no_shoot":    "#eab308",  # giallo — penalità
-    "wall":        "#475569",
-    "barrier":     "#fbbf24",
-    "fault_line":  "#dc2626",  # rosso — linea di fallo
+    "mover": "#CD853F",
+    "no_shoot": "#eab308",  # giallo — penalità
+    "wall": "#475569",
+    "barrier": "#fbbf24",
+    "fault_line": "#dc2626",  # rosso — linea di fallo
     # Bersagli compositi
-    "doublet_side":            "#8B4513",
-    "doublet_overlap":         "#8B4513",
-    "doublet_side_hostage":    "#8B4513",
+    "doublet_side": "#8B4513",
+    "doublet_overlap": "#8B4513",
+    "doublet_side_hostage": "#8B4513",
     "doublet_overlap_hostage": "#8B4513",
-    "bobber_plate":  "#f97316",  # arancione
+    "bobber_plate": "#f97316",  # arancione
     "double_bobber": "#f97316",
     "target_plus_noshoot": "#8B4513",
 }
@@ -190,9 +191,9 @@ TARGET_COLORS: Final[dict[str, str]] = {
 
 # Distribuzione tipica per tipo di corso (paper, poppers, plates, mini, moving)
 COURSE_TARGET_DISTRIBUTION: Final[dict[str, dict[str, int]]] = {
-    "short":  {"paper": 5,  "poppers": 1, "plates": 1, "mini": 0, "moving": 0},
+    "short": {"paper": 5, "poppers": 1, "plates": 1, "mini": 0, "moving": 0},
     "medium": {"paper": 11, "poppers": 1, "plates": 2, "mini": 1, "moving": 1},
-    "long":   {"paper": 15, "poppers": 2, "plates": 2, "mini": 1, "moving": 2},
+    "long": {"paper": 15, "poppers": 2, "plates": 2, "mini": 1, "moving": 2},
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -226,39 +227,39 @@ MAX_ACTIVATED_PER_ACTIVATOR: Final = 3
 # ═══════════════════════════════════════════════════════════════════════════════
 
 DIVISION_MAG_CAPACITY: Final[dict[str, int | None]] = {
-    "open":              None,
-    "standard":          None,
-    "classic":            8,
-    "production":         15,
-    "production_optics":  15,
-    "revolver":            6,
+    "open": None,
+    "standard": None,
+    "classic": 8,
+    "production": 15,
+    "production_optics": 15,
+    "revolver": 6,
 }
 
 DIVISION_ALLOW_OPTICS: Final[dict[str, bool]] = {
-    "open":              True,
-    "standard":          False,
-    "classic":           False,
-    "production":        False,
+    "open": True,
+    "standard": False,
+    "classic": False,
+    "production": False,
     "production_optics": True,
-    "revolver":          False,
+    "revolver": False,
 }
 
 DIVISION_ALLOW_COMP: Final[dict[str, bool]] = {
-    "open":              True,
-    "standard":          False,
-    "classic":           False,
-    "production":        False,
+    "open": True,
+    "standard": False,
+    "classic": False,
+    "production": False,
     "production_optics": False,
-    "revolver":          False,
+    "revolver": False,
 }
 
 DIVISION_MAX_BARREL_LENGTH: Final[dict[str, float | None]] = {
-    "production":        0.127,
+    "production": 0.127,
     "production_optics": 0.127,
 }
 
 DIVISION_MIN_TRIGGER_WEIGHT: Final[dict[str, float | None]] = {
-    "production":        2.27,
+    "production": 2.27,
     "production_optics": 2.27,
 }
 
@@ -271,9 +272,17 @@ RATIO_MEDIUM: Final = 2
 RATIO_LONG: Final = 1
 
 MATCH_MIN_STAGES: Final[dict[int, int]] = {
-    1: 3, 2: 6, 3: 12, 4: 24, 5: 30,
+    1: 3,
+    2: 6,
+    3: 12,
+    4: 24,
+    5: 30,
 }
 
 MATCH_MIN_ROUNDS: Final[dict[int, int]] = {
-    1: 40, 2: 80, 3: 150, 4: 300, 5: 450,
+    1: 40,
+    2: 80,
+    3: 150,
+    4: 300,
+    5: 450,
 }

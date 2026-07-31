@@ -5,55 +5,58 @@ Usa Shapely per collision detection OBB (oriented bounding box),
 con regole IPSC 2025: minimi/massimi bersagli, no-shoot, shooting
 positions, fault line closure, dimensioni stage.
 """
+
 from __future__ import annotations
+
 import math
 from dataclasses import dataclass
 from typing import List
 
+from shapely.geometry import Point
+
+from core.collision import (
+    contains,
+    item_obb,
+    make_stage_boundary,
+    min_distance_between,
+)
 from core.constants import (
-    MIN_TARGET_TO_EDGE,
-    MIN_TARGET_TO_WALL,
-    MIN_TARGET_TO_TARGET,
-    MIN_TARGET_TO_BARRIER,
-    MIN_WALL_TO_EDGE,
-    MIN_OBSTACLE_GAP,
-    MIN_BACKSTOP_DEPTH,
-    MIN_STEEL_DISTANCE,
-    SAFETY_ANGLE_DEFAULT,
-    SAFETY_ANGLE_TOLERANCE_DEG,
-    MAX_FIXED_TARGET_ANGLE,
-    MAX_OBSTACLE_HEIGHT,
-    MIN_BARRIER_HEIGHT,
-    MIN_PLATE_MOUNT_HEIGHT,
-    MIN_TARGETS,
-    MAX_STEEL_PCT,
-    MAX_STAGE_WIDTH,
-    MAX_STAGE_DEPTH,
-    RECOMMENDED_NO_SHOOT_INTERVAL,
-    MAX_HITS_PER_POSITION,
     COURSE_MAX_ROUNDS,
-    MAX_TARGETS_BY_DISCIPLINE,
-    MIN_STAGE_DIMENSIONS,
-    DIVISION_MAG_CAPACITY,
-    DIVISION_ALLOW_OPTICS,
     DIVISION_ALLOW_COMP,
+    DIVISION_ALLOW_OPTICS,
+    DIVISION_MAG_CAPACITY,
     DIVISION_MAX_BARREL_LENGTH,
     DIVISION_MIN_TRIGGER_WEIGHT,
-    RATIO_SHORT,
-    RATIO_MEDIUM,
-    RATIO_LONG,
-    MATCH_MIN_STAGES,
     MATCH_MIN_ROUNDS,
+    MATCH_MIN_STAGES,
+    MAX_FIXED_TARGET_ANGLE,
+    MAX_HITS_PER_POSITION,
+    MAX_OBSTACLE_HEIGHT,
+    MAX_STAGE_DEPTH,
+    MAX_STAGE_WIDTH,
+    MAX_STEEL_PCT,
+    MAX_TARGETS_BY_DISCIPLINE,
+    MIN_BACKSTOP_DEPTH,
+    MIN_BARRIER_HEIGHT,
+    MIN_OBSTACLE_GAP,
+    MIN_PLATE_MOUNT_HEIGHT,
+    MIN_STAGE_DIMENSIONS,
+    MIN_STEEL_DISTANCE,
+    MIN_TARGET_TO_BARRIER,
+    MIN_TARGET_TO_EDGE,
+    MIN_TARGET_TO_TARGET,
+    MIN_TARGET_TO_WALL,
+    MIN_TARGETS,
+    MIN_WALL_TO_EDGE,
+    RATIO_LONG,
+    RATIO_MEDIUM,
+    RATIO_SHORT,
+    RECOMMENDED_NO_SHOOT_INTERVAL,
+    SAFETY_ANGLE_DEFAULT,
+    SAFETY_ANGLE_TOLERANCE_DEG,
     SAME_LINE_OF_FIRE_THRESHOLD_DEG,
 )
-from core.models import Stage, StageItem, ItemType, CourseType, Division
-from core.collision import (
-    make_stage_boundary,
-    item_obb,
-    min_distance_between,
-    contains,
-)
-from shapely.geometry import Point
+from core.models import CourseType, ItemType, Stage, StageItem
 
 
 @dataclass
@@ -177,15 +180,19 @@ class IPSCRulesEngine:
 
         # Backstop minimo
         deepest_target = max(
-            (it.y + it.height / 2 for it in self.stage.items
-             if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)),
+            (
+                it.y + it.height / 2
+                for it in self.stage.items
+                if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)
+            ),
             default=0,
         )
         backstop_space = d - deepest_target
         if 0 < backstop_space < self.MIN_BACKSTOP_DEPTH and deepest_target > 0:
             v.append(
                 f"Spazio dietro bersagli insufficiente: {backstop_space:.1f}m "
-                f"(min {self.MIN_BACKSTOP_DEPTH}m)")
+                f"(min {self.MIN_BACKSTOP_DEPTH}m)"
+            )
 
         return v
 
@@ -195,31 +202,21 @@ class IPSCRulesEngine:
 
         from core.scoring import is_paper_like, is_steel_like
 
-        paper = [it for it in self.stage.items
-                 if is_paper_like(it.item_type)]
-        steel = [it for it in self.stage.items
-                 if is_steel_like(it.item_type)]
-        no_shoots = [it for it in self.stage.items
-                     if it.item_type == ItemType.NO_SHOOT]
-        moving = [it for it in self.stage.items
-                  if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
-                                      ItemType.MOVER)]
-
+        paper = [it for it in self.stage.items if is_paper_like(it.item_type)]
+        steel = [it for it in self.stage.items if is_steel_like(it.item_type)]
+        no_shoots = [it for it in self.stage.items if it.item_type == ItemType.NO_SHOOT]
         total_scoring = len(paper) + len(steel)
 
         if total_scoring < self.MIN_TARGETS:
-            v.append(
-                f"Bersagli insufficienti: {total_scoring} "
-                f"(min {self.MIN_TARGETS})")
+            v.append(f"Bersagli insufficienti: {total_scoring} (min {self.MIN_TARGETS})")
         if total_scoring > self.MAX_TARGETS:
-            v.append(
-                f"Troppi bersagli: {total_scoring} "
-                f"(max {self.MAX_TARGETS})")
+            v.append(f"Troppi bersagli: {total_scoring} (max {self.MAX_TARGETS})")
 
         if len(paper) > 0 and len(steel) / total_scoring > self.MAX_STEEL_PCT:
             v.append(
                 f"Troppi bersagli steel: {len(steel)}/{total_scoring} "
-                f"(max {self.MAX_STEEL_PCT:.0%})")
+                f"(max {self.MAX_STEEL_PCT:.0%})"
+            )
 
         # No-shoot consigliati
         if len(paper) >= self.RECOMMENDED_NO_SHOOT_INTERVAL:
@@ -227,7 +224,8 @@ class IPSCRulesEngine:
             if len(no_shoots) < expected_ns:
                 v.append(
                     f"No-shoot insufficienti: {len(no_shoots)} "
-                    f"(consigliati almeno {expected_ns} per {len(paper)} paper)")
+                    f"(consigliati almeno {expected_ns} per {len(paper)} paper)"
+                )
 
         return v
 
@@ -235,15 +233,20 @@ class IPSCRulesEngine:
         """Verifica vincoli spaziali con OBB Shapely."""
         violations: List[str] = []
 
-        paper_targets = [it for it in self.stage.items if it.item_type in (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-            ItemType.MINI_TARGET, ItemType.MICRO_TARGET)]
-        no_shoots = [it for it in self.stage.items
-                     if it.item_type == ItemType.NO_SHOOT]
-        walls = [it for it in self.stage.items if it.item_type in (
-            ItemType.WALL, ItemType.DOOR)]
-        barriers = [it for it in self.stage.items
-                    if it.item_type == ItemType.BARRIER]
+        paper_targets = [
+            it
+            for it in self.stage.items
+            if it.item_type
+            in (
+                ItemType.PAPER_TARGET,
+                ItemType.STEEL_TARGET,
+                ItemType.MINI_TARGET,
+                ItemType.MICRO_TARGET,
+            )
+        ]
+        no_shoots = [it for it in self.stage.items if it.item_type == ItemType.NO_SHOOT]
+        walls = [it for it in self.stage.items if it.item_type in (ItemType.WALL, ItemType.DOOR)]
+        barriers = [it for it in self.stage.items if it.item_type == ItemType.BARRIER]
         all_targets = paper_targets + no_shoots
 
         for t in all_targets:
@@ -253,12 +256,13 @@ class IPSCRulesEngine:
 
             # Bordo stage
             edge_margin = make_stage_boundary(
-                self.stage.width, self.stage.depth,
-                margin=self.MIN_TARGET_TO_EDGE)
+                self.stage.width, self.stage.depth, margin=self.MIN_TARGET_TO_EDGE
+            )
             if not contains(edge_margin, t_obb.centroid):
                 violations.append(
                     f"Bersaglio #{t.id} troppo vicino al bordo stage "
-                    f"(min {self.MIN_TARGET_TO_EDGE}m)")
+                    f"(min {self.MIN_TARGET_TO_EDGE}m)"
+                )
 
             # Distanza da muri/porte
             for w in walls:
@@ -266,7 +270,8 @@ class IPSCRulesEngine:
                 if w_obb and min_distance_between(t_obb, w_obb) < self.MIN_TARGET_TO_WALL:
                     violations.append(
                         f"Bersaglio #{t.id} troppo vicino a muro #{w.id} "
-                        f"({self.MIN_TARGET_TO_WALL}m)")
+                        f"({self.MIN_TARGET_TO_WALL}m)"
+                    )
 
             # Distanza da barriere
             for b in barriers:
@@ -274,7 +279,8 @@ class IPSCRulesEngine:
                 if b_obb and min_distance_between(t_obb, b_obb) < self.MIN_TARGET_TO_BARRIER:
                     violations.append(
                         f"Bersaglio #{t.id} troppo vicino a barriera #{b.id} "
-                        f"({self.MIN_TARGET_TO_BARRIER}m)")
+                        f"({self.MIN_TARGET_TO_BARRIER}m)"
+                    )
 
         # Distanza tra bersagli che assegnano punti (esclude no-shoot)
         # Regola: i bersagli cartacei (PAPER_TARGET, MINI_TARGET, MICRO_TARGET,
@@ -287,22 +293,33 @@ class IPSCRulesEngine:
             if not a_obb:
                 continue
             a_is_paper = a.item_type in (
-                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
-            for b in paper_targets[i + 1:]:
+                ItemType.PAPER_TARGET,
+                ItemType.MINI_TARGET,
+                ItemType.MICRO_TARGET,
+                ItemType.SWINGER,
+                ItemType.DROP_TURNER,
+                ItemType.MOVER,
+            )
+            for b in paper_targets[i + 1 :]:
                 b_obb = item_obb(b)
                 if not b_obb:
                     continue
                 b_is_paper = b.item_type in (
-                    ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                    ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    ItemType.PAPER_TARGET,
+                    ItemType.MINI_TARGET,
+                    ItemType.MICRO_TARGET,
+                    ItemType.SWINGER,
+                    ItemType.DROP_TURNER,
+                    ItemType.MOVER,
+                )
                 # Bersagli cartacei possono essere affiancati/sovrapposti
                 if a_is_paper and b_is_paper:
                     continue
                 if min_distance_between(a_obb, b_obb) < self.MIN_TARGET_TO_TARGET - eps:
                     violations.append(
                         f"Bersaglio #{a.id} troppo vicino a bersaglio #{b.id} "
-                        f"({self.MIN_TARGET_TO_TARGET}m)")
+                        f"({self.MIN_TARGET_TO_TARGET}m)"
+                    )
 
         # Ostacoli non devono sovrapporsi (muri, barriere, porte)
         # Esonero: ostacoli perimetrali (fanno parte del confine) possono toccarsi
@@ -311,7 +328,7 @@ class IPSCRulesEngine:
             a_obb = item_obb(a)
             if a_obb is None:
                 continue
-            for b in obstacles[i + 1:]:
+            for b in obstacles[i + 1 :]:
                 # Se entrambi sono perimetrali, si possono toccare
                 if a.properties.get("perimeter") and b.properties.get("perimeter"):
                     continue
@@ -319,7 +336,8 @@ class IPSCRulesEngine:
                 if b_obb and min_distance_between(a_obb, b_obb) < self.MIN_OBSTACLE_GAP:
                     violations.append(
                         f"Ostacolo #{a.id} ({a.label}) troppo vicino a #{b.id} ({b.label}) "
-                        f"(gap min {self.MIN_OBSTACLE_GAP}m)")
+                        f"(gap min {self.MIN_OBSTACLE_GAP}m)"
+                    )
 
         return violations
 
@@ -333,7 +351,8 @@ class IPSCRulesEngine:
 
         # Bordo stage
         edge_margin = make_stage_boundary(
-            self.stage.width, self.stage.depth, margin=self.MIN_TARGET_TO_EDGE)
+            self.stage.width, self.stage.depth, margin=self.MIN_TARGET_TO_EDGE
+        )
         if not contains(edge_margin, item_obb_geom.centroid):
             return False
 
@@ -352,18 +371,34 @@ class IPSCRulesEngine:
             elif other.item_type in (ItemType.WALL, ItemType.DOOR):
                 if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_WALL:
                     return False
-            elif other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                                      ItemType.NO_SHOOT):
+            elif other.item_type in (
+                ItemType.PAPER_TARGET,
+                ItemType.STEEL_TARGET,
+                ItemType.NO_SHOOT,
+            ):
                 # Bersagli cartacei possono essere affiancati/sovrapposti
                 item_is_paper = item.item_type in (
-                    ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                    ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    ItemType.PAPER_TARGET,
+                    ItemType.MINI_TARGET,
+                    ItemType.MICRO_TARGET,
+                    ItemType.SWINGER,
+                    ItemType.DROP_TURNER,
+                    ItemType.MOVER,
+                )
                 other_is_paper = other.item_type in (
-                    ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                    ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                    ItemType.PAPER_TARGET,
+                    ItemType.MINI_TARGET,
+                    ItemType.MICRO_TARGET,
+                    ItemType.SWINGER,
+                    ItemType.DROP_TURNER,
+                    ItemType.MOVER,
+                )
                 if item_is_paper and other_is_paper:
                     continue  # carta-carta: nessuna distanza minima
-                if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_TARGET - 0.05:
+                if (
+                    min_distance_between(item_obb_geom, other_obb_geom)
+                    < self.MIN_TARGET_TO_TARGET - 0.05
+                ):
                     return False
             elif other.item_type == ItemType.BARRIER:
                 if min_distance_between(item_obb_geom, other_obb_geom) < self.MIN_TARGET_TO_BARRIER:
@@ -405,14 +440,9 @@ class IPSCRulesEngine:
         direzione frontale verso il parapalle (90° = asse Y positivo).
         """
         if self.stage.shooting_positions:
-            return [
-                (Point(sp.x, sp.y), sp.angle)
-                for sp in self.stage.shooting_positions
-            ]
+            return [(Point(sp.x, sp.y), sp.angle) for sp in self.stage.shooting_positions]
         # Fallback: centro area di tiro, direzione verso il parapalle
-        return [
-            (Point(self.stage.width / 2, self.stage.depth * 0.2), 90.0)
-        ]
+        return [(Point(self.stage.width / 2, self.stage.depth * 0.2), 90.0)]
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -450,8 +480,7 @@ class IPSCRulesEngine:
         può fermare il tiratore prima della violazione.
         """
         v = []
-        steel = [it for it in self.stage.items
-                 if it.item_type in (ItemType.STEEL_TARGET,)]
+        steel = [it for it in self.stage.items if it.item_type in (ItemType.STEEL_TARGET,)]
         if not steel:
             return v
 
@@ -470,7 +499,8 @@ class IPSCRulesEngine:
             if min_dist < self.MIN_STEEL_DISTANCE:
                 v.append(
                     f"Bersaglio metallico #{s.id} troppo vicino a posizione di tiro: "
-                    f"{min_dist:.1f}m (min {self.MIN_STEEL_DISTANCE}m, Reg. 2.1.3)")
+                    f"{min_dist:.1f}m (min {self.MIN_STEEL_DISTANCE}m, Reg. 2.1.3)"
+                )
 
         return v
 
@@ -485,8 +515,11 @@ class IPSCRulesEngine:
         e con linea di vista non ostruita da muri/barriere.
         """
         v = []
-        targets = [it for it in self.stage.items
-                   if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]
+        targets = [
+            it
+            for it in self.stage.items
+            if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)
+        ]
         if not targets:
             return v
 
@@ -497,8 +530,11 @@ class IPSCRulesEngine:
             if obb:
                 target_obbs[t.id] = obb
 
-        walls = [it for it in self.stage.items
-                 if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR)]
+        walls = [
+            it
+            for it in self.stage.items
+            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR)
+        ]
         wall_obbs = [wob for w in walls if (wob := item_obb(w)) is not None]
 
         from shapely.geometry import LineString as ShapelyLineString
@@ -527,7 +563,8 @@ class IPSCRulesEngine:
             if hits > self.MAX_HITS_PER_POSITION:
                 v.append(
                     f"Posizione ({pos.x:.1f}, {pos.y:.1f}): {hits} colpi "
-                    f"conteggiabili nel cono 180° (max {self.MAX_HITS_PER_POSITION}, Reg. 1.2.1)")
+                    f"conteggiabili nel cono 180° (max {self.MAX_HITS_PER_POSITION}, Reg. 1.2.1)"
+                )
 
         return v
 
@@ -544,10 +581,18 @@ class IPSCRulesEngine:
         definita, assume direzione verso il parapalle (90° = +Y).
         """
         v = []
-        targets = [it for it in self.stage.items
-                   if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                                       ItemType.SWINGER, ItemType.DROP_TURNER,
-                                       ItemType.MOVER)]
+        targets = [
+            it
+            for it in self.stage.items
+            if it.item_type
+            in (
+                ItemType.PAPER_TARGET,
+                ItemType.STEEL_TARGET,
+                ItemType.SWINGER,
+                ItemType.DROP_TURNER,
+                ItemType.MOVER,
+            )
+        ]
         if not targets:
             return v
 
@@ -562,7 +607,8 @@ class IPSCRulesEngine:
                         f"Bersaglio #{t.id} a {angle_deg:.0f}° dalla posizione "
                         f"({pos.x:.1f}, {pos.y:.1f}) — "
                         f"supera angolo sicurezza {self.SAFETY_ANGLE_DEFAULT}° "
-                        f"(cono ingaggio 180°, Reg. 2.1.2)")
+                        f"(cono ingaggio 180°, Reg. 2.1.2)"
+                    )
 
         return v
 
@@ -585,17 +631,29 @@ class IPSCRulesEngine:
         if max_rounds is None:
             v.append(f"Tipo corso sconosciuto: {ct}")
             return v
+        course_label = ["", 1, 2, 3][["short", "medium", "long"].index(ct)]
 
         # Calcola il numero di colpi richiesti dallo stage
         total_rounds = 0
-        paper_like = (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                      ItemType.MICRO_TARGET, ItemType.SWINGER,
-                      ItemType.DROP_TURNER, ItemType.MOVER,
-                      ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-                      ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE)
-        steel_like = (ItemType.STEEL_TARGET, ItemType.POPPER,
-                      ItemType.METAL_PLATE,
-                      ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER)
+        paper_like = (
+            ItemType.PAPER_TARGET,
+            ItemType.MINI_TARGET,
+            ItemType.MICRO_TARGET,
+            ItemType.SWINGER,
+            ItemType.DROP_TURNER,
+            ItemType.MOVER,
+            ItemType.DOUBLET_SIDE,
+            ItemType.DOUBLET_OVERLAP,
+            ItemType.DOUBLET_SIDE_HOSTAGE,
+            ItemType.DOUBLET_OVERLAP_HOSTAGE,
+        )
+        steel_like = (
+            ItemType.STEEL_TARGET,
+            ItemType.POPPER,
+            ItemType.METAL_PLATE,
+            ItemType.BOBBER_PLATE,
+            ItemType.DOUBLE_BOBBER,
+        )
 
         for it in self.stage.items:
             if it.item_type in paper_like:
@@ -606,16 +664,23 @@ class IPSCRulesEngine:
         if total_rounds > max_rounds:
             v.append(
                 f"Stage {ct}: {total_rounds} colpi richiesti "
-                f"(max {max_rounds}, Reg. 1.2.1.{['',1,2,3][['short','medium','long'].index(ct)]})")
+                f"(max {max_rounds}, Reg. 1.2.1.{course_label})"
+            )
 
         # Medium/Long: non tutti i bersagli ingaggiabili da una posizione
         if ct in ("medium", "long"):
-            targets = [it for it in self.stage.items
-                       if it.item_type in paper_like or it.item_type in steel_like]
+            targets = [
+                it
+                for it in self.stage.items
+                if it.item_type in paper_like or it.item_type in steel_like
+            ]
             if targets:
-                walls = [it for it in self.stage.items
-                         if it.item_type in (ItemType.WALL, ItemType.BARRIER,
-                                             ItemType.DOOR, ItemType.HARD_COVER)]
+                walls = [
+                    it
+                    for it in self.stage.items
+                    if it.item_type
+                    in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
+                ]
                 from shapely.geometry import LineString as SLine
 
                 max_angle = self.SAFETY_ANGLE_DEFAULT + self.SAFETY_ANGLE_TOLERANCE_DEG
@@ -628,9 +693,7 @@ class IPSCRulesEngine:
                             continue
                         line = SLine([(pos.x, pos.y), (t.x, t.y)])
                         blocked = any(
-                            line.intersects(wob)
-                            for w in walls
-                            if (wob := item_obb(w)) is not None
+                            line.intersects(wob) for w in walls if (wob := item_obb(w)) is not None
                         )
                         if not blocked:
                             visible_count += 1
@@ -639,7 +702,8 @@ class IPSCRulesEngine:
                         v.append(
                             f"Stage {ct}: tutti i {len(targets)} bersagli sono "
                             f"ingaggiabili dalla posizione ({pos.x:.1f},{pos.y:.1f}) "
-                            f"(viola Reg. 1.2.1.{['',1,2,3][['short','medium','long'].index(ct)]})")
+                            f"(viola Reg. 1.2.1.{course_label})"
+                        )
                         break
 
         return v
@@ -666,8 +730,7 @@ class IPSCRulesEngine:
         # Verifica presenza ottiche (se vietate o obbligatorie)
         allow_optics = self.DIVISION_ALLOW_OPTICS.get(div, True)
         has_optics = any(
-            "optic" in it.properties or "scope" in it.label.lower()
-            for it in self.stage.items
+            "optic" in it.properties or "scope" in it.label.lower() for it in self.stage.items
         )
         if not allow_optics and has_optics:
             v.append(f"Divisione {div}: ottiche non permesse (App. D{self._div_index(div)})")
@@ -688,8 +751,9 @@ class IPSCRulesEngine:
                 barrel_len = it.properties.get("barrel_length", 0)
                 if barrel_len > max_barrel:
                     v.append(
-                        f"Divisione {div}: canna {barrel_len*1000:.0f}mm "
-                        f"supera max {max_barrel*1000:.0f}mm (App. D{self._div_index(div)})")
+                        f"Divisione {div}: canna {barrel_len * 1000:.0f}mm "
+                        f"supera max {max_barrel * 1000:.0f}mm (App. D{self._div_index(div)})"
+                    )
 
         # Capacità caricatori
         max_cap = self.DIVISION_MAG_CAPACITY.get(div)
@@ -699,15 +763,20 @@ class IPSCRulesEngine:
                 if mag_cap > max_cap:
                     v.append(
                         f"Divisione {div}: caricatore da {mag_cap} colpi "
-                        f"supera max {max_cap} (App. D{self._div_index(div)})")
+                        f"supera max {max_cap} (App. D{self._div_index(div)})"
+                    )
 
         return v
 
     def _div_index(self, div: str) -> str:
         """Mappa nome divisione a numero appendice."""
         mapping = {
-            "open": "1", "standard": "2", "classic": "3",
-            "production": "4", "production_optics": "4a", "revolver": "5",
+            "open": "1",
+            "standard": "2",
+            "classic": "3",
+            "production": "4",
+            "production_optics": "4a",
+            "revolver": "5",
         }
         return mapping.get(div, "?")
 
@@ -726,10 +795,17 @@ class IPSCRulesEngine:
         # Identifica i bersagli fissi: NON mobili/swinger/drop/mover e
         # NON attivati da altri bersagli
         fixed_targets = [
-            it for it in self.stage.items
-            if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                                ItemType.MICRO_TARGET, ItemType.POPPER,
-                                ItemType.METAL_PLATE, ItemType.STEEL_TARGET)
+            it
+            for it in self.stage.items
+            if it.item_type
+            in (
+                ItemType.PAPER_TARGET,
+                ItemType.MINI_TARGET,
+                ItemType.MICRO_TARGET,
+                ItemType.POPPER,
+                ItemType.METAL_PLATE,
+                ItemType.STEEL_TARGET,
+            )
             and "activated_by" not in it.properties
             and "is_activator" not in it.properties
         ]
@@ -738,8 +814,12 @@ class IPSCRulesEngine:
 
         # Centro dell'area di tiro (o shooting position se definita)
         if self.stage.shooting_positions:
-            cx = sum(sp.x for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
-            cy = sum(sp.y for sp in self.stage.shooting_positions) / len(self.stage.shooting_positions)
+            cx = sum(sp.x for sp in self.stage.shooting_positions) / len(
+                self.stage.shooting_positions
+            )
+            cy = sum(sp.y for sp in self.stage.shooting_positions) / len(
+                self.stage.shooting_positions
+            )
         else:
             cx = self.stage.width / 2
             cy = self.stage.depth * 0.3
@@ -768,7 +848,8 @@ class IPSCRulesEngine:
                 v.append(
                     f"Bersaglio fisso #{t.id} ({t.label}) presentato a "
                     f"{diff:.0f}° rispetto all'area di tiro "
-                    f"(max {self.MAX_FIXED_TARGET_ANGLE}°, Reg. 2.1.8.4)")
+                    f"(max {self.MAX_FIXED_TARGET_ANGLE}°, Reg. 2.1.8.4)"
+                )
 
         return v
 
@@ -784,22 +865,20 @@ class IPSCRulesEngine:
         """
         v = []
 
-        has_metal_plates = any(
-            it.item_type == ItemType.METAL_PLATE
-            for it in self.stage.items
-        )
+        has_metal_plates = any(it.item_type == ItemType.METAL_PLATE for it in self.stage.items)
         if not has_metal_plates:
             return v
 
         has_paper_or_popper = any(
-            it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                             ItemType.MICRO_TARGET, ItemType.POPPER)
+            it.item_type
+            in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET, ItemType.POPPER)
             for it in self.stage.items
         )
         if not has_paper_or_popper:
             v.append(
                 "Sono presenti piatti metallici ma nessun bersaglio carta o "
-                "Popper che assegni punti (Reg. 4.3.3.3)")
+                "Popper che assegni punti (Reg. 4.3.3.3)"
+            )
 
         return v
 
@@ -815,14 +894,11 @@ class IPSCRulesEngine:
         """
         v = []
 
-        hard_covers = [
-            it for it in self.stage.items
-            if it.item_type == ItemType.HARD_COVER
-        ]
+        hard_covers = [it for it in self.stage.items if it.item_type == ItemType.HARD_COVER]
         paper_targets = [
-            it for it in self.stage.items
-            if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                                ItemType.MICRO_TARGET)
+            it
+            for it in self.stage.items
+            if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET)
         ]
         if not hard_covers or not paper_targets:
             return v
@@ -839,16 +915,19 @@ class IPSCRulesEngine:
                 if hc_obb.contains(pt_center):
                     v.append(
                         f"Hard Cover #{hc.id} copre il centro del bersaglio "
-                        f"#{pt.id} (possibile occultamento zona A, Reg. 4.2.4)")
+                        f"#{pt.id} (possibile occultamento zona A, Reg. 4.2.4)"
+                    )
                 else:
                     # Verifica distanza: se hard cover è molto vicino al centro
                     from shapely import distance as sh_dist
+
                     d = sh_dist(hc_obb, pt_center)
                     if d < 0.15:
                         v.append(
-                            f"Hard Cover #{hc.id} a {d*100:.0f}cm dal centro "
+                            f"Hard Cover #{hc.id} a {d * 100:.0f}cm dal centro "
                             f"del bersaglio #{pt.id} "
-                            f"(possibile occultamento zona A, Reg. 4.2.4)")
+                            f"(possibile occultamento zona A, Reg. 4.2.4)"
+                        )
 
         return v
 
@@ -869,33 +948,45 @@ class IPSCRulesEngine:
         v = []
 
         metal_items = [
-            it for it in self.stage.items
-            if it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER,
-                                ItemType.METAL_PLATE)
+            it
+            for it in self.stage.items
+            if it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
         ]
         for it in metal_items:
             props = it.properties or {}
             # Cerca proprietà che indicano movimento/rotazione
-            moving_props = [k for k in props if k in (
-                "amplitude", "speed", "trigger", "fall_time",
-                "distance", "direction", "rotating", "swing",
-            )]
+            moving_props = [
+                k
+                for k in props
+                if k
+                in (
+                    "amplitude",
+                    "speed",
+                    "trigger",
+                    "fall_time",
+                    "distance",
+                    "direction",
+                    "rotating",
+                    "swing",
+                )
+            ]
             if moving_props:
                 v.append(
                     f"Bersaglio metallico #{it.id} ({it.label}) ha proprietà "
                     f"di movimento ({', '.join(moving_props)}) che sono "
-                    f"vietate per i metallici (Reg. 4.3.1.1)")
+                    f"vietate per i metallici (Reg. 4.3.1.1)"
+                )
 
         # Inoltre, i tipi SWINGER, DROP_TURNER, MOVER non dovrebbero
         # MAI essere di tipo metallico (sono inherently carta)
         for it in self.stage.items:
-            if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
-                                ItemType.MOVER):
+            if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
                 if "metal" in it.label.lower() or "steel" in it.label.lower():
                     v.append(
                         f"Bersaglio mobile #{it.id} ({it.label}) è marcato "
                         f"come metallico ma i mobili devono essere cartacei "
-                        f"(Reg. 4.3.1.1)")
+                        f"(Reg. 4.3.1.1)"
+                    )
 
         return v
 
@@ -913,17 +1004,11 @@ class IPSCRulesEngine:
         """
         v = []
 
-        plates = [
-            it for it in self.stage.items
-            if it.item_type == ItemType.METAL_PLATE
-        ]
+        plates = [it for it in self.stage.items if it.item_type == ItemType.METAL_PLATE]
         if not plates:
             return v
 
-        hard_covers = [
-            it for it in self.stage.items
-            if it.item_type == ItemType.HARD_COVER
-        ]
+        hard_covers = [it for it in self.stage.items if it.item_type == ItemType.HARD_COVER]
 
         for pl in plates:
             mount_height = pl.properties.get("mount_height", 0.0)
@@ -942,6 +1027,7 @@ class IPSCRulesEngine:
                     break
                 # Oppure hard cover a meno di 0.3m sotto
                 from shapely import distance as sh_dist
+
                 if hc_obb and sh_dist(hc_obb, pl_point) < 0.3:
                     # Verifica che l'hard cover sia sotto (y minore)
                     if hc.y + hc.height / 2 < pl.y:
@@ -952,7 +1038,8 @@ class IPSCRulesEngine:
                 v.append(
                     f"Piatto metallico #{pl.id} non montato su Hard Cover o "
                     f"paletto ≥ {self.MIN_PLATE_MOUNT_HEIGHT}m "
-                    f"(mount_height={mount_height}m, App. C3)")
+                    f"(mount_height={mount_height}m, App. C3)"
+                )
 
         return v
 
@@ -969,12 +1056,19 @@ class IPSCRulesEngine:
         """
         v = []
         targets = [
-            it for it in self.stage.items
-            if it.item_type in (
-                ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                ItemType.POPPER, ItemType.METAL_PLATE,
-                ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+            it
+            for it in self.stage.items
+            if it.item_type
+            in (
+                ItemType.PAPER_TARGET,
+                ItemType.STEEL_TARGET,
+                ItemType.POPPER,
+                ItemType.METAL_PLATE,
+                ItemType.MINI_TARGET,
+                ItemType.MICRO_TARGET,
+                ItemType.SWINGER,
+                ItemType.DROP_TURNER,
+                ItemType.MOVER,
             )
         ]
         if len(targets) < 2:
@@ -988,7 +1082,7 @@ class IPSCRulesEngine:
         threshold = SAME_LINE_OF_FIRE_THRESHOLD_DEG
         for i, a in enumerate(targets):
             a_angle = math.degrees(math.atan2(a.y - cy, a.x - cx))
-            for b in targets[i + 1:]:
+            for b in targets[i + 1 :]:
                 if a.id == b.id:
                     continue
                 b_angle = math.degrees(math.atan2(b.y - cy, b.x - cx))
@@ -1005,7 +1099,7 @@ class IPSCRulesEngine:
     def count_targets(self) -> dict:
         """Conta i bersagli per tipo, risolvendo i compositi nei sub-target."""
 
-        from core.scoring import is_paper_like, is_steel_like, is_composite, get_composite_info
+        from core.scoring import get_composite_info, is_composite, is_paper_like, is_steel_like
 
         paper = 0
         steel = 0
@@ -1076,8 +1170,7 @@ class MatchValidator:
         violations.extend(self._validate_min_stages())
         violations.extend(self._validate_min_rounds())
 
-        return MatchValidationResult(
-            ok=len(violations) == 0, violations=violations)
+        return MatchValidationResult(ok=len(violations) == 0, violations=violations)
 
     def _validate_ratio_3_2_1(self) -> List[str]:
         """Verifica il rapporto 3:2:1 tra Short:Medium:Long (App. A4)."""
@@ -1085,12 +1178,9 @@ class MatchValidator:
         if not self.stages:
             return v
 
-        short = sum(1 for s in self.stages
-                    if s.course_type == CourseType.SHORT)
-        medium = sum(1 for s in self.stages
-                     if s.course_type == CourseType.MEDIUM)
-        long_ = sum(1 for s in self.stages
-                    if s.course_type == CourseType.LONG)
+        short = sum(1 for s in self.stages if s.course_type == CourseType.SHORT)
+        medium = sum(1 for s in self.stages if s.course_type == CourseType.MEDIUM)
+        long_ = sum(1 for s in self.stages if s.course_type == CourseType.LONG)
 
         # Rapporto approssimato: per ogni Long, ci devono essere
         # circa 3 Short e 2 Medium
@@ -1102,11 +1192,13 @@ class MatchValidator:
             if abs(short - expected_short) > 1 and short > 0:
                 v.append(
                     f"Rapporto 3:2:1: {short} Short, {medium} Medium, {long_} Long. "
-                    f"Attesi ~{expected_short} Short per {long_} Long (App. A4)")
+                    f"Attesi ~{expected_short} Short per {long_} Long (App. A4)"
+                )
             if abs(medium - expected_medium) > 1 and medium > 0:
                 v.append(
                     f"Rapporto 3:2:1: {short} Short, {medium} Medium, {long_} Long. "
-                    f"Attesi ~{expected_medium} Medium per {long_} Long (App. A4)")
+                    f"Attesi ~{expected_medium} Medium per {long_} Long (App. A4)"
+                )
 
         return v
 
@@ -1117,7 +1209,8 @@ class MatchValidator:
         if len(self.stages) < min_stages:
             v.append(
                 f"Gara livello {self.match_level}: {len(self.stages)} esercizi "
-                f"(min {min_stages}, App. A1)")
+                f"(min {min_stages}, App. A1)"
+            )
         return v
 
     def _validate_min_rounds(self) -> List[str]:
@@ -1127,16 +1220,19 @@ class MatchValidator:
         total = 0
         for s in self.stages:
             for it in s.items:
-                if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                                    ItemType.MICRO_TARGET, ItemType.SWINGER,
-                                    ItemType.DROP_TURNER, ItemType.MOVER):
+                if it.item_type in (
+                    ItemType.PAPER_TARGET,
+                    ItemType.MINI_TARGET,
+                    ItemType.MICRO_TARGET,
+                    ItemType.SWINGER,
+                    ItemType.DROP_TURNER,
+                    ItemType.MOVER,
+                ):
                     total += 2
-                elif it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER,
-                                      ItemType.METAL_PLATE):
+                elif it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE):
                     total += 1
         if total < min_rounds:
             v.append(
-                f"Gara livello {self.match_level}: {total} colpi totali "
-                f"(min {min_rounds}, App. A1)")
+                f"Gara livello {self.match_level}: {total} colpi totali (min {min_rounds}, App. A1)"
+            )
         return v
-

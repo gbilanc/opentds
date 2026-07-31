@@ -1,15 +1,14 @@
 """
 Test unitari per core/ipsc_rules.py — IPSCRulesEngine.
 """
+
 from __future__ import annotations
 
-import pytest
-
-from core.models import Stage, StageItem, ItemType
-from core.ipsc_rules import IPSCRulesEngine, ConstraintResult
-
+from core.ipsc_rules import ConstraintResult, IPSCRulesEngine
+from core.models import ItemType, Stage, StageItem
 
 # ─── ConstraintResult ────────────────────────────────────────────────────────
+
 
 class TestConstraintResult:
     def test_default_violations_is_empty_list(self):
@@ -23,6 +22,7 @@ class TestConstraintResult:
 
 
 # ─── Dimensioni stage ────────────────────────────────────────────────────────
+
 
 class TestStageDimensions:
     def test_valid_dimensions(self, empty_stage):
@@ -61,6 +61,7 @@ class TestStageDimensions:
 
 
 # ─── Conteggio bersagli ──────────────────────────────────────────────────────
+
 
 class TestTargetCounts:
     def test_minimum_targets_not_met(self, empty_stage):
@@ -111,6 +112,7 @@ class TestTargetCounts:
 
 # ─── Backstop ────────────────────────────────────────────────────────────────
 
+
 class TestBackstop:
     def test_insufficient_backstop(self):
         """Bersaglio troppo vicino al fondo stage."""
@@ -122,6 +124,7 @@ class TestBackstop:
 
 
 # ─── Validazione spaziale ────────────────────────────────────────────────────
+
 
 class TestValidateSpatial:
     def test_empty_stage_is_valid(self, empty_stage):
@@ -173,6 +176,7 @@ class TestValidateSpatial:
 
 # ─── is_valid_position ───────────────────────────────────────────────────────
 
+
 class TestIsValidPosition:
     def test_valid_center(self, empty_stage):
         engine = IPSCRulesEngine(empty_stage)
@@ -198,6 +202,7 @@ class TestIsValidPosition:
 
 
 # ─── Costanti ────────────────────────────────────────────────────────────────
+
 
 class TestConstants:
     def test_min_target_to_edge_default(self):
@@ -243,6 +248,7 @@ class TestConstants:
 
 # ─── count_targets ───────────────────────────────────────────────────────────
 
+
 class TestCountTargets:
     def test_empty_stage(self, empty_stage):
         engine = IPSCRulesEngine(empty_stage)
@@ -267,17 +273,16 @@ class TestCountTargets:
 
 # ─── Validate (completo) ─────────────────────────────────────────────────────
 
+
 class TestValidateComplete:
     def test_valid_stage_passes(self, empty_stage):
         """Stage con 8 paper, dimensioni corrette passa."""
         for i in range(8):
-            empty_stage.add_item(
-                StageItem(0, ItemType.PAPER_TARGET, 5 + i * 1.5, 10, 0.45, 0.45))
+            empty_stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5 + i * 1.5, 10, 0.45, 0.45))
         engine = IPSCRulesEngine(empty_stage)
         r = engine.validate()
         # Potrebbero esserci violazioni spaziali con OBB, ma non di conteggio
-        assert any(x for x in r.violations
-                    if "insufficienti" in x or "troppo" in x.lower()) or r.ok
+        assert any(x for x in r.violations if "insufficienti" in x or "troppo" in x.lower()) or r.ok
 
     def test_validate_returns_violations_for_bad_stage(self, empty_stage):
         """Stage piccolo e con pochi bersagli ha violazioni."""
@@ -289,6 +294,7 @@ class TestValidateComplete:
 
 # ─── Reg. 2.1.8.4 — Angolo bersagli fissi ────────────────────────────────────
 
+
 class TestFixedTargetsAngle:
     """Verifica Reg. 2.1.8.4: bersagli fissi non oltre 90°."""
 
@@ -298,8 +304,9 @@ class TestFixedTargetsAngle:
         # Paper target con rotazione verso il centro (x=10, y=7.5)
         # Il centro è a (10, 7.5), il bersaglio a (5, 10)
         # Direzione dal bersaglio al centro: atan2(7.5-10, 10-5) = atan2(-2.5, 5) ≈ -27°
-        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 10,
-                                 0.45, 0.45, rotation=-27, label="Paper"))
+        stage.add_item(
+            StageItem(0, ItemType.PAPER_TARGET, 5, 10, 0.45, 0.45, rotation=-27, label="Paper")
+        )
         engine = IPSCRulesEngine(stage)
         v = engine._validate_fixed_targets_angle()
         assert len(v) == 0, f"Violazioni inaspettate: {v}"
@@ -310,8 +317,9 @@ class TestFixedTargetsAngle:
         # Paper target con rotazione opposta al centro
         # Centro a (10, 7.5), bersaglio a (5, 10)
         # Direzione opposta: -27 + 180 = 153°
-        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 10,
-                                 0.45, 0.45, rotation=153, label="Paper"))
+        stage.add_item(
+            StageItem(0, ItemType.PAPER_TARGET, 5, 10, 0.45, 0.45, rotation=153, label="Paper")
+        )
         engine = IPSCRulesEngine(stage)
         v = engine._validate_fixed_targets_angle()
         assert any("2.1.8.4" in x for x in v), f"Violazione 2.1.8.4 attesa: {v}"
@@ -319,8 +327,9 @@ class TestFixedTargetsAngle:
     def test_no_violation_for_moving_targets(self):
         """Bersagli mobili/swinger NON sono fissi, nessuna violazione."""
         stage = Stage(width=20.0, depth=15.0)
-        stage.add_item(StageItem(0, ItemType.SWINGER, 5, 10,
-                                 0.45, 0.45, rotation=180, label="Swinger"))
+        stage.add_item(
+            StageItem(0, ItemType.SWINGER, 5, 10, 0.45, 0.45, rotation=180, label="Swinger")
+        )
         engine = IPSCRulesEngine(stage)
         v = engine._validate_fixed_targets_angle()
         assert len(v) == 0
@@ -328,8 +337,7 @@ class TestFixedTargetsAngle:
     def test_no_violation_for_activated_targets(self):
         """Bersagli attivati NON sono fissi, nessuna violazione."""
         stage = Stage(width=20.0, depth=15.0)
-        it = StageItem(0, ItemType.PAPER_TARGET, 5, 10,
-                       0.45, 0.45, rotation=180, label="Paper")
+        it = StageItem(0, ItemType.PAPER_TARGET, 5, 10, 0.45, 0.45, rotation=180, label="Paper")
         it.properties["activated_by"] = [1]
         stage.add_item(it)
         engine = IPSCRulesEngine(stage)
@@ -338,6 +346,7 @@ class TestFixedTargetsAngle:
 
 
 # ─── Reg. 4.3.3.3 — Piatti metallici con carta/popper ───────────────────────
+
 
 class TestMetalPlatesNeedPaper:
     """Verifica Reg. 4.3.3.3: almeno 1 carta/popper con plates."""
@@ -379,6 +388,7 @@ class TestMetalPlatesNeedPaper:
 
 # ─── Reg. 4.2.4 — Hard cover non nasconde zona A ───────────────────────────
 
+
 class TestHardCoverHighZone:
     """Verifica Reg. 4.2.4: hard cover non nasconde zona A."""
 
@@ -411,6 +421,7 @@ class TestHardCoverHighZone:
 
 
 # ─── Reg. 4.3.1.1 — Vietati bersagli metallici rotanti ──────────────────────
+
 
 class TestMetalRotatingProhibited:
     """Verifica Reg. 4.3.1.1: nessun metallico con movimento/rotazione."""
@@ -446,6 +457,7 @@ class TestMetalRotatingProhibited:
 
 
 # ─── App. C3 — Altezza montaggio piatti metallici ───────────────────────────
+
 
 class TestPlateMountingHeight:
     """Verifica App. C3: piatti su hard cover/paletti ≥ 1m."""

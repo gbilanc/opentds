@@ -1,10 +1,12 @@
 """
 Test unitari per core/shapes.py — forme alfabetiche, poligoni, perimetri.
 """
+
 from __future__ import annotations
 
 import pytest
 
+from core.geometry import validate_polygon
 from core.models import Stage
 from core.shapes import (
     LETTER_SHAPES,
@@ -12,7 +14,6 @@ from core.shapes import (
     perimeter_to_items,
     polygon_to_shapely,
 )
-from core.geometry import validate_polygon
 
 
 class TestLetterShapes:
@@ -39,9 +40,24 @@ class TestLetterShapes:
         """16 forme alfabetiche definite (incluse W e Q)."""
         assert len(LETTER_SHAPES) == 16
 
-    @pytest.mark.parametrize("letter", [
-        "L", "T", "U", "C", "H", "F", "O", "S", "X", "Y", "M", "N", "E",
-    ])
+    @pytest.mark.parametrize(
+        "letter",
+        [
+            "L",
+            "T",
+            "U",
+            "C",
+            "H",
+            "F",
+            "O",
+            "S",
+            "X",
+            "Y",
+            "M",
+            "N",
+            "E",
+        ],
+    )
     def test_each_shape_has_valid_polygon(self, letter):
         """Ogni forma singola è un poligono valido (esclusa Z, complessa)."""
         verts = LETTER_SHAPES[letter]
@@ -70,6 +86,7 @@ class TestGeneratePerimeterPolygon:
         stage = Stage(width=20.0, depth=15.0)
         poly = generate_perimeter_polygon(stage, letter_shape="O", has_steel=False)
         from core.geometry import polygon_area
+
         area = polygon_area(poly)
         assert area > 1.0, f"Area troppo piccola: {area}"
 
@@ -83,6 +100,7 @@ class TestGeneratePerimeterPolygon:
     def test_different_seeds_different_polygons(self):
         """Semi diversi producono poligoni diversi."""
         import random
+
         random.seed(1)
         stage = Stage(width=20.0, depth=15.0)
         poly1 = generate_perimeter_polygon(stage, letter_shape="random", has_steel=False)
@@ -108,11 +126,14 @@ class TestPerimeterToItems:
         items = perimeter_to_items([], style="fault_lines")
         assert items == []
 
-    @pytest.mark.parametrize("style,expected_type", [
-        ("fault_lines", "FAULT_LINE"),
-        ("barriers", "BARRIER"),
-        ("walls", "WALL"),
-    ])
+    @pytest.mark.parametrize(
+        "style,expected_type",
+        [
+            ("fault_lines", "FAULT_LINE"),
+            ("barriers", "BARRIER"),
+            ("walls", "WALL"),
+        ],
+    )
     def test_all_styles_generate_items(self, style, expected_type):
         """Ogni stile di delimitazione produce item del tipo corretto."""
         poly = [(2, 2), (18, 2), (18, 13), (2, 13)]

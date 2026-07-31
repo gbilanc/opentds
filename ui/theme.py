@@ -7,13 +7,13 @@ Usage:
     theme.apply_dark()
     theme.apply_light()
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
-
 
 _STYLES_DIR = Path(__file__).resolve().parent / "resources" / "styles"
 

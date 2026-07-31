@@ -4,17 +4,29 @@
 Fase 1: dimensioni + forma + rotazione area di tiro
 Fase 2: posizioni di tiro + bersagli + auto-place
 """
+
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, Slot, QSize
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QSpinBox, QDoubleSpinBox, QComboBox,
-    QCheckBox, QPushButton, QProgressBar, QGroupBox,
-    QFrame, QScrollArea, QStackedWidget, QListWidget,
-    QListWidgetItem, QAbstractItemView, QMessageBox,
-    QSlider, QSizePolicy,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from core.generator import GeneratorConfig, Phase1Config
@@ -30,6 +42,7 @@ class StageWizard(QWidget):
     phase1PreviewChanged = Signal(Phase1Config)  # update live (rotazione/scala)
     stopRequested = Signal()
     placeModeToggled = Signal(bool)  # True = attivo, False = disattivo
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._phase1_done = False
@@ -139,9 +152,7 @@ class StageWizard(QWidget):
         shape_form.setSpacing(8)
 
         self._p1_shape = QComboBox()
-        self._p1_shape.addItems(
-            ["Casuale", "Quadrato", "Rettangolo", "T", "U", "W", "X", "Y", "Z"]
-        )
+        self._p1_shape.addItems(["Casuale", "Quadrato", "Rettangolo", "T", "U", "W", "X", "Y", "Z"])
         self._p1_shape.setCurrentIndex(0)
         shape_form.addRow("Forma:", self._p1_shape)
 
@@ -209,11 +220,23 @@ class StageWizard(QWidget):
 
     def _build_phase1_config(self) -> Phase1Config:
         """Costruisce un Phase1Config dai valori correnti dei controlli."""
-        shape_map = {"Casuale": "random", "Quadrato": "Q",
-                     "Rettangolo": "O", "T": "T", "U": "U",
-                     "W": "W", "X": "X", "Y": "Y", "Z": "Z"}
-        delim_map = {"Fault Lines": "fault_lines", "Barriere": "barriers",
-                      "Muri": "walls", "Misto": "mixed"}
+        shape_map = {
+            "Casuale": "random",
+            "Quadrato": "Q",
+            "Rettangolo": "O",
+            "T": "T",
+            "U": "U",
+            "W": "W",
+            "X": "X",
+            "Y": "Y",
+            "Z": "Z",
+        }
+        delim_map = {
+            "Fault Lines": "fault_lines",
+            "Barriere": "barriers",
+            "Muri": "walls",
+            "Misto": "mixed",
+        }
         return Phase1Config(
             stage_width=self._p1_width.value(),
             stage_depth=self._p1_depth.value(),
@@ -389,8 +412,10 @@ class StageWizard(QWidget):
         title.setStyleSheet("font-weight: 700; font-size: 16px; color: #0f172a;")
         layout.addWidget(title)
 
-        help_text = QLabel("Clicca su un elemento per aggiungerlo al centro dello stage.\n"
-                           "Trascinalo poi nella posizione desiderata.")
+        help_text = QLabel(
+            "Clicca su un elemento per aggiungerlo al centro dello stage.\n"
+            "Trascinalo poi nella posizione desiderata."
+        )
         help_text.setStyleSheet("font-size: 11px; color: #64748b;")
         help_text.setWordWrap(True)
         layout.addWidget(help_text)
@@ -439,39 +464,162 @@ class StageWizard(QWidget):
             "no_shoot": "no_shoot",
         }
         ITEMS = [
-            ("Bersagli cartacei", [
-                ("paper", "Paper Target", "Bersaglio cartaceo IPSC", ItemType.PAPER_TARGET, (0.45, 0.75)),
-                ("paper", "Mini Target", "Bersaglio ridotto (App. B3)", ItemType.MINI_TARGET, (0.30, 0.30)),
-                ("paper", "Micro Target", "Bersaglio micro", ItemType.MICRO_TARGET, (0.20, 0.20)),
-                ("double", "Doppio affiancato", "Due paper affiancati (gap 5cm)", ItemType.DOUBLET_SIDE, (0.95, 0.75)),
-                ("double", "Doppio sovrapposto", "Due paper sovrapposti 40%", ItemType.DOUBLET_OVERLAP, (0.65, 0.75)),
-                ("double_hostage", "Doppio + ostaggio (aff.)", "Due paper con no-shoot nel mezzo", ItemType.DOUBLET_SIDE_HOSTAGE, (1.20, 0.75)),
-                ("double_hostage", "Doppio + ostaggio (sovr.)", "Due paper sovrapposti con no-shoot", ItemType.DOUBLET_OVERLAP_HOSTAGE, (0.90, 0.75)),
-                ("double_hostage", "Target + No-Shoot", "Paper con no-shoot sovrapposto 40%", ItemType.TARGET_PLUS_NOSHOOT, (0.70, 0.75)),
-            ]),
-            ("Bersagli metallici", [
-                ("steel", "Steel generico", "Bersaglio metallico", ItemType.STEEL_TARGET, (0.30, 0.30)),
-                ("popper", "Popper calibrato", "Metallico calibrato (App. C1)", ItemType.POPPER, (0.30, 0.30)),
-                ("plate", "Piatto metallico", "Non calibrato (App. C3)", ItemType.METAL_PLATE, (0.20, 0.20)),
-                ("bobber", "Piatto bobber", "Pop-up che scompare se colpito", ItemType.BOBBER_PLATE, (0.20, 0.20)),
-                ("bobber", "Doppio bobber", "Due bobber affiancati", ItemType.DOUBLE_BOBBER, (0.50, 0.20)),
-            ]),
-            ("Bersagli mobili", [
-                ("swinger", "Swinger", "Bersaglio oscillante", ItemType.SWINGER, (0.45, 0.75)),
-                ("drop", "Drop Turner", "Bersaglio a caduta", ItemType.DROP_TURNER, (0.45, 0.75)),
-                ("mover", "Mover", "Bersaglio su rotaia", ItemType.MOVER, (0.45, 0.75)),
-            ]),
-            ("Ostacoli e coperture", [
-                ("wall", "Muro", "Muro per oscurare bersagli", ItemType.WALL, (3.0, 0.2)),
-                ("barrier", "Barriera", "Barriera visiva", ItemType.BARRIER, (2.0, 0.15)),
-                ("door", "Porta", "Porta", ItemType.DOOR, (0.9, 0.05)),
-                ("hard_cover", "Hard Cover", "Copertura impenetrabile", ItemType.HARD_COVER, (2.0, 0.2)),
-                ("soft_cover", "Soft Cover", "Copertura visiva", ItemType.SOFT_COVER, (2.0, 0.15)),
-            ]),
-            ("Altro", [
-                ("fault_line", "Fault Line", "Linea di fallo perimetrale", ItemType.FAULT_LINE, (3.0, 0.0)),
-                ("no_shoot", "No-Shoot", "Bersaglio di penalità", ItemType.NO_SHOOT, (0.45, 0.75)),
-            ]),
+            (
+                "Bersagli cartacei",
+                [
+                    (
+                        "paper",
+                        "Paper Target",
+                        "Bersaglio cartaceo IPSC",
+                        ItemType.PAPER_TARGET,
+                        (0.45, 0.75),
+                    ),
+                    (
+                        "paper",
+                        "Mini Target",
+                        "Bersaglio ridotto (App. B3)",
+                        ItemType.MINI_TARGET,
+                        (0.30, 0.30),
+                    ),
+                    (
+                        "paper",
+                        "Micro Target",
+                        "Bersaglio micro",
+                        ItemType.MICRO_TARGET,
+                        (0.20, 0.20),
+                    ),
+                    (
+                        "double",
+                        "Doppio affiancato",
+                        "Due paper affiancati (gap 5cm)",
+                        ItemType.DOUBLET_SIDE,
+                        (0.95, 0.75),
+                    ),
+                    (
+                        "double",
+                        "Doppio sovrapposto",
+                        "Due paper sovrapposti 40%",
+                        ItemType.DOUBLET_OVERLAP,
+                        (0.65, 0.75),
+                    ),
+                    (
+                        "double_hostage",
+                        "Doppio + ostaggio (aff.)",
+                        "Due paper con no-shoot nel mezzo",
+                        ItemType.DOUBLET_SIDE_HOSTAGE,
+                        (1.20, 0.75),
+                    ),
+                    (
+                        "double_hostage",
+                        "Doppio + ostaggio (sovr.)",
+                        "Due paper sovrapposti con no-shoot",
+                        ItemType.DOUBLET_OVERLAP_HOSTAGE,
+                        (0.90, 0.75),
+                    ),
+                    (
+                        "double_hostage",
+                        "Target + No-Shoot",
+                        "Paper con no-shoot sovrapposto 40%",
+                        ItemType.TARGET_PLUS_NOSHOOT,
+                        (0.70, 0.75),
+                    ),
+                ],
+            ),
+            (
+                "Bersagli metallici",
+                [
+                    (
+                        "steel",
+                        "Steel generico",
+                        "Bersaglio metallico",
+                        ItemType.STEEL_TARGET,
+                        (0.30, 0.30),
+                    ),
+                    (
+                        "popper",
+                        "Popper calibrato",
+                        "Metallico calibrato (App. C1)",
+                        ItemType.POPPER,
+                        (0.30, 0.30),
+                    ),
+                    (
+                        "plate",
+                        "Piatto metallico",
+                        "Non calibrato (App. C3)",
+                        ItemType.METAL_PLATE,
+                        (0.20, 0.20),
+                    ),
+                    (
+                        "bobber",
+                        "Piatto bobber",
+                        "Pop-up che scompare se colpito",
+                        ItemType.BOBBER_PLATE,
+                        (0.20, 0.20),
+                    ),
+                    (
+                        "bobber",
+                        "Doppio bobber",
+                        "Due bobber affiancati",
+                        ItemType.DOUBLE_BOBBER,
+                        (0.50, 0.20),
+                    ),
+                ],
+            ),
+            (
+                "Bersagli mobili",
+                [
+                    ("swinger", "Swinger", "Bersaglio oscillante", ItemType.SWINGER, (0.45, 0.75)),
+                    (
+                        "drop",
+                        "Drop Turner",
+                        "Bersaglio a caduta",
+                        ItemType.DROP_TURNER,
+                        (0.45, 0.75),
+                    ),
+                    ("mover", "Mover", "Bersaglio su rotaia", ItemType.MOVER, (0.45, 0.75)),
+                ],
+            ),
+            (
+                "Ostacoli e coperture",
+                [
+                    ("wall", "Muro", "Muro per oscurare bersagli", ItemType.WALL, (3.0, 0.2)),
+                    ("barrier", "Barriera", "Barriera visiva", ItemType.BARRIER, (2.0, 0.15)),
+                    ("door", "Porta", "Porta", ItemType.DOOR, (0.9, 0.05)),
+                    (
+                        "hard_cover",
+                        "Hard Cover",
+                        "Copertura impenetrabile",
+                        ItemType.HARD_COVER,
+                        (2.0, 0.2),
+                    ),
+                    (
+                        "soft_cover",
+                        "Soft Cover",
+                        "Copertura visiva",
+                        ItemType.SOFT_COVER,
+                        (2.0, 0.15),
+                    ),
+                ],
+            ),
+            (
+                "Altro",
+                [
+                    (
+                        "fault_line",
+                        "Fault Line",
+                        "Linea di fallo perimetrale",
+                        ItemType.FAULT_LINE,
+                        (3.0, 0.0),
+                    ),
+                    (
+                        "no_shoot",
+                        "No-Shoot",
+                        "Bersaglio di penalità",
+                        ItemType.NO_SHOOT,
+                        (0.45, 0.75),
+                    ),
+                ],
+            ),
         ]
 
         # Aggiungi i bersagli SVG personalizzati come categoria dinamica
@@ -511,8 +659,10 @@ class StageWizard(QWidget):
 
         layout.addWidget(self._target_list, 1)
 
-        pos_info = QLabel("Gli oggetti vengono aggiunti al centro dello stage.\n"
-                          "Spostali con drag & drop sulla scena.")
+        pos_info = QLabel(
+            "Gli oggetti vengono aggiunti al centro dello stage.\n"
+            "Spostali con drag & drop sulla scena."
+        )
         pos_info.setStyleSheet("font-size: 10px; color: #94a3b8;")
         layout.addWidget(pos_info)
 
@@ -527,8 +677,10 @@ class StageWizard(QWidget):
         (icon_name, label, tooltip, item_type, (w, h), custom_svg_path)
         """
         import os
+
         from core.target_designer import CUSTOM_TARGETS_DIR
         from ui.editor.stage_scene import SvgTargetGraphicsItem
+
         items: list[tuple] = []
         if not os.path.isdir(CUSTOM_TARGETS_DIR):
             return items
@@ -541,6 +693,7 @@ class StageWizard(QWidget):
             def_w, def_h = 0.45, 0.75
             try:
                 from xml.etree import ElementTree as ET
+
                 tree = ET.parse(full_path)
                 root = tree.getroot()
                 vb = root.get("viewBox", "")
@@ -554,14 +707,16 @@ class StageWizard(QWidget):
                             def_w = 0.75 * svg_w / svg_h
             except Exception:
                 pass
-            items.append((
-                "paper",
-                label,
-                f"SVG personalizzato: {fname}",
-                ItemType.PAPER_TARGET,
-                (def_w, def_h),
-                portable,  # percorso relativo per portabilità
-            ))
+            items.append(
+                (
+                    "paper",
+                    label,
+                    f"SVG personalizzato: {fname}",
+                    ItemType.PAPER_TARGET,
+                    (def_w, def_h),
+                    portable,  # percorso relativo per portabilità
+                )
+            )
         return items
 
     def _on_target_list_clicked(self, item: QListWidgetItem):
@@ -581,7 +736,7 @@ class StageWizard(QWidget):
             return
 
         # Posizione centrale di default
-        if hasattr(self.scene_ref, 'stage'):
+        if hasattr(self.scene_ref, "stage"):
             cx = self.scene_ref.stage.width / 2
             cy = self.scene_ref.stage.depth / 2
         else:
@@ -601,10 +756,15 @@ class StageWizard(QWidget):
             s.add_popper(cx, cy)
         elif itype == ItemType.METAL_PLATE:
             s.add_metal_plate(cx, cy)
-        elif itype in (ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-                        ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
-                        ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER,
-                        ItemType.TARGET_PLUS_NOSHOOT):
+        elif itype in (
+            ItemType.DOUBLET_SIDE,
+            ItemType.DOUBLET_OVERLAP,
+            ItemType.DOUBLET_SIDE_HOSTAGE,
+            ItemType.DOUBLET_OVERLAP_HOSTAGE,
+            ItemType.BOBBER_PLATE,
+            ItemType.DOUBLE_BOBBER,
+            ItemType.TARGET_PLUS_NOSHOOT,
+        ):
             s.add_composite(cx, cy, itype)
         elif itype == ItemType.SWINGER:
             s.add_swinger(cx, cy)
@@ -635,12 +795,12 @@ class StageWizard(QWidget):
                 last_item.properties["custom_svg_path"] = custom_svg
                 # Aggiorna il graphics item per renderizzare con il nuovo SVG
                 g = s._items.get(last_item.id)
-                if g and hasattr(g, 'update_from_model'):
+                if g and hasattr(g, "update_from_model"):
                     g.update_from_model()
 
         # Notifica parent
         parent = self.parent()
-        if parent and hasattr(parent, '_refresh_info'):
+        if parent and hasattr(parent, "_refresh_info"):
             parent._refresh_info()
 
     def _add_via_scene(self, add_func: callable):
@@ -653,7 +813,7 @@ class StageWizard(QWidget):
         add_func(self.scene_ref)
         # Notifica il parent (MainWindow) per aggiornare info stage
         parent = self.parent()
-        if parent and hasattr(parent, '_refresh_info'):
+        if parent and hasattr(parent, "_refresh_info"):
             parent._refresh_info()
 
     # ── Navigazione (3 passi) ────────────────────────────────────────
@@ -722,8 +882,9 @@ class StageWizard(QWidget):
         label = widget.findChild(QLabel)
         return label.text() if label else ""
 
-    def _add_item_with_delete(self, lst: QListWidget, text: str,
-                               on_delete_clicked: callable) -> None:
+    def _add_item_with_delete(
+        self, lst: QListWidget, text: str, on_delete_clicked: callable
+    ) -> None:
         """Aggiunge una riga con bottone elimina a una lista."""
         item = QListWidgetItem()
         widget = self._make_list_item_widget(text, lambda w: on_delete_clicked(item))
@@ -733,9 +894,14 @@ class StageWizard(QWidget):
 
     # ── Gestione posizioni di tiro ────────────────────────────────────
 
-    def add_shooting_position(self, x: float, y: float, is_start: bool = False,
-                               on_delete_clicked: callable = None,
-                               on_renumbered: callable = None):
+    def add_shooting_position(
+        self,
+        x: float,
+        y: float,
+        is_start: bool = False,
+        on_delete_clicked: callable = None,
+        on_renumbered: callable = None,
+    ):
         """Aggiunge una posizione di tiro numerata alla lista con bottone elimina.
 
         Args:
@@ -758,7 +924,7 @@ class StageWizard(QWidget):
                 t = self._find_item_text(it)
                 if t and t.startswith("#"):
                     new_num = f"#{j + 1}"
-                    new_text = new_num + t[t.index(" "):]
+                    new_text = new_num + t[t.index(" ") :]
                     labels.append(new_num)
                     w = self._pos_list.itemWidget(it)
                     if w:
@@ -786,7 +952,7 @@ class StageWizard(QWidget):
             # Sincronizza stage.shooting_positions
             self.scene_ref.stage.shooting_positions.clear()
         parent = self.parent()
-        if parent and hasattr(parent, '_refresh_info'):
+        if parent and hasattr(parent, "_refresh_info"):
             parent._refresh_info()
 
     def get_shooting_positions(self) -> list[tuple[float, float, bool]]:
@@ -807,7 +973,8 @@ class StageWizard(QWidget):
     @staticmethod
     def _icon_for_position(is_start: bool):
         """Crea un'icona testuale per il tipo di posizione."""
-        from PySide6.QtGui import QColor, QPixmap, QPainter
+        from PySide6.QtGui import QColor, QPainter, QPixmap
+
         pix = QPixmap(16, 16)
         pix.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pix)
@@ -818,6 +985,7 @@ class StageWizard(QWidget):
         painter.drawEllipse(2, 2, 12, 12)
         painter.end()
         from PySide6.QtGui import QIcon
+
         return QIcon(pix)
 
     def reset(self):
@@ -835,8 +1003,10 @@ class StageWizard(QWidget):
 
 # ── Compatibilità: alias GeneratorPanel per retrocompatibilità ──────────
 
+
 class GeneratorPanel(StageWizard):
     """Alias per retrocompatibilità."""
+
     generateRequested = Signal(GeneratorConfig)
     stopRequested = Signal()
 
@@ -846,6 +1016,7 @@ class GeneratorPanel(StageWizard):
 
     def _on_phase1_legacy(self, phase1: Phase1Config):
         from core.generator import GeneratorConfig as GC
+
         cfg = GC(
             stage_width=phase1.stage_width,
             stage_depth=phase1.stage_depth,

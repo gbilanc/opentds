@@ -18,18 +18,16 @@ Utilizzo:
 
 Dipende solo dalla libreria standard.
 """
+
 from __future__ import annotations
 
-import math
 import shutil
 import subprocess
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from core.models import Stage, StageItem, ItemType
-
+from core.models import ItemType, Stage, StageItem
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Costanti
@@ -37,28 +35,28 @@ from core.models import Stage, StageItem, ItemType
 
 # Colori IPSC-conformi (Reg. 4.1.2, 4.1.3, 4.1.4)
 ITEM_COLORS: dict[ItemType, str] = {
-    ItemType.WALL:           "#475569",   # grigio ardesia
-    ItemType.PAPER_TARGET:   "#8B4513",   # marrone IPSC carta (Reg. 4.1.2.1)
-    ItemType.STEEL_TARGET:   "#d1d5db",   # grigio chiaro metallo (Reg. 4.1.2.2)
-    ItemType.POPPER:         "#d1d5db",   # bianco metallico (App. C1-C2)
-    ItemType.METAL_PLATE:    "#d1d5db",   # bianco metallico (App. C3)
-    ItemType.MINI_TARGET:    "#8B4513",   # marrone carta ridotto
-    ItemType.MICRO_TARGET:   "#8B4513",   # marrone carta micro
-    ItemType.FAULT_LINE:     "#dc2626",   # rosso fault line (Reg. 2.2.1.4)
-    ItemType.NO_SHOOT:       "#eab308",   # giallo no-shoot (Reg. 4.1.3)
-    ItemType.BARRIER:        "#fbbf24",   # ambra barriera
-    ItemType.DOOR:           "#92400e",   # marrone scuro porta
-    ItemType.HARD_COVER:     "#1e293b",   # grigio antracite (Reg. 4.1.4.1)
-    ItemType.SOFT_COVER:     "#94a3b8",   # grigio soft cover (Reg. 4.1.4.2)
-    ItemType.SWINGER:        "#A0522D",   # marrone scuro mobile
-    ItemType.DROP_TURNER:    "#8B6914",   # marrone dorato mobile
-    ItemType.MOVER:          "#CD853F",   # marrone chiaro mobile
+    ItemType.WALL: "#475569",  # grigio ardesia
+    ItemType.PAPER_TARGET: "#8B4513",  # marrone IPSC carta (Reg. 4.1.2.1)
+    ItemType.STEEL_TARGET: "#d1d5db",  # grigio chiaro metallo (Reg. 4.1.2.2)
+    ItemType.POPPER: "#d1d5db",  # bianco metallico (App. C1-C2)
+    ItemType.METAL_PLATE: "#d1d5db",  # bianco metallico (App. C3)
+    ItemType.MINI_TARGET: "#8B4513",  # marrone carta ridotto
+    ItemType.MICRO_TARGET: "#8B4513",  # marrone carta micro
+    ItemType.FAULT_LINE: "#dc2626",  # rosso fault line (Reg. 2.2.1.4)
+    ItemType.NO_SHOOT: "#eab308",  # giallo no-shoot (Reg. 4.1.3)
+    ItemType.BARRIER: "#fbbf24",  # ambra barriera
+    ItemType.DOOR: "#92400e",  # marrone scuro porta
+    ItemType.HARD_COVER: "#1e293b",  # grigio antracite (Reg. 4.1.4.1)
+    ItemType.SOFT_COVER: "#94a3b8",  # grigio soft cover (Reg. 4.1.4.2)
+    ItemType.SWINGER: "#A0522D",  # marrone scuro mobile
+    ItemType.DROP_TURNER: "#8B6914",  # marrone dorato mobile
+    ItemType.MOVER: "#CD853F",  # marrone chiaro mobile
     # Compositi
-    ItemType.DOUBLET_SIDE:             "#8B4513",
-    ItemType.DOUBLET_OVERLAP:          "#8B4513",
-    ItemType.DOUBLET_SIDE_HOSTAGE:     "#8B4513",
-    ItemType.DOUBLET_OVERLAP_HOSTAGE:  "#8B4513",
-    ItemType.BOBBER_PLATE:  "#f97316",
+    ItemType.DOUBLET_SIDE: "#8B4513",
+    ItemType.DOUBLET_OVERLAP: "#8B4513",
+    ItemType.DOUBLET_SIDE_HOSTAGE: "#8B4513",
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: "#8B4513",
+    ItemType.BOBBER_PLATE: "#f97316",
     ItemType.DOUBLE_BOBBER: "#f97316",
     ItemType.TARGET_PLUS_NOSHOOT: "#8B4513",
 }
@@ -70,37 +68,38 @@ ITEM_COLORS: dict[ItemType, str] = {
 @dataclass
 class ItemGeom3D:
     """Dimensioni 3D per un tipo di oggetto."""
-    sx: float = 1.0   # larghezza in X
-    sy: float = 0.1   # profondità in Y
-    sz: float = 2.0   # altezza in Z
-    shape: str = "cube"   # "cube", "cylinder", "fault_line"
+
+    sx: float = 1.0  # larghezza in X
+    sy: float = 0.1  # profondità in Y
+    sz: float = 2.0  # altezza in Z
+    shape: str = "cube"  # "cube", "cylinder", "fault_line"
 
 
 TYPE_GEOM: dict[ItemType, ItemGeom3D] = {
-    ItemType.WALL:           ItemGeom3D(sx=1.0, sy=0.1,  sz=2.0, shape="cube"),
-    ItemType.PAPER_TARGET:   ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.STEEL_TARGET:   ItemGeom3D(sx=0.30, sy=0.02, sz=0.30, shape="cube"),
-    ItemType.POPPER:         ItemGeom3D(sx=0.30, sy=0.02, sz=0.30, shape="cylinder"),
-    ItemType.METAL_PLATE:    ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cylinder"),
-    ItemType.MINI_TARGET:    ItemGeom3D(sx=0.30, sy=0.02, sz=0.30, shape="cube"),
-    ItemType.MICRO_TARGET:   ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cube"),
-    ItemType.FAULT_LINE:     ItemGeom3D(sx=1.0, sy=0.01, sz=0.06, shape="fault_line"),
-    ItemType.NO_SHOOT:       ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.BARRIER:        ItemGeom3D(sx=1.0, sy=0.15, sz=1.2, shape="cube"),
-    ItemType.DOOR:           ItemGeom3D(sx=0.9, sy=0.05, sz=2.0, shape="cube"),
-    ItemType.HARD_COVER:     ItemGeom3D(sx=1.0, sy=0.1,  sz=2.0, shape="cube"),
-    ItemType.SOFT_COVER:     ItemGeom3D(sx=1.0, sy=0.08, sz=2.0, shape="cube"),
+    ItemType.WALL: ItemGeom3D(sx=1.0, sy=0.1, sz=2.0, shape="cube"),
+    ItemType.PAPER_TARGET: ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.STEEL_TARGET: ItemGeom3D(sx=0.30, sy=0.02, sz=0.30, shape="cube"),
+    ItemType.POPPER: ItemGeom3D(sx=0.30, sy=0.02, sz=0.30, shape="cylinder"),
+    ItemType.METAL_PLATE: ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cylinder"),
+    ItemType.MINI_TARGET: ItemGeom3D(sx=0.30, sy=0.02, sz=0.30, shape="cube"),
+    ItemType.MICRO_TARGET: ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cube"),
+    ItemType.FAULT_LINE: ItemGeom3D(sx=1.0, sy=0.01, sz=0.06, shape="fault_line"),
+    ItemType.NO_SHOOT: ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.BARRIER: ItemGeom3D(sx=1.0, sy=0.15, sz=1.2, shape="cube"),
+    ItemType.DOOR: ItemGeom3D(sx=0.9, sy=0.05, sz=2.0, shape="cube"),
+    ItemType.HARD_COVER: ItemGeom3D(sx=1.0, sy=0.1, sz=2.0, shape="cube"),
+    ItemType.SOFT_COVER: ItemGeom3D(sx=1.0, sy=0.08, sz=2.0, shape="cube"),
     # Compositi
-    ItemType.DOUBLET_SIDE:             ItemGeom3D(sx=0.95, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.DOUBLET_OVERLAP:          ItemGeom3D(sx=0.65, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.DOUBLET_SIDE_HOSTAGE:     ItemGeom3D(sx=1.20, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.DOUBLET_OVERLAP_HOSTAGE:  ItemGeom3D(sx=0.90, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.BOBBER_PLATE:  ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cylinder"),
+    ItemType.DOUBLET_SIDE: ItemGeom3D(sx=0.95, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DOUBLET_OVERLAP: ItemGeom3D(sx=0.65, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DOUBLET_SIDE_HOSTAGE: ItemGeom3D(sx=1.20, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: ItemGeom3D(sx=0.90, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.BOBBER_PLATE: ItemGeom3D(sx=0.20, sy=0.02, sz=0.20, shape="cylinder"),
     ItemType.DOUBLE_BOBBER: ItemGeom3D(sx=0.50, sy=0.02, sz=0.20, shape="cylinder"),
     ItemType.TARGET_PLUS_NOSHOOT: ItemGeom3D(sx=0.70, sy=0.02, sz=0.75, shape="cube"),
-    ItemType.SWINGER:        ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.DROP_TURNER:    ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
-    ItemType.MOVER:          ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.SWINGER: ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.DROP_TURNER: ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
+    ItemType.MOVER: ItemGeom3D(sx=0.45, sy=0.02, sz=0.45, shape="cube"),
 }
 
 
@@ -108,16 +107,18 @@ TYPE_GEOM: dict[ItemType, ItemGeom3D] = {
 #  Generatore SCAD
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ScadExportOptions:
     """Opzioni di esportazione OpenSCAD."""
+
     include_grid: bool = True
     include_floor: bool = True
     include_backstop: bool = True
     include_start_zone: bool = True
     include_direction_arrows: bool = True
     grid_spacing: float = 1.0  # metri tra le linee griglia
-    wall_height: float = 2.0   # altezza predefinita muri
+    wall_height: float = 2.0  # altezza predefinita muri
     scale_for_3d_print: bool = False  # se True, scala mm e ispessisce muri sottili
 
 
@@ -143,7 +144,7 @@ def _generate_floor(w: float, d: float, opts: ScadExportOptions) -> list[str]:
     if opts.include_floor:
         lines.append("    // ── Pavimento ──")
         lines.append("    color([0.65, 0.65, 0.65, 0.9])")
-        lines.append(f"    translate([{w/2:.3f}, {d/2:.3f}, -0.05])")
+        lines.append(f"    translate([{w / 2:.3f}, {d / 2:.3f}, -0.05])")
         lines.append(f"    cube([{w:.3f}, {d:.3f}, 0.1], center=true);")
         lines.append("")
     if opts.include_grid:
@@ -161,15 +162,15 @@ def _generate_backstop(w: float, d: float, h: float = 2.5) -> list[str]:
     lines.append("    // ── Parapalle (backstop) ──")
     # Fondo (down-range)
     lines.append("    color([0.36, 0.23, 0.12, 0.8])")
-    lines.append(f"    translate([{w/2:.3f}, {d + bt/2:.3f}, {bh/2:.3f}])")
+    lines.append(f"    translate([{w / 2:.3f}, {d + bt / 2:.3f}, {bh / 2:.3f}])")
     lines.append(f"    cube([{w + 2:.3f}, {bt:.3f}, {bh:.3f}], center=true);")
     # Sinistra
     lines.append("    color([0.36, 0.23, 0.12, 0.8])")
-    lines.append(f"    translate([-{bt/2:.3f}, {d/2:.3f}, {bh/2:.3f}])")
+    lines.append(f"    translate([-{bt / 2:.3f}, {d / 2:.3f}, {bh / 2:.3f}])")
     lines.append(f"    cube([{bt:.3f}, {d:.3f}, {bh:.3f}], center=true);")
     # Destra
     lines.append("    color([0.36, 0.23, 0.12, 0.8])")
-    lines.append(f"    translate([{w + bt/2:.3f}, {d/2:.3f}, {bh/2:.3f}])")
+    lines.append(f"    translate([{w + bt / 2:.3f}, {d / 2:.3f}, {bh / 2:.3f}])")
     lines.append(f"    cube([{bt:.3f}, {d:.3f}, {bh:.3f}], center=true);")
     lines.append("")
     return lines
@@ -181,7 +182,7 @@ def _generate_start_zone(w: float, d: float) -> list[str]:
     sw, sh = 2.0, 2.0
     lines.append("    // ── Zona partenza ──")
     lines.append("    color([0.09, 0.50, 0.24, 0.4])")
-    lines.append(f"    translate([{w/2:.3f}, {sh/2:.3f}, 0.005])")
+    lines.append(f"    translate([{w / 2:.3f}, {sh / 2:.3f}, 0.005])")
     lines.append(f"    cube([{sw:.3f}, {sh:.3f}, 0.01], center=true);")
     lines.append("")
     return lines
@@ -193,20 +194,19 @@ def _generate_direction_arrows(w: float, d: float) -> list[str]:
     lines.append("    // ── Frecce direzionali ──")
     # UP-RANGE (ingresso, verde)
     lines.append("    color([0.13, 0.77, 0.37])")
-    lines.append(f"    translate([{w/2:.3f}, 0, 0.6])")
+    lines.append(f"    translate([{w / 2:.3f}, 0, 0.6])")
     lines.append("    rotate([90, 0, 0])")
     lines.append("    cylinder(h=0.8, r1=0.3, r2=0, center=true);")
     # DOWN-RANGE (verso backstop, rosso)
     lines.append("    color([0.94, 0.27, 0.27])")
-    lines.append(f"    translate([{w/2:.3f}, {d:.3f}, 0.6])")
+    lines.append(f"    translate([{w / 2:.3f}, {d:.3f}, 0.6])")
     lines.append("    rotate([-90, 0, 0])")
     lines.append("    cylinder(h=0.8, r1=0.3, r2=0, center=true);")
     lines.append("")
     return lines
 
 
-def _generate_item_module(name: str, it: StageItem,
-                          opts: ScadExportOptions) -> list[str]:
+def _generate_item_module(name: str, it: StageItem, opts: ScadExportOptions) -> list[str]:
     """Genera il modulo OpenSCAD per un singolo StageItem."""
     lines: list[str] = []
 
@@ -243,7 +243,7 @@ def _generate_item_module(name: str, it: StageItem,
         sz = 0.06 * scale
         lines.append(f"    // Fault line — {_item_label(it)}")
         lines.append(f"    color({color_scad}, 0.8)")
-        lines.append(f"    translate([{px:.3f}, {py:.3f}, {sz/2:.3f}])")
+        lines.append(f"    translate([{px:.3f}, {py:.3f}, {sz / 2:.3f}])")
         lines.append(f"    rotate([0, 0, {rot_z:.1f}])")
         lines.append(f"    cube([{sx:.3f}, {sy:.3f}, {sz:.3f}], center=true);")
 
@@ -256,7 +256,7 @@ def _generate_item_module(name: str, it: StageItem,
         lines.append(f"    color({color_scad})")
         lines.append(f"    translate([{px:.3f}, {py:.3f}, {r:.3f}])")
         lines.append(f"    rotate([0, 0, {rot_z:.1f}])")
-        lines.append(f"    rotate([90, 0, 0])  // cilindro in piedi")
+        lines.append("    rotate([90, 0, 0])  // cilindro in piedi")
         lines.append(f"    cylinder(h={thickness:.3f}, r={r:.3f}, center=true);")
 
     else:
@@ -264,7 +264,7 @@ def _generate_item_module(name: str, it: StageItem,
         # sx = larghezza (X), sy = spessore (Y), sz = altezza (Z)
         lines.append(f"    // {_item_label(it)} — {it.item_type.name}")
         lines.append(f"    color({color_scad})")
-        lines.append(f"    translate([{px:.3f}, {py:.3f}, {sz/2:.3f}])")
+        lines.append(f"    translate([{px:.3f}, {py:.3f}, {sz / 2:.3f}])")
         lines.append(f"    rotate([0, 0, {rot_z:.1f}])")
         lines.append(f"    cube([{sx:.3f}, {sy:.3f}, {sz:.3f}], center=true);")
 
@@ -294,6 +294,7 @@ module grid_floor(w, d, spacing) {
 #  API pubblica
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def stage_to_scad(stage: Stage, opts: Optional[ScadExportOptions] = None) -> str:
     """Converte uno Stage in una stringa OpenSCAD (.scad).
 
@@ -312,17 +313,19 @@ def stage_to_scad(stage: Stage, opts: Optional[ScadExportOptions] = None) -> str
     lines: list[str] = []
 
     # Intestazione
-    lines.append(f"// ═══════════════════════════════════════════════════════════")
-    lines.append(f"// OpenTDS — OpenSCAD Stage Export")
+    lines.append("// ═══════════════════════════════════════════════════════════")
+    lines.append("// OpenTDS — OpenSCAD Stage Export")
     lines.append(f"// Stage: {stage.name}")
     lines.append(f"// Dimensioni: {w:.1f}m × {d:.1f}m")
     lines.append(f"// Oggetti: {len(stage.items)}")
-    lines.append(f"// Generato da OpenTDS")
-    lines.append(f"// ═══════════════════════════════════════════════════════════")
+    lines.append("// Generato da OpenTDS")
+    lines.append("// ═══════════════════════════════════════════════════════════")
     lines.append("")
     lines.append("/*")
     lines.append(" * Istruzioni:")
-    lines.append(" *   openscad -o stage.png --camera 0,0,0,55,0,-25,25 --imgsize 1920,1080 stage.scad")
+    lines.append(
+        " *   openscad -o stage.png --camera 0,0,0,55,0,-25,25 --imgsize 1920,1080 stage.scad"
+    )
     lines.append(" *   openscad -o stage.stl stage.scad")
     lines.append(" */")
     lines.append("")
@@ -373,8 +376,7 @@ def stage_to_scad(stage: Stage, opts: Optional[ScadExportOptions] = None) -> str
     return "\n".join(lines)
 
 
-def export_scad(stage: Stage, path: Path,
-                opts: Optional[ScadExportOptions] = None) -> Path:
+def export_scad(stage: Stage, path: Path, opts: Optional[ScadExportOptions] = None) -> Path:
     """Esporta uno stage in un file .scad.
 
     Args:
@@ -395,10 +397,13 @@ def openscad_available() -> bool:
     return shutil.which("openscad") is not None
 
 
-def render_scad_to_png(scad_path: Path, png_path: Path,
-                       camera: Optional[str] = None,
-                       imgsize: str = "1920,1080",
-                       projection: str = "ortho") -> Optional[Path]:
+def render_scad_to_png(
+    scad_path: Path,
+    png_path: Path,
+    camera: Optional[str] = None,
+    imgsize: str = "1920,1080",
+    projection: str = "ortho",
+) -> Optional[Path]:
     """Renderizza un file .scad in PNG usando OpenSCAD CLI.
 
     Args:
@@ -420,11 +425,16 @@ def render_scad_to_png(scad_path: Path, png_path: Path,
 
     cmd = [
         "openscad",
-        "-o", str(png_path),
-        "--camera", camera,
-        "--imgsize", imgsize,
-        "--projection", projection,
-        "--colorscheme", "Tomorrow Night",
+        "-o",
+        str(png_path),
+        "--camera",
+        camera,
+        "--imgsize",
+        imgsize,
+        "--projection",
+        projection,
+        "--colorscheme",
+        "Tomorrow Night",
         str(scad_path),
     ]
 
@@ -454,7 +464,8 @@ def render_scad_to_stl(scad_path: Path, stl_path: Path) -> Optional[Path]:
 
     cmd = [
         "openscad",
-        "-o", str(stl_path),
+        "-o",
+        str(stl_path),
         str(scad_path),
     ]
 
@@ -484,7 +495,8 @@ def render_scad_to_3mf(scad_path: Path, threemf_path: Path) -> Optional[Path]:
 
     cmd = [
         "openscad",
-        "-o", str(threemf_path),
+        "-o",
+        str(threemf_path),
         str(scad_path),
     ]
 

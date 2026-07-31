@@ -1,20 +1,25 @@
 """
 Pannello informativo con statistiche e violazioni IPSC in tempo reale.
 """
+
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QFrame, QScrollArea, QGridLayout, QSizePolicy,
+    QGridLayout,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
-from core.models import Stage, ItemType
 from core.ipsc_rules import IPSCRulesEngine
+from core.models import ItemType, Stage
 
 
 class StageInfoPanel(QWidget):
     """Pannello laterale che mostra statistiche e violazioni IPSC live."""
+
     violationsUpdated = Signal(set, list)  # emette (set[int] ID item, list[str] testi violazioni)
 
     def __init__(self, parent=None):
@@ -101,26 +106,20 @@ class StageInfoPanel(QWidget):
         counts = self._engine.count_targets()
 
         # Statistiche
-        self._stats_labels["Dimensioni"].setText(
-            f"{stage.width:.1f} × {stage.depth:.1f} m")
-        self._stats_labels["Area"].setText(
-            f"{stage.width * stage.depth:.0f} m²")
-        self._stats_labels["Oggetti"].setText(
-            str(len(stage.items)))
-        self._stats_labels["Paper"].setText(
-            str(counts["paper"]))
-        self._stats_labels["Steel"].setText(
-            str(counts["steel"]))
-        self._stats_labels["Mobili"].setText(
-            str(counts["moving"]))
-        self._stats_labels["No-Shoot"].setText(
-            str(counts["no_shoots"]))
+        self._stats_labels["Dimensioni"].setText(f"{stage.width:.1f} × {stage.depth:.1f} m")
+        self._stats_labels["Area"].setText(f"{stage.width * stage.depth:.0f} m²")
+        self._stats_labels["Oggetti"].setText(str(len(stage.items)))
+        self._stats_labels["Paper"].setText(str(counts["paper"]))
+        self._stats_labels["Steel"].setText(str(counts["steel"]))
+        self._stats_labels["Mobili"].setText(str(counts["moving"]))
+        self._stats_labels["No-Shoot"].setText(str(counts["no_shoots"]))
         self._stats_labels["Muri"].setText(
-            str(sum(1 for it in stage.items if it.item_type == ItemType.WALL)))
+            str(sum(1 for it in stage.items if it.item_type == ItemType.WALL))
+        )
         self._stats_labels["Barriere"].setText(
-            str(sum(1 for it in stage.items if it.item_type == ItemType.BARRIER)))
-        self._stats_labels["Pos. tiro"].setText(
-            str(len(stage.shooting_positions)))
+            str(sum(1 for it in stage.items if it.item_type == ItemType.BARRIER))
+        )
+        self._stats_labels["Pos. tiro"].setText(str(len(stage.shooting_positions)))
 
         # Violazioni
         result = self._engine.validate()
@@ -128,9 +127,10 @@ class StageInfoPanel(QWidget):
 
         # Estrai ID item coinvolti in violazioni e notifica la scena
         import re
+
         viol_ids: set[int] = set()
         for v_text in result.violations:
-            for m in re.finditer(r'#(\d+)', v_text):
+            for m in re.finditer(r"#(\d+)", v_text):
                 viol_ids.add(int(m.group(1)))
         self.violationsUpdated.emit(viol_ids, result.violations)
 

@@ -3,22 +3,21 @@ Helper geometrici per il calcolo di intersezioni, punti in poligoni, bounding bo
 
 Tutte le funzioni sono pure (nessuno stato) e usano coordinate in metri.
 """
+
 from __future__ import annotations
 
 import math
 from typing import List, Tuple
 
 
-def point_in_polygon(px: float, py: float,
-                     poly: List[Tuple[float, float]]) -> bool:
+def point_in_polygon(px: float, py: float, poly: List[Tuple[float, float]]) -> bool:
     """Ray casting: True se (px, py) è dentro il poligono convesso."""
     inside = False
     n = len(poly)
     for i in range(n):
         x1, y1 = poly[i]
         x2, y2 = poly[(i + 1) % n]
-        if ((y1 > py) != (y2 > py)) and \
-           (px < (x2 - x1) * (py - y1) / (y2 - y1 + 1e-9) + x1):
+        if ((y1 > py) != (y2 > py)) and (px < (x2 - x1) * (py - y1) / (y2 - y1 + 1e-9) + x1):
             inside = not inside
     return inside
 
@@ -30,10 +29,9 @@ def polygon_center(poly: List[Tuple[float, float]]) -> Tuple[float, float]:
     return cx, cy
 
 
-def point_in_rotated_rect(px: float, py: float,
-                           cx: float, cy: float,
-                           w: float, h: float,
-                           angle_deg: float) -> bool:
+def point_in_rotated_rect(
+    px: float, py: float, cx: float, cy: float, w: float, h: float, angle_deg: float
+) -> bool:
     """True se (px, py) è dentro il rettangolo ruotato."""
     angle = math.radians(angle_deg)
     cos_a = math.cos(angle)
@@ -45,11 +43,11 @@ def point_in_rotated_rect(px: float, py: float,
     return abs(local_x) <= w / 2 + 1e-6 and abs(local_y) <= h / 2 + 1e-6
 
 
-def segments_intersect(a: Tuple[float, float],
-                        b: Tuple[float, float],
-                        c: Tuple[float, float],
-                        d: Tuple[float, float]) -> bool:
+def segments_intersect(
+    a: Tuple[float, float], b: Tuple[float, float], c: Tuple[float, float], d: Tuple[float, float]
+) -> bool:
     """True se il segmento a-b interseca c-d (esclusi estremi coincidenti)."""
+
     def orient(p, q, r):
         return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
 
@@ -80,11 +78,15 @@ def segments_intersect(a: Tuple[float, float],
     return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
 
 
-def line_intersects_rect(p1: Tuple[float, float],
-                          p2: Tuple[float, float],
-                          cx: float, cy: float,
-                          w: float, h: float,
-                          angle_deg: float) -> bool:
+def line_intersects_rect(
+    p1: Tuple[float, float],
+    p2: Tuple[float, float],
+    cx: float,
+    cy: float,
+    w: float,
+    h: float,
+    angle_deg: float,
+) -> bool:
     """True se il segmento p1-p2 interseca il rettangolo ruotato."""
     # Estremo dentro il rettangolo
     if point_in_rotated_rect(p1[0], p1[1], cx, cy, w, h, angle_deg):
@@ -115,8 +117,7 @@ def euclidean_distance(x1: float, y1: float, x2: float, y2: float) -> float:
     return math.hypot(x1 - x2, y1 - y2)
 
 
-def angle_between_points(cx: float, cy: float, px: float, py: float,
-                          qx: float, qy: float) -> float:
+def angle_between_points(cx: float, cy: float, px: float, py: float, qx: float, qy: float) -> float:
     """Angolo assoluto (gradi) tra i vettori (cx,cy)→(px,py) e (cx,cy)→(qx,qy).
 
     Ritorna un valore tra 0 e 180.
@@ -148,9 +149,9 @@ def polygon_area(poly: list[tuple[float, float]]) -> float:
     return abs(area) / 2.0
 
 
-def validate_polygon(poly: list[tuple[float, float]],
-                     min_vertices: int = 4,
-                     min_area: float = 0.1) -> tuple[bool, list[str]]:
+def validate_polygon(
+    poly: list[tuple[float, float]], min_vertices: int = 4, min_area: float = 0.1
+) -> tuple[bool, list[str]]:
     """Valida un poligono rappresentante l'area di tiro.
 
     Controlla:
@@ -206,7 +207,9 @@ def validate_polygon(poly: list[tuple[float, float]],
                 continue
             # Usa segments_intersect che esclude intersezioni collineari
             if segments_intersect(a, b, c, d):
-                errors.append(f"Auto-intersezione tra segmento {i}→{(i+1)%n} e {j}→{(j+1)%n}")
+                errors.append(
+                    f"Auto-intersezione tra segmento {i}→{(i + 1) % n} e {j}→{(j + 1) % n}"
+                )
                 return False, errors
 
     return True, errors

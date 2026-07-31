@@ -1,14 +1,13 @@
 """
 Serializzazione e deserializzazione stage in JSON (schema v2 con shooting positions).
 """
+
 from __future__ import annotations
+
 import json
 from pathlib import Path
 
-from core.models import Stage, StageItem, ShootingPosition, ItemType, CourseType, Division
-
-
-
+from core.models import CourseType, Division, ItemType, ShootingPosition, Stage, StageItem
 
 
 def stage_to_dict(stage: Stage) -> dict:

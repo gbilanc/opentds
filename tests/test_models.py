@@ -1,14 +1,13 @@
 """
 Test unitari per core/models.py — Stage, StageItem, ItemType.
 """
+
 from __future__ import annotations
 
-import pytest
-
-from core.models import Stage, StageItem, ItemType
-
+from core.models import ItemType, Stage, StageItem
 
 # ─── ItemType ────────────────────────────────────────────────────────────────
+
 
 class TestItemType:
     """ItemType enum: 22 tipi (16 originali + 6 compositi)."""
@@ -46,6 +45,7 @@ class TestItemType:
 
 
 # ─── StageItem ───────────────────────────────────────────────────────────────
+
 
 class TestStageItemCreation:
     """Verifica creazione e valori di default di StageItem."""
@@ -87,6 +87,7 @@ class TestStageItemCreation:
 
 
 # ─── Stage ───────────────────────────────────────────────────────────────────
+
 
 class TestStageCreation:
     """Verifica creazione Stage e gestione items."""
