@@ -35,6 +35,7 @@ from core.target_designer import (
     make_ipsc_silhouette, ensure_custom_dir,
     CUSTOM_TARGETS_DIR,
 )
+from ui.editor.target_images import TargetSvgManager
 from ui.icons import load_icon
 
 
@@ -912,9 +913,12 @@ class SvgEditorDialog(QDialog):
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(self._design.to_svg())
 
+        # Invalida cache per questo file in tutti i TargetSvgManager
+        TargetSvgManager.instance().invalidate_custom(filepath)
+
         QMessageBox.information(
             self, "Salvato",
-            f"Bersaglio salvato:\n{filepath}\n\nRiavvia l'app per usarlo.",
+            f"Bersaglio salvato:\n{filepath}\n\nDisponibile immediatamente.",
         )
         self.accept()
 
@@ -930,6 +934,8 @@ class SvgEditorDialog(QDialog):
             return
         with open(path, "w", encoding="utf-8") as f:
             f.write(self._design.to_svg())
+        # Invalida cache per questo file
+        TargetSvgManager.instance().invalidate_custom(path)
         self._info_label.setText(f"Salvato: {path}")
 
     def get_design(self) -> SvgTargetDesign:

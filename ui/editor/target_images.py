@@ -45,6 +45,7 @@ class TargetSvgManager:
 
     # Cache per bersagli personalizzati caricati da file
     _custom_renderers: dict[str, QSvgRenderer] = {}
+    _custom_mtimes: dict[str, float] = {}  # filepath -> mtime per invalidazione
 
     def __init__(self) -> None:
         self._renderers: dict[ItemType, QSvgRenderer] = {}
@@ -185,6 +186,21 @@ class TargetSvgManager:
         self._cache[cache_key] = pixmap
         return pixmap
 
+    def invalidate_custom(self, filepath: str) -> None:
+        """Invalida la cache per un file SVG personalizzato.
+
+        Da chiamare quando il file viene modificato (es. dopo il salvataggio
+        dall'editor SVG).
+        """
+        self._custom_renderers.pop(filepath, None)
+        self._custom_mtimes.pop(filepath, None)
+        keys_to_del = [
+            k for k in self._cache
+            if isinstance(k, tuple) and len(k) >= 2 and k[1] == filepath
+        ]
+        for k in keys_to_del:
+            del self._cache[k]
+
     def get_custom_pixmap(
         self, filepath: str,
         target_width: int, target_height: int,
@@ -193,6 +209,14 @@ class TargetSvgManager:
         """Carica un SVG personalizzato da file e lo renderizza."""
         if target_width <= 0 or target_height <= 0:
             return None
+
+        # Controlla se il file è stato modificato (invalidazione per mtime)
+        if os.path.isfile(filepath):
+            current_mtime = os.path.getmtime(filepath)
+            cached_mtime = self._custom_mtimes.get(filepath)
+            if cached_mtime is not None and current_mtime > cached_mtime:
+                self.invalidate_custom(filepath)
+            self._custom_mtimes[filepath] = current_mtime
 
         cache_key = ("_custom_", filepath, target_width, target_height)
         if cache_key in self._cache:

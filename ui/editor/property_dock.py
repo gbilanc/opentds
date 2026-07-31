@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 import os
 from core.models import StageItem, ItemType
-from ui.editor.stage_scene import StageItemWrapper
+from ui.editor.stage_scene import StageItemWrapper, SvgTargetGraphicsItem
 from core.target_designer import CUSTOM_TARGETS_DIR, ensure_custom_dir
 from ui.icons import load_icon
 import math
@@ -398,7 +398,9 @@ class PropertyDock(QDockWidget):
         path = self._custom_svg_combo.itemData(index)
         if path is None:
             path = ""
-        self._emit(properties={"custom_svg_path": path})
+        # Rende il percorso portabile (relativo a resources/ se possibile)
+        portable = SvgTargetGraphicsItem._make_path_portable(path) if path else ""
+        self._emit(properties={"custom_svg_path": portable})
 
     def _on_browse_custom_svg(self):
         """Apre un file dialog per selezionare un SVG personalizzato."""
@@ -411,6 +413,8 @@ class PropertyDock(QDockWidget):
             return
         if self._wrapper is None:
             return
+        # Rende il percorso portabile
+        portable = SvgTargetGraphicsItem._make_path_portable(path)
         self._custom_svg_combo.blockSignals(True)
         # Aggiunge il file selezionato alla combo (se non già presente)
         idx = self._custom_svg_combo.findData(path)
@@ -419,7 +423,7 @@ class PropertyDock(QDockWidget):
             idx = self._custom_svg_combo.count() - 1
         self._custom_svg_combo.setCurrentIndex(idx)
         self._custom_svg_combo.blockSignals(False)
-        self._emit(properties={"custom_svg_path": path})
+        self._emit(properties={"custom_svg_path": portable})
 
     def _on_reset_custom_svg(self):
         """Resetta il bersaglio a default IPSC."""

@@ -1297,6 +1297,46 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         self._cached_size: tuple[int, int] = (0, 0)
         self.update_from_model()
 
+    def _resolve_custom_path(self, custom_path: str) -> str:
+        """Risolve un percorso SVG personalizzato in un percorso assoluto.
+
+        Supporta:
+        - Percorsi assoluti (es. /home/user/mio.svg)
+        - Percorsi relativi a resources/ (es. targets/custom/ipsc_target.svg)
+        - Nome file semplice (es. ipsc_target.svg) -> cerca in targets/custom/
+        """
+        if not custom_path:
+            return ""
+        if os.path.isabs(custom_path) and os.path.isfile(custom_path):
+            return custom_path
+        # Risolvi relativamente a resources/
+        resources_dir = TargetSvgManager.instance()._resources_dir
+        resolved = os.path.join(resources_dir, custom_path)
+        if os.path.isfile(resolved):
+            return resolved
+        # Prova in targets/custom/
+        resolved = os.path.join(resources_dir, "targets", "custom", custom_path)
+        if os.path.isfile(resolved):
+            return resolved
+        # Fallback: il percorso originale (potrebbe essere assoluto)
+        if os.path.isfile(custom_path):
+            return custom_path
+        return ""
+
+    @staticmethod
+    def _make_path_portable(absolute_path: str) -> str:
+        """Converte un percorso assoluto in relativo a resources/ se possibile."""
+        if not absolute_path or not os.path.isabs(absolute_path):
+            return absolute_path
+        resources_dir = TargetSvgManager.instance()._resources_dir
+        try:
+            rel = os.path.relpath(absolute_path, resources_dir)
+            if not rel.startswith(".."):
+                return rel
+        except ValueError:
+            pass
+        return absolute_path
+
     def _get_pixmap(self) -> QPixmap | None:
         """Ottiene il pixmap SVG renderizzato per le dimensioni correnti.
 
@@ -1314,8 +1354,9 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         manager = TargetSvgManager.instance()
 
         # SVG personalizzato?
-        custom_path = it.properties.get("custom_svg_path", "")
-        if custom_path and os.path.isfile(custom_path):
+        custom_path_raw = it.properties.get("custom_svg_path", "")
+        custom_path = self._resolve_custom_path(custom_path_raw)
+        if custom_path:
             # Nessuna tinta: rispetta i colori delle zone definiti dall'utente
             pixmap = manager.get_custom_pixmap(custom_path, w_px, h_px, tint_color=None)
         else:
@@ -1339,17 +1380,24 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         h_px = it.height * self.scale
         return _with_rotation_handle(QRectF(-w_px / 2, -h_px / 2, w_px, h_px))
 
+    def _target_rect(self) -> QRectF:
+        """Restituisce il rettangolo del bersaglio (senza handle rotazione)."""
+        it = self.wrapper.item
+        w_px = it.width * self.scale
+        h_px = it.height * self.scale
+        return QRectF(-w_px / 2, -h_px / 2, w_px, h_px)
+
     def paint(self, painter: QPainter, option, widget=None) -> None:
         pixmap = self._get_pixmap()
+        target_rect = self._target_rect()
         if pixmap is not None:
-            r = self.boundingRect()
-            painter.drawPixmap(r.toRect(), pixmap)
+            painter.drawPixmap(target_rect.toRect(), pixmap)
         else:
             # Fallback: ellisse colorata
             it = self.wrapper.item
             painter.setBrush(QBrush(QColor(it.color)))
             painter.setPen(QPen(QColor("#0f172a"), 2))
-            painter.drawEllipse(self.boundingRect())
+            painter.drawEllipse(target_rect)
 
         self._paint_decoration(painter)
         self._draw_violation_highlight(painter)
@@ -1360,39 +1408,40 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
     def _paint_decoration(self, painter: QPainter) -> None:
         """Decorazioni specifiche per tipo bersaglio."""
         it = self.wrapper.item
-        br = self.boundingRect()
+        tr = self._target_rect()
 
         if it.item_type == ItemType.NO_SHOOT:
             # X rossa
-            margin = br.width() * 0.15
+            margin = tr.width() * 0.15
             pen = QPen(QColor("#dc2626"), 2)
             painter.setPen(pen)
             painter.drawLine(
-                br.left() + margin, br.top() + margin,
-                br.right() - margin, br.bottom() - margin,
+                tr.left() + margin, tr.top() + margin,
+                tr.right() - margin, tr.bottom() - margin,
             )
             painter.drawLine(
-                br.right() - margin, br.top() + margin,
-                br.left() + margin, br.bottom() - margin,
+                tr.right() - margin, tr.top() + margin,
+                tr.left() + margin, tr.bottom() - margin,
             )
 
         elif it.item_type == ItemType.SWINGER:
-            # Arco di oscillazione
+            # Arco di oscillazione (centrato sul bersaglio)
             amp = it.properties.get("amplitude", 45)
             pen = QPen(QColor("#a855f7"), 1, Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            r = 40
+            cx, cy = tr.center().x(), tr.center().y()
+            r = min(tr.width(), tr.height()) * 0.6
             start_angle = -amp - self.rotation()
             span = amp * 2
-            painter.drawArc(-r, -r, r * 2, r * 2,
+            painter.drawArc(QRectF(cx - r, cy - r, r * 2, r * 2),
                             int(start_angle * 16), int(span * 16))
 
         elif it.item_type == ItemType.DROP_TURNER:
-            # Freccia caduta
+            # Freccia caduta (centrata sul bersaglio)
             pen = QPen(QColor("#0f172a"), 2)
             painter.setPen(pen)
-            cx, cy = br.center().x(), br.center().y()
+            cx, cy = tr.center().x(), tr.center().y()
             painter.drawLine(cx, cy - 8, cx, cy + 8)
             painter.drawLine(cx - 4, cy + 4, cx, cy + 8)
             painter.drawLine(cx + 4, cy + 4, cx, cy + 8)
@@ -1678,7 +1727,14 @@ class StageScene(QGraphicsScene):
     def reload_all_targets(self):
         """Ricarica tutti i bersagli dopo un cambio di configurazione aspetto."""
         from ui.editor.target_images import TargetSvgManager
-        # Invalida cache SVG
+        manager = TargetSvgManager.instance()
+        # Invalida cache per tutti i SVG personalizzati in uso
+        for item_id, gitem in self._items.items():
+            if isinstance(gitem, SvgTargetGraphicsItem):
+                custom_path = gitem.wrapper.item.properties.get("custom_svg_path", "")
+                if custom_path:
+                    manager.invalidate_custom(custom_path)
+        # Invalida anche i renderer standard (colori possono essere cambiati)
         TargetSvgManager.reset_instance()
         # Aggiorna tutti gli SvgTargetGraphicsItem nella scena
         for item_id, gitem in self._items.items():

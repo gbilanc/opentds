@@ -344,7 +344,9 @@ class MainWindow(QMainWindow):
         """Apre l'editor bersagli SVG."""
         from ui.dialogs.svg_editor_dialog import SvgEditorDialog
         dialog = SvgEditorDialog(self)
-        dialog.exec()
+        if dialog.exec():
+            # Refresh la scena per aggiornare eventuali bersagli che usano SVG modificati
+            self._scene.reload_all_targets()
 
     def _on_target_config(self):
         """Apre il dialog di configurazione aspetto bersagli."""

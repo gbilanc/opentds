@@ -474,6 +474,11 @@ class StageWizard(QWidget):
             ]),
         ]
 
+        # Aggiungi i bersagli SVG personalizzati come categoria dinamica
+        custom_items = self._list_custom_svg_items()
+        if custom_items:
+            ITEMS.append(("Bersagli personalizzati (SVG)", custom_items))
+
         for category, items in ITEMS:
             # Header di categoria
             h_item = QListWidgetItem(f"  {category}")
@@ -487,7 +492,12 @@ class StageWizard(QWidget):
             self._target_list.addItem(h_item)
 
             # Items della categoria
-            for icon_name, label, tip, itype, (def_w, def_h) in items:
+            for entry in items:
+                if len(entry) == 6:
+                    icon_name, label, tip, itype, (def_w, def_h), custom_svg = entry
+                else:
+                    icon_name, label, tip, itype, (def_w, def_h) = entry
+                    custom_svg = ""
                 item = QListWidgetItem(label)
                 svg_name = _ICON_MAP.get(icon_name, icon_name)
                 item.setIcon(load_icon(svg_name))
@@ -496,6 +506,7 @@ class StageWizard(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole + 1, itype.name)
                 item.setData(Qt.ItemDataRole.UserRole + 2, def_w)
                 item.setData(Qt.ItemDataRole.UserRole + 3, def_h)
+                item.setData(Qt.ItemDataRole.UserRole + 4, custom_svg)
                 self._target_list.addItem(item)
 
         layout.addWidget(self._target_list, 1)
@@ -508,6 +519,51 @@ class StageWizard(QWidget):
         scroll.setWidget(content)
         return scroll
 
+    @staticmethod
+    def _list_custom_svg_items() -> list[tuple]:
+        """Restituisce la lista dei bersagli SVG personalizzati disponibili.
+
+        Ogni entry è una tupla:
+        (icon_name, label, tooltip, item_type, (w, h), custom_svg_path)
+        """
+        import os
+        from core.target_designer import CUSTOM_TARGETS_DIR
+        from ui.editor.stage_scene import SvgTargetGraphicsItem
+        items: list[tuple] = []
+        if not os.path.isdir(CUSTOM_TARGETS_DIR):
+            return items
+        for fname in sorted(os.listdir(CUSTOM_TARGETS_DIR)):
+            if not fname.lower().endswith(".svg"):
+                continue
+            full_path = os.path.join(CUSTOM_TARGETS_DIR, fname)
+            portable = SvgTargetGraphicsItem._make_path_portable(full_path)
+            label = os.path.splitext(fname)[0].replace("_", " ").replace("-", " ").title()
+            def_w, def_h = 0.45, 0.75
+            try:
+                from xml.etree import ElementTree as ET
+                tree = ET.parse(full_path)
+                root = tree.getroot()
+                vb = root.get("viewBox", "")
+                if vb:
+                    parts = vb.split()
+                    if len(parts) >= 4:
+                        svg_w = float(parts[2])
+                        svg_h = float(parts[3])
+                        if svg_w > 0 and svg_h > 0:
+                            def_h = 0.75
+                            def_w = 0.75 * svg_w / svg_h
+            except Exception:
+                pass
+            items.append((
+                "paper",
+                label,
+                f"SVG personalizzato: {fname}",
+                ItemType.PAPER_TARGET,
+                (def_w, def_h),
+                portable,  # percorso relativo per portabilità
+            ))
+        return items
+
     def _on_target_list_clicked(self, item: QListWidgetItem):
         """Aggiunge il bersaglio selezionato alla scena."""
         role = item.data(Qt.ItemDataRole.UserRole)
@@ -517,6 +573,7 @@ class StageWizard(QWidget):
         type_name = item.data(Qt.ItemDataRole.UserRole + 1)
         def_w = item.data(Qt.ItemDataRole.UserRole + 2)
         def_h = item.data(Qt.ItemDataRole.UserRole + 3)
+        custom_svg = item.data(Qt.ItemDataRole.UserRole + 4) or ""
 
         try:
             itype = getattr(ItemType, type_name)
@@ -569,6 +626,17 @@ class StageWizard(QWidget):
             s.add_fault_line(cx, cy, def_w)
         elif itype == ItemType.NO_SHOOT:
             s.add_no_shoot(cx, cy, def_w, def_h)
+
+        # Applica SVG personalizzato se specificato
+        if custom_svg:
+            # Trova l'ultimo item aggiunto e impostagli il custom_svg_path
+            if s.stage.items:
+                last_item = s.stage.items[-1]
+                last_item.properties["custom_svg_path"] = custom_svg
+                # Aggiorna il graphics item per renderizzare con il nuovo SVG
+                g = s._items.get(last_item.id)
+                if g and hasattr(g, 'update_from_model'):
+                    g.update_from_model()
 
         # Notifica parent
         parent = self.parent()
