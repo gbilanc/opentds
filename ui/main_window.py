@@ -681,23 +681,33 @@ class MainWindow(QMainWindow):
         self._refresh_info()
 
     def _sync_wizard_positions(self):
-        """Popola la lista posizioni del wizard dalle shooting positions caricate."""
+        """Popola la lista posizioni del wizard e crea marker con callback.
+
+        A differenza di sync_shooting_positions() sulla scena, qui i marker
+        vengono creati con callback on_changed/on_deleted che mantengono
+        sincronizzati _pos_list, stage.shooting_positions e i marker visivi.
+        """
+        self._scene.clear_shooting_position_markers()
         self._gen_panel._pos_list.clear()
-        for sp in self._stage.shooting_positions:
+
+        for i, sp in enumerate(self._stage.shooting_positions):
+            _cap = [sp.x, sp.y]  # mutable capture per i callback
             x, y = sp.x, sp.y
             is_start = sp.is_start
+            index = i + 1
 
-            # Callback quando l'utente clicca sulla riga della lista
-            def _on_pos_deleted(item, saved_x=x, saved_y=y):
+            # ── Callback: eliminazione dalla lista ──
+            def _on_pos_deleted(item, _x=x, _y=y):
                 for gi in list(self._scene.items()):
                     if hasattr(gi, "pos_m") and hasattr(gi, "_label"):
                         pm = gi.pos_m
-                        if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
+                        if abs(pm[0] - _x) < 0.5 and abs(pm[1] - _y) < 0.5:
                             self._scene.removeItem(gi)
                             break
                 self._sync_shooting_positions()
 
-            def _renumber_markers(labels, saved_x=x, saved_y=y):
+            # ── Callback: rinumerazione dopo cancellazione ──
+            def _renumber_markers(labels):
                 lst = self._gen_panel._pos_list
                 for gi in self._scene.items():
                     if not hasattr(gi, "pos_m") or not hasattr(gi, "_is_start"):
@@ -729,6 +739,46 @@ class MainWindow(QMainWindow):
                 on_delete_clicked=_on_pos_deleted,
                 on_renumbered=_renumber_markers,
             )
+
+            # ── Callback: spostamento marker → aggiorna lista e stage ──
+            def _on_pos_changed(marker, _cap=_cap):
+                mx, my = marker.pos_m
+                old_x, old_y = _cap[0], _cap[1]
+                lst = self._gen_panel._pos_list
+                for k in range(lst.count()):
+                    item = lst.item(k)
+                    text = self._gen_panel._find_item_text(item)
+                    if not text:
+                        continue
+                    try:
+                        rest = text.split(" ", 1)[1] if " " in text else ""
+                        rest = rest.strip("()")
+                        parts = rest.split(",")
+                        if len(parts) >= 2:
+                            ix = float(parts[0].strip())
+                            iy = float(parts[1].strip())
+                            if abs(ix - old_x) < 0.5 and abs(iy - old_y) < 0.5:
+                                num_part = text.split(" ")[0] if " " in text else "#?"
+                                new_text = f"{num_part} ({mx:.2f}, {my:.2f})"
+                                widget = lst.itemWidget(item)
+                                if widget:
+                                    label = widget.findChild(QLabel)
+                                    if label:
+                                        label.setText(new_text)
+                                _cap[0], _cap[1] = mx, my
+                                self._sync_shooting_positions()
+                                break
+                    except (ValueError, IndexError):
+                        continue
+
+            self._scene.add_shooting_position_marker(
+                x, y,
+                is_start=is_start,
+                index=index,
+                on_changed=_on_pos_changed,
+            )
+
+        self._sync_shooting_positions()
 
     # ── Fase 1: generazione iniziale ──────────────────────────────────
 
@@ -1003,7 +1053,6 @@ class MainWindow(QMainWindow):
         if new_stage is not self._stage:
             self._gen_panel.on_stage_loaded(self._stage.name)
             self._sync_wizard_positions()
-            self._scene.sync_shooting_positions()
             # Ricostruisci _base_poly dal perimetro salvato
             self._base_poly = self._stage.properties.get("perimeter_poly")
             self._current_poly = self._base_poly
