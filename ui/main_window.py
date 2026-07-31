@@ -18,10 +18,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import json
+import webbrowser
+
 from core.generator import Phase1Config
 from core.models import ItemType, Stage
 from services.exporter import export_pdf, export_png
 from services.library import StageLibrary
+from services.navigator_server import (
+    export_stage_for_navigator,
+    get_navigator_server,
+)
 from services.openscad_exporter import (
     ScadExportOptions,
     export_scad,
@@ -30,7 +37,7 @@ from services.openscad_exporter import (
     render_scad_to_png,
     render_scad_to_stl,
 )
-from services.serializer import load_stage, save_stage
+from services.serializer import load_stage, save_stage, stage_to_dict
 from ui.dialogs.library_dialog import LibraryDialog
 from ui.dialogs.target_config_dialog import TargetConfigDialog
 from ui.editor.generator_panel import GeneratorPanel
@@ -152,6 +159,13 @@ class MainWindow(QMainWindow):
         btn_validate.setToolTip("Valida lo stage con IPSCRulesEngine")
         btn_validate.clicked.connect(self._on_validate)
         toolbar.addWidget(btn_validate)
+
+        toolbar.addSeparator()
+
+        btn_navigate_3d = QPushButton("3D")
+        btn_navigate_3d.setToolTip("Naviga lo stage in 3D (Ctrl+3) — apre il browser")
+        btn_navigate_3d.clicked.connect(self._on_navigate_3d)
+        toolbar.addWidget(btn_navigate_3d)
 
         toolbar.addSeparator()
 
@@ -277,6 +291,13 @@ class MainWindow(QMainWindow):
         # ── Strumenti ──
         tools_menu = menubar.addMenu("&Strumenti")
 
+        navigate_3d_action = QAction("Naviga in &3D", self)
+        navigate_3d_action.setShortcut(QKeySequence("Ctrl+3"))
+        navigate_3d_action.triggered.connect(self._on_navigate_3d)
+        tools_menu.addAction(navigate_3d_action)
+
+        tools_menu.addSeparator()
+
         svg_editor_action = QAction(load_icon("edit"), "Editor Bersagli &SVG…", self)
         svg_editor_action.triggered.connect(self._on_svg_editor)
         tools_menu.addAction(svg_editor_action)
@@ -377,6 +398,39 @@ class MainWindow(QMainWindow):
             self._status.showMessage(f"Tema {mode} attivato")
             # Re-render scena con colori aggiornati
             self._scene._update_shooting_area()
+
+    def _on_navigate_3d(self):
+        """Esporta lo stage corrente e apre il navigatore 3D nel browser."""
+        try:
+            # Serializza lo stage corrente in JSON
+            data = stage_to_dict(self._stage)
+            stage_json = json.dumps(data, indent=2, ensure_ascii=False)
+
+            # Scrivi il JSON nella directory dist/ del navigator
+            target = export_stage_for_navigator(stage_json)
+
+            # Avvia il server HTTP (se non già attivo)
+            server = get_navigator_server()
+            if not server.is_running:
+                server.start()
+
+            url = server.stage_url(target.name)
+            webbrowser.open(url)
+
+            self._status.showMessage(
+                f"🌐 Navigatore 3D aperto nel browser: {url}  (server su porta {server.port})"
+            )
+        except Exception as e:
+            self._status.showMessage(f"❌ Errore navigatore 3D: {e}")
+
+    def closeEvent(self, event):
+        """Arresta il server HTTP alla chiusura dell'applicazione."""
+        server = get_navigator_server()
+        if server.is_running:
+            server.stop()
+        super().closeEvent(event)
+
+    # ── Azioni Strumenti ───────────────────────────────────────────────
 
     def _on_svg_editor(self):
         """Apre l'editor bersagli SVG."""

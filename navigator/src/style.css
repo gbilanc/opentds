@@ -1,0 +1,171 @@
+/* === Reset & Fullscreen === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+canvas {
+  display: block;
+}
+
+/* === HUD === */
+#hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Mirino */
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+}
+
+#crosshair::before,
+#crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+#crosshair::before {
+  top: 9px;
+  left: 0;
+  width: 20px;
+  height: 2px;
+}
+
+#crosshair::after {
+  top: 0;
+  left: 9px;
+  width: 2px;
+  height: 20px;
+}
+
+/* Messaggio interazione */
+#interaction-hint {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  letter-spacing: 0.5px;
+}
+
+#interaction-hint.visible {
+  opacity: 1;
+}
+
+#interaction-hint .key {
+  display: inline-block;
+  background: #fff;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: bold;
+  margin: 0 3px;
+  font-size: 12px;
+}
+
+/* Istruzioni overlay */
+#instructions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 30px 40px;
+  border-radius: 10px;
+  text-align: center;
+  pointer-events: auto;
+  transition: opacity 0.5s;
+}
+
+#instructions.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#instructions h1 {
+  font-size: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+
+#instructions .controls {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px 20px;
+  font-size: 14px;
+  color: #ccc;
+  margin-bottom: 24px;
+}
+
+#instructions .controls .key {
+  text-align: right;
+  font-weight: bold;
+  color: #fff;
+}
+
+#instructions button {
+  background: #4a9eff;
+  color: #fff;
+  border: none;
+  padding: 12px 36px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-weight: 600;
+}
+
+#instructions button:hover {
+  background: #3a8eef;
+}
+
+/* Messaggi temporanei */
+#message {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 16px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+#message.visible {
+  opacity: 1;
+}

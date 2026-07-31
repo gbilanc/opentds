@@ -29,6 +29,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 | Rendering bersagli | SVG vettoriale (`QSvgRenderer`) |
 | Geometria / Collisioni | `shapely` |
 | Export 3D | OpenSCAD (`.scad` / PNG / STL / 3MF) |
+| Navigatore 3D | Three.js + TypeScript + Vite (first-person, WebGL) |
 | Testing | `pytest` |
 
 ---
@@ -116,6 +117,7 @@ uv run ruff check .  # linting (opzionale)
 opentds/
 ├── main.py                       # Entry point
 ├── pyproject.toml                # Dipendenze e build
+├── navigator/                    # Visualizzatore 3D (Three.js + TypeScript)
 ├── core/
 │   ├── models.py                 # StageItem, ItemType, Stage, ShootingPosition
 │   ├── constants.py              # TARGET_COLORS, TARGET_DIMENSIONS, distanze IPSC
@@ -211,6 +213,99 @@ opentds/
 
 ---
 
+## Navigator — Visualizzatore 3D
+
+Visualizzatore 3D first-person degli stage IPSC, realizzato con **Three.js + TypeScript + Vite**. Esplora gli stage creati in OpenTDS camminandoci letteralmente dentro.
+
+```
+navigator/
+├── index.html                    # Entry point HTML
+├── package.json                  # Dipendenze (three, vite, typescript)
+├── tsconfig.json                 # TypeScript strict, target es2023
+├── public/
+│   ├── stage_short.json          # Stage Short Course di esempio
+│   ├── stage_short_barriers.json # Short Course con barriere
+│   ├── stage_medium.json         # Stage Medium Course di esempio
+│   └── stage_long.json           # Stage Long Course di esempio
+└── src/
+    ├── main.ts                   # Bootstrap: carica JSON OpenTDS via URL param ?stage=
+    ├── style.css                 # Reset, fullscreen, HUD styling
+    ├── engine/
+    │   ├── AssetFactory.ts       # Factory Three.js: mesh da WorldObject (box, cylinder, sphere, cone, plane)
+    │   ├── PlayerController.ts   # Controller FPS: WASD, mouse look, salto, gravità, collisioni AABB
+    │   └── SceneManager.ts       # Orchestratore: renderer WebGL, animation loop, wiring
+    ├── world/
+    │   ├── WorldDescription.ts   # DSL dichiarativo per mondi 3D (tipi Vec3, WorldObject, WorldLight, CompositeObject)
+    │   ├── WorldBuilder.ts       # Costruisce la scena Three.js dal WorldDescription
+    │   ├── OpenTDSLoader.ts      # Parser JSON OpenTDS → WorldDescription (mappa tutti i tipi di item)
+    │   └── GardenWorld.ts        # Mondo demo: giardino con capanna, albero, panchina, staccionata
+    ├── ui/
+    │   ├── HUD.ts                # Mirino, hint interazione ("Premi E"), messaggi temporanei, overlay istruzioni
+    │   └── InteractionSystem.ts  # Raycasting per rilevare oggetti interagibili (distanza max 3m)
+    └── utils/
+        └── ProceduralTextures.ts # Texture procedurali Canvas: erba, legno, pietra, terra, tetto
+```
+
+### Funzionalità
+
+- **Navigazione first-person**: WASD per muoversi, mouse per guardarsi intorno, Spazio per saltare
+- **Collisioni**: rilevamento contro muri, barriere, hard cover (AABB con push-back)
+- **Interazione**: tasto E per interagire con oggetti (porte, bersagli, ecc.) entro 3 metri
+- **Ombre dinamiche**: shadow mapping PCF soft per la luce direzionale
+- **Texture procedurali**: generate a runtime via Canvas API, nessuna immagine esterna necessaria
+- **HUD contestuale**: mirino centrale, hint di interazione, messaggi temporanei, overlay istruzioni
+- **Stage multipli**: selezionabili via parametro URL `?stage=stage_medium.json`
+
+### Conversione Item OpenTDS → 3D
+
+| Tipo OpenTDS | Rappresentazione 3D | Collisione | Interazione |
+|---|---|---|---|
+| WALL | Box 2m altezza, texture solida | ✓ | — |
+| BARRIER | Box 1m altezza, texture solida | ✓ | — |
+| HARD_COVER | Box 2m altezza | ✓ | — |
+| SOFT_COVER | Box 1.5m (senza collisione) | — | — |
+| DOOR | Box 2m, texture legno | ✓ | ✓ "Porta" |
+| FAULT_LINE (perimetrale) | Staccionata bassa 0.6m | ✓ | — |
+| FAULT_LINE (interna) | Linea rossa a terra | — | — |
+| PAPER/MINI/MICRO | Palo + pannello verticale | — | ✓ |
+| NO_SHOOT | Palo + pannello giallo | — | ✓ "No-Shoot" |
+| STEEL/POPPER | Palo + disco metallico | — | ✓ |
+| METAL_PLATE | Palo basso + piatto sottile | — | ✓ |
+| SWINGER/DROP_TURNER/MOVER | Come bersaglio paper (statico per ora) | — | ✓ |
+| Composti (Doublet, ecc.) | Sotto-oggetti multipli con offset | — | ✓ |
+| Shooting Position | Cerchio a terra + freccia direzionale (verde=start, blu=normale) | — | — |
+
+### Comandi
+
+| Tasto | Azione |
+|---|---|
+| `W A S D` / `Frecce` | Movimento |
+| `Mouse` | Guardare intorno |
+| `Spazio` | Saltare |
+| `E` | Interagire con oggetti |
+| `ESC` | Rilasciare il mouse |
+| `Clic` | Bloccare il mouse / iniziare |
+
+### Sviluppo
+
+```bash
+cd navigator
+npm install       # installa three, vite, typescript
+npm run dev       # avvia server di sviluppo (hot reload)
+npm run build     # build di produzione in dist/
+npm run preview   # preview della build
+```
+
+### Integrazione con OpenTDS
+
+Il visualizzatore carica direttamente i file JSON esportati da OpenTDS (schema v1). Per usarlo con un nuovo stage:
+
+1. Esporta lo stage da OpenTDS come JSON
+2. Copia il file in `navigator/public/`
+3. Avvia `npm run dev` e accedi via `?stage=nomefile.json`
+
+---
+
 ## Roadmap
 
 - [x] Rendering bersagli SVG vettoriale (`QSvgRenderer`)
@@ -224,9 +319,11 @@ opentds/
 - [x] Validazione Divisione (ottiche, compensatori, canna, capacità)
 - [x] Rapporto 3:2:1 per gare multi-stage
 - [x] Generazione briefing in PDF
+- [x] Navigatore 3D first-person con Three.js + TypeScript
 - [ ] Regole IPSC edizione 2025 complete
 - [ ] Supporto IPSC Mini Rifle e Shotgun
-- [ ] Modalità editor di percorsi di tiro
+- [ ] Modalità editor di percorsi di tiro nel navigatore 3D
+- [ ] Animazione bersagli mobili (swinger, drop turner, mover) nel navigatore
 - [ ] Esportazione per tablet/table score
 - [ ] Packaging PyInstaller (Windows, macOS, Linux AppImage)
 

@@ -1,0 +1,286 @@
+{
+  "version": 3,
+  "name": "Stage Generato",
+  "width": 15.0,
+  "depth": 12.0,
+  "course_type": "short",
+  "properties": {
+    "start_signal": "Acustico",
+    "start_position": "Ovunque nella shooting area",
+    "ready_condition_handgun": "In piedi come da regolamento IPSC Handgun punto 8.2.2 (Appendice E2), come mostrato",
+    "ready_condition_pcc": "In piedi come da regolamento IPSC PCC punto 8.2.2 (Appendice E1), come mostrato",
+    "handgun_condition": "Arma in fondina caricatore inserito colpo non camerato",
+    "pcc_condition": "Carico Option 1",
+    "procedure": "Al segnale di partenza ingaggiare tutti i bersagli.",
+    "max_points": 80,
+    "angoli_sicurezza": "90\u00b0 laterali e parapalle in verticale",
+    "hard_cover": "Le strutture sono hard cover",
+    "note": "Il punteggio verr\u00e0 conteggiato durante l'esecuzione dell'esercizio. Il tiratore potr\u00e0 delegare un altro tiratore alla verifica del punteggio."
+  },
+  "items": [
+    {
+      "id": 1,
+      "type": "BARRIER",
+      "x": 5.79,
+      "y": 1.1,
+      "width": 1.05,
+      "height": 0.15,
+      "rotation": 0.0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "BARRIER",
+      "x": 8.84,
+      "y": 1.1,
+      "width": 1.05,
+      "height": 0.15,
+      "rotation": 0.0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "BARRIER",
+      "x": 5.39,
+      "y": 4.5,
+      "width": 6.8,
+      "height": 0.15,
+      "rotation": -92.02,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "BARRIER",
+      "x": 9.45,
+      "y": 4.38,
+      "width": 6.56,
+      "height": 0.15,
+      "rotation": 88.52,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "BARRIER",
+      "x": 7.52,
+      "y": 7.78,
+      "width": 4.04,
+      "height": 0.15,
+      "rotation": 176.59,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "PAPER_TARGET",
+      "x": 12.43,
+      "y": 5.63,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -165.72,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 7,
+      "type": "PAPER_TARGET",
+      "x": 1.91,
+      "y": 5.49,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -8.68,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 8,
+      "type": "PAPER_TARGET",
+      "x": 3.93,
+      "y": 6.61,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -28.94,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 9,
+      "type": "PAPER_TARGET",
+      "x": 11.52,
+      "y": 6.94,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -158.37,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 10,
+      "type": "PAPER_TARGET",
+      "x": 13.45,
+      "y": 6.57,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -158.08,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 11,
+      "type": "PAPER_TARGET",
+      "x": 3.21,
+      "y": 4.55,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -11.43,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 12,
+      "type": "PAPER_TARGET",
+      "x": 1.89,
+      "y": 6.99,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -25.51,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 13,
+      "type": "PAPER_TARGET",
+      "x": 11.03,
+      "y": 4.54,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": -187.68,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {}
+    },
+    {
+      "id": 14,
+      "type": "BARRIER",
+      "x": 11.18,
+      "y": 2.27,
+      "width": 2.23,
+      "height": 0.15,
+      "rotation": 326.87,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 15,
+      "type": "BARRIER",
+      "x": 3.15,
+      "y": 2.21,
+      "width": 2.17,
+      "height": 0.15,
+      "rotation": 301.36,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "BARRIER",
+      "x": 9.21,
+      "y": 9.21,
+      "width": 2.86,
+      "height": 0.15,
+      "rotation": 44.3,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 17,
+      "type": "BARRIER",
+      "x": 5.71,
+      "y": 8.51,
+      "width": 2.23,
+      "height": 0.15,
+      "rotation": 353.76,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {
+        "protected": true
+      }
+    },
+    {
+      "id": 18,
+      "type": "NO_SHOOT",
+      "x": 2.29,
+      "y": 6.99,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 0,
+      "color": "#eab308",
+      "label": "No-Shoot",
+      "properties": {}
+    },
+    {
+      "id": 19,
+      "type": "NO_SHOOT",
+      "x": 4.33,
+      "y": 6.61,
+      "width": 0.45,
+      "height": 0.45,
+      "rotation": 0,
+      "color": "#eab308",
+      "label": "No-Shoot",
+      "properties": {}
+    }
+  ],
+  "shooting_positions": [
+    {
+      "id": 1,
+      "x": 7.32,
+      "y": 1.6,
+      "label": "Start",
+      "is_start": true,
+      "angle": 90.0,
+      "properties": {}
+    }
+  ],
+  "_generator_score": 131.01,
+  "_generator_attempts": 17
+}
