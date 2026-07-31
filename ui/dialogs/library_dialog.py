@@ -4,21 +4,29 @@ Library browser dialog for OpenTDS.
 Allows browsing, searching, loading, importing, and managing
 predefined and user-saved stages.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QListWidget, QListWidgetItem,
-    QLineEdit, QFileDialog, QMessageBox,
-    QFrame, QSizePolicy, QWidget,
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
 
-from services.library import StageLibrary, LibraryEntry
+from services.library import LibraryEntry, StageLibrary
 from ui.icons import load_icon
 
 
@@ -261,7 +269,9 @@ class LibraryDialog(QDialog):
     def _on_import(self):
         """Import a .opentds or .json file."""
         path, _ = QFileDialog.getOpenFileName(
-            self, "Importa Stage", "",
+            self,
+            "Importa Stage",
+            "",
             "Stage OpenTDS (*.opentds *.json);;Tutti i file (*)",
         )
         if path:
@@ -269,12 +279,14 @@ class LibraryDialog(QDialog):
             if entry:
                 self._refresh()
                 QMessageBox.information(
-                    self, "Importato",
+                    self,
+                    "Importato",
                     f"Stage '{entry.name}' importato con successo!",
                 )
             else:
                 QMessageBox.warning(
-                    self, "Errore",
+                    self,
+                    "Errore",
                     "Impossibile importare il file. Verifica che sia un formato valido.",
                 )
 
@@ -289,13 +301,16 @@ class LibraryDialog(QDialog):
         if not entry:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Esporta Stage", entry.filename or f"{entry.id}.opentds",
+            self,
+            "Esporta Stage",
+            entry.filename or f"{entry.id}.opentds",
             "Stage OpenTDS (*.opentds);;JSON (*.json)",
         )
         if path:
             if self._library.export_to_file(entry_id, Path(path)):
                 QMessageBox.information(
-                    self, "Esportato",
+                    self,
+                    "Esportato",
                     f"Stage '{entry.name}' esportato con successo!",
                 )
             else:
@@ -312,8 +327,12 @@ class LibraryDialog(QDialog):
         if not entry or entry.is_predefined:
             return
         reply = QMessageBox.question(
-            self, "Conferma eliminazione",
-            f"Eliminare '{entry.name}' dalla libreria?\nQuesta operazione non può essere annullata.",
+            self,
+            "Conferma eliminazione",
+            (
+                f"Eliminare '{entry.name}' dalla libreria?\n"
+                "Questa operazione non può essere annullata."
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

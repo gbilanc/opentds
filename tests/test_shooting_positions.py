@@ -1,16 +1,15 @@
 """
 Test per shooting positions: modello, validazione, serializzazione.
 """
+
 from __future__ import annotations
 
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from core.models import Stage, ShootingPosition, StageItem, ItemType
 from core.ipsc_rules import IPSCRulesEngine
-from services.serializer import save_stage, load_stage, stage_to_dict, dict_to_stage
+from core.models import ItemType, ShootingPosition, StageItem
+from services.serializer import dict_to_stage, load_stage, save_stage, stage_to_dict
 
 
 class TestShootingPositionModel:
@@ -40,8 +39,7 @@ class TestShootingPositionsInStage:
 
     def test_position_separate_from_items(self, empty_stage):
         """Le shooting positions sono separate dagli items."""
-        empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=3.0, y=3.0, is_start=True))
+        empty_stage.shooting_positions.append(ShootingPosition(id=1, x=3.0, y=3.0, is_start=True))
         empty_stage.add_item(StageItem(0, ItemType.WALL, 5.0, 5.0, 2.0, 0.2))
         assert len(empty_stage.shooting_positions) == 1
         assert len(empty_stage.items) == 1
@@ -52,14 +50,14 @@ class TestShootingPositionValidation:
 
     def test_valid_position_passes(self, empty_stage):
         empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=5.0, y=3.0, label="Start", is_start=True))
+            ShootingPosition(id=1, x=5.0, y=3.0, label="Start", is_start=True)
+        )
         engine = IPSCRulesEngine(empty_stage)
         v = engine._validate_shooting_positions()
         assert len(v) == 0
 
     def test_position_outside_boundary(self, empty_stage):
-        empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=25.0, y=30.0, label="Fuori"))
+        empty_stage.shooting_positions.append(ShootingPosition(id=1, x=25.0, y=30.0, label="Fuori"))
         engine = IPSCRulesEngine(empty_stage)
         v = engine._validate_shooting_positions()
         assert any("fuori" in x.lower() for x in v)
@@ -67,14 +65,16 @@ class TestShootingPositionValidation:
     def test_position_inside_wall(self, empty_stage):
         empty_stage.add_item(StageItem(0, ItemType.WALL, 5.0, 5.0, 3.0, 0.2))
         empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=5.0, y=5.0, label="Dentro muro"))
+            ShootingPosition(id=1, x=5.0, y=5.0, label="Dentro muro")
+        )
         engine = IPSCRulesEngine(empty_stage)
         v = engine._validate_shooting_positions()
         assert any("dentro" in x.lower() for x in v)
 
     def test_missing_start_flag(self, empty_stage):
         empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=5.0, y=3.0, label="Posizione"))
+            ShootingPosition(id=1, x=5.0, y=3.0, label="Posizione")
+        )
         engine = IPSCRulesEngine(empty_stage)
         v = engine._validate_shooting_positions()
         assert any("partenza" in x.lower() for x in v)
@@ -85,12 +85,19 @@ class TestShootingPositionSerializer:
 
     def test_round_trip_preserves_positions(self, empty_stage):
         empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=3.0, y=2.0, label="Start",
-                             is_start=True, angle=90.0))
+            ShootingPosition(id=1, x=3.0, y=2.0, label="Start", is_start=True, angle=90.0)
+        )
         empty_stage.shooting_positions.append(
-            ShootingPosition(id=2, x=8.0, y=6.0, label="Posizione 2",
-                             is_start=False, angle=45.0,
-                             properties={"cover": "barrier"}))
+            ShootingPosition(
+                id=2,
+                x=8.0,
+                y=6.0,
+                label="Posizione 2",
+                is_start=False,
+                angle=45.0,
+                properties={"cover": "barrier"},
+            )
+        )
 
         data = stage_to_dict(empty_stage)
         assert data["version"] == 3
@@ -106,7 +113,8 @@ class TestShootingPositionSerializer:
 
     def test_round_trip_file(self, empty_stage):
         empty_stage.shooting_positions.append(
-            ShootingPosition(id=1, x=5.0, y=3.0, label="Start", is_start=True))
+            ShootingPosition(id=1, x=5.0, y=3.0, label="Start", is_start=True)
+        )
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
             tmp_path = Path(f.name)

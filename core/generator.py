@@ -8,77 +8,50 @@ Modulo orchestratore che coordina:
 - core/repair.py: RepairEngine (riparazione violazioni)
 - core/scoring.py: scoring, metadati, attivatori
 """
+
 from __future__ import annotations
 
-import math
 import random
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
-
-from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
+from dataclasses import dataclass
+from typing import Optional
 
 from core.constants import (
-    MIN_TARGET_TO_EDGE,
-    MIN_TARGET_TO_WALL,
-    MIN_TARGET_TO_TARGET,
-    MIN_TARGET_TO_BARRIER,
-    MIN_BACKSTOP_DEPTH,
-    MIN_STEEL_DISTANCE,
     MIN_STEEL_PLACEMENT_DISTANCE,
-    MIN_POLY_DIM,
-    FRONT_OPEN_GAP,
-    INTERIOR_SAMPLE_COUNT,
-    MAX_ACTIVATOR_DISTANCE,
-    MAX_ACTIVATOR_MOVING_DISTANCE,
-    MAX_ACTIVATED_PER_ACTIVATOR,
-    MAX_HITS_PER_POSITION,
-    COURSE_TARGET_DISTRIBUTION,
-    TARGET_DIMENSIONS,
     TARGET_COLORS,
-    SAME_LINE_OF_FIRE_THRESHOLD_DEG,
-    ACTIVATOR_SECTOR_ANGLE_DEG,
 )
-from core.models import Stage, StageItem, ItemType, CourseType
 from core.ipsc_rules import IPSCRulesEngine
-from core.geometry import (
-    point_in_polygon,
-    polygon_center,
-    segments_intersect,
-    line_intersects_rect,
-    euclidean_distance,
-    angle_between_points,
-    validate_polygon,
-)
-from core.collision import item_obb, min_distance_between as obb_distance
-from core.shapes import (
-    LETTER_SHAPES,
-    generate_perimeter_polygon as _generate_perimeter_polygon,
-    perimeter_to_items as _perimeter_to_items,
-    polygon_to_shapely as _perimeter_to_shapely_polygon,
-)
-from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
+from core.models import ItemType, Stage, StageItem
+from core.placement import PlacementEngine
+from core.repair import RepairEngine
 from core.scoring import (
-    is_paper_like as _is_paper_like,
-    is_steel_like as _is_steel_like,
-    is_scoring_target as _is_scoring_target,
-    is_obstacle as _is_obstacle,
-    is_blocking_wall as _is_blocking_wall,
-    resolve_target_counts as _resolve_target_counts,
     create_activator_relationships as _create_activator_relationships,
+)
+from core.scoring import (
+    is_scoring_target as _is_scoring_target,
+)
+from core.scoring import (
     populate_stage_metadata as _populate_stage_metadata,
+)
+from core.scoring import (
+    resolve_target_counts as _resolve_target_counts,
+)
+from core.scoring import (
     score_stage as _score_stage,
 )
-from core.placement import PlacementEngine, compute_target_rotation
+from core.shapes import (
+    generate_perimeter_polygon as _generate_perimeter_polygon,
+)
+from core.shapes import (
+    perimeter_to_items as _perimeter_to_items,
+)
 from core.visibility import (
     get_blocking_walls,
     is_target_visible,
-    ensure_target_visibility,
     sample_interior_points,
 )
-from core.repair import RepairEngine
-
 
 # ── Helper per estrarre poligono dalle properties ──────────────────────────
+
 
 def _get_perimeter_poly(stage: Stage) -> list[tuple[float, float]] | None:
     """Recupera il poligono dell'area di tiro dalle properties dello stage.
@@ -93,6 +66,7 @@ def _get_perimeter_poly(stage: Stage) -> list[tuple[float, float]] | None:
     # Nota: import ritardato per evitare dipendenza circolare core→ui→core
     try:
         from ui.editor.stage_scene import _build_polygon_from_fault_lines
+
         return _build_polygon_from_fault_lines(stage.items)
     except ImportError:
         return None
@@ -109,16 +83,17 @@ def _assign_ids(items: list[StageItem]) -> None:
 
 # ── Dataclass di configurazione ──────────────────────────────────────────
 
+
 @dataclass
 class GeneratorConfig:
     stage_width: float = 20.0
     stage_depth: float = 15.0
     num_targets: int = 8
-    num_steel: int = 2          # backward compat: ripartito tra poppers e plates
-    num_poppers: int = 0        # 0 = auto-da-num_steel (60%)
-    num_plates: int = 0         # 0 = auto-da-num_steel (40%)
-    num_moving: int = 1         # swinger / drop_turner / mover
-    num_mini: int = 0           # mini target cartacei (App. B3)
+    num_steel: int = 2  # backward compat: ripartito tra poppers e plates
+    num_poppers: int = 0  # 0 = auto-da-num_steel (60%)
+    num_plates: int = 0  # 0 = auto-da-num_steel (40%)
+    num_moving: int = 1  # swinger / drop_turner / mover
+    num_mini: int = 0  # mini target cartacei (App. B3)
     num_walls: int = 1
     num_barriers: int = 4
     include_fault_lines: bool = True
@@ -137,10 +112,11 @@ class GeneratorConfig:
 @dataclass
 class Phase1Config:
     """Configurazione per la Fase 1: generazione dell'area di tiro."""
+
     stage_width: float = 20.0
     stage_depth: float = 15.0
     letter_shape: str = "random"  # random | Q | O | T | U | W | X | Y | Z
-    rotation: float = 0.0       # gradi 0-360
+    rotation: float = 0.0  # gradi 0-360
     polygon_scale: float = 1.0  # 0.3-1.5, fattore di scala uniforme del poligono
     delimitation: str = "fault_lines"  # fault_lines | barriers | walls | mixed
     seed: Optional[int] = None
@@ -150,6 +126,7 @@ class Phase1Config:
 @dataclass
 class Phase2Config:
     """Configurazione per la Fase 2: posizionamento bersagli e ostacoli."""
+
     shooting_positions: list[tuple[float, float, bool]] = None  # (x, y, is_start)
     num_targets: int = 8
     num_poppers: int = 1
@@ -185,6 +162,7 @@ class GeneratorResult:
 
 
 # ── StageGenerator: Orchestratore ─────────────────────────────────────────
+
 
 class StageGenerator:
     """Generatore procedurale constraint-based per stage IPSC.
@@ -226,9 +204,7 @@ class StageGenerator:
             rotation=phase1.rotation,
             scale=phase1.polygon_scale,
         )
-        stage.properties["perimeter_poly"] = [
-            (round(x, 2), round(y, 2)) for x, y in poly
-        ]
+        stage.properties["perimeter_poly"] = [(round(x, 2), round(y, 2)) for x, y in poly]
         items = _perimeter_to_items(
             poly,
             style=phase1.delimitation,
@@ -292,15 +268,23 @@ class StageGenerator:
 
         # Risoluzione conteggi
         has_explicit_counts = (
-            cfg.num_targets > 0 or cfg.num_poppers > 0 or cfg.num_plates > 0
-            or cfg.num_mini > 0 or cfg.num_moving > 0
+            cfg.num_targets > 0
+            or cfg.num_poppers > 0
+            or cfg.num_plates > 0
+            or cfg.num_mini > 0
+            or cfg.num_moving > 0
         )
         use_auto = cfg.auto_distribution and cfg.course_type and not has_explicit_counts
 
         resolved = _resolve_target_counts(
-            cfg.num_targets, 0, cfg.num_poppers, cfg.num_plates,
-            cfg.num_mini, cfg.num_moving,
-            use_auto, cfg.course_type if use_auto else "",
+            cfg.num_targets,
+            0,
+            cfg.num_poppers,
+            cfg.num_plates,
+            cfg.num_mini,
+            cfg.num_moving,
+            use_auto,
+            cfg.course_type if use_auto else "",
         )
         num_paper = resolved["paper"]
         num_poppers = resolved["poppers"]
@@ -314,8 +298,7 @@ class StageGenerator:
         for _ in range(max(num_mini * 5, 20)):
             if mini_placed >= num_mini:
                 break
-            it = placement.place_target_around(
-                items, ItemType.MINI_TARGET, engine)
+            it = placement.place_target_around(items, ItemType.MINI_TARGET, engine)
             if it:
                 items.append(it)
                 mini_placed += 1
@@ -326,8 +309,7 @@ class StageGenerator:
         for _ in range(max(num_paper * 5, 30)):
             if paper_placed >= num_paper:
                 break
-            it = placement.place_target_around(
-                items, ItemType.PAPER_TARGET, engine)
+            it = placement.place_target_around(items, ItemType.PAPER_TARGET, engine)
             if it:
                 items.append(it)
                 paper_placed += 1
@@ -339,7 +321,9 @@ class StageGenerator:
             if poppers_placed >= num_poppers:
                 break
             it = placement.place_target_around(
-                items, ItemType.POPPER, engine,
+                items,
+                ItemType.POPPER,
+                engine,
                 override_min_dist=MIN_STEEL_PLACEMENT_DISTANCE,
             )
             if it:
@@ -357,7 +341,9 @@ class StageGenerator:
                     if poppers_placed >= num_poppers:
                         break
                     it = placement.place_target_around(
-                        items, ItemType.POPPER, engine,
+                        items,
+                        ItemType.POPPER,
+                        engine,
                         override_min_dist=reduced,
                     )
                     if it:
@@ -371,7 +357,8 @@ class StageGenerator:
                 if poppers_placed >= num_poppers:
                     break
                 it = placement.place_steel_fallback(
-                    items, ItemType.POPPER, engine, min_dist_from_shooter=7.0)
+                    items, ItemType.POPPER, engine, min_dist_from_shooter=7.0
+                )
                 if it:
                     it.properties["calibrated"] = True
                     it.properties["calibration_pf"] = 125
@@ -385,7 +372,9 @@ class StageGenerator:
             if plates_placed >= num_plates:
                 break
             it = placement.place_target_around(
-                items, ItemType.METAL_PLATE, engine,
+                items,
+                ItemType.METAL_PLATE,
+                engine,
                 override_min_dist=MIN_STEEL_PLACEMENT_DISTANCE,
             )
             if it:
@@ -400,7 +389,9 @@ class StageGenerator:
                     if plates_placed >= num_plates:
                         break
                     it = placement.place_target_around(
-                        items, ItemType.METAL_PLATE, engine,
+                        items,
+                        ItemType.METAL_PLATE,
+                        engine,
                         override_min_dist=reduced,
                     )
                     if it:
@@ -412,7 +403,8 @@ class StageGenerator:
                 if plates_placed >= num_plates:
                     break
                 it = placement.place_steel_fallback(
-                    items, ItemType.METAL_PLATE, engine, min_dist_from_shooter=7.0)
+                    items, ItemType.METAL_PLATE, engine, min_dist_from_shooter=7.0
+                )
                 if it:
                     items.append(it)
                     plates_placed += 1
@@ -421,12 +413,11 @@ class StageGenerator:
         # 4. Reg. 4.3.3.3
         has_plates = any(it.item_type == ItemType.METAL_PLATE for it in items)
         has_paper_or_popper = any(
-            it.item_type in (ItemType.PAPER_TARGET, ItemType.POPPER)
-            for it in items)
+            it.item_type in (ItemType.PAPER_TARGET, ItemType.POPPER) for it in items
+        )
         if has_plates and not has_paper_or_popper:
             for _ in range(5):
-                it = placement.place_target_around(
-                    items, ItemType.PAPER_TARGET, engine)
+                it = placement.place_target_around(items, ItemType.PAPER_TARGET, engine)
                 if it:
                     items.append(it)
                     break
@@ -435,8 +426,7 @@ class StageGenerator:
         # 5. Reach minimum targets
         min_targets = IPSCRulesEngine.MIN_TARGETS
         while len([x for x in items if _is_scoring_target(x.item_type)]) < min_targets:
-            it = placement.place_target_around(
-                items, ItemType.PAPER_TARGET, engine)
+            it = placement.place_target_around(items, ItemType.PAPER_TARGET, engine)
             if it:
                 items.append(it)
             attempts += 1
@@ -446,8 +436,9 @@ class StageGenerator:
         # 6. Activators
         _assign_ids(items)
         if include_activators:
-            activator_items = [it for it in items
-                               if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)]
+            activator_items = [
+                it for it in items if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)
+            ]
             if activator_items:
                 _create_activator_relationships(stage, items, activator_items, poly)
 
@@ -467,8 +458,10 @@ class StageGenerator:
         # 8. User-placed walls/barriers (from Fase 2 UI)
         for w_data in cfg.placed_walls:
             w_item = StageItem(
-                0, ItemType.WALL,
-                w_data["x"], w_data["y"],
+                0,
+                ItemType.WALL,
+                w_data["x"],
+                w_data["y"],
                 width=w_data.get("width", 3.0),
                 height=0.2,
                 rotation=w_data.get("rotation", 0.0),
@@ -480,8 +473,10 @@ class StageGenerator:
 
         for b_data in cfg.placed_barriers:
             b_item = StageItem(
-                0, ItemType.BARRIER,
-                b_data["x"], b_data["y"],
+                0,
+                ItemType.BARRIER,
+                b_data["x"],
+                b_data["y"],
                 width=b_data.get("width", 2.0),
                 height=0.15,
                 rotation=b_data.get("rotation", 0.0),
@@ -492,7 +487,6 @@ class StageGenerator:
             items.append(b_item)
 
         # 8b. Auto-generated walls/barriers
-        walls_before = len(items)
         items.extend(placement.generate_walls(items))
         items.extend(placement.generate_barriers(items))
 
@@ -512,19 +506,30 @@ class StageGenerator:
                     ns_placed += 1
                 attempts += 1
             if ns_placed < ns_count and poly:
-                papers = [x for x in items
-                          if x.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)]
+                papers = [
+                    x for x in items if x.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
+                ]
                 if papers:
                     for _ in range(ns_count - ns_placed):
                         p = random.choice(papers)
                         nx = p.x + 0.4
                         ny = p.y
                         margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
-                        if (margin <= nx <= stage.width - margin and
-                            margin <= ny <= stage.depth - margin):
-                            ns = StageItem(0, ItemType.NO_SHOOT, nx, ny,
-                                           0.45, 0.45, 0,
-                                           TARGET_COLORS.get("no_shoot", "#eab308"), "No-Shoot")
+                        if (
+                            margin <= nx <= stage.width - margin
+                            and margin <= ny <= stage.depth - margin
+                        ):
+                            ns = StageItem(
+                                0,
+                                ItemType.NO_SHOOT,
+                                nx,
+                                ny,
+                                0.45,
+                                0.45,
+                                0,
+                                TARGET_COLORS.get("no_shoot", "#eab308"),
+                                "No-Shoot",
+                            )
                             items.append(ns)
                             ns_placed += 1
 
@@ -538,11 +543,15 @@ class StageGenerator:
         # 12. Shooting positions
         if cfg.shooting_positions:
             from core.models import ShootingPosition
+
             stage.shooting_positions = [
                 ShootingPosition(
-                    id=i + 1, x=x, y=y,
+                    id=i + 1,
+                    x=x,
+                    y=y,
                     label="Start" if is_start else f"Pos {i + 1}",
-                    is_start=is_start, angle=90.0,
+                    is_start=is_start,
+                    angle=90.0,
                 )
                 for i, (x, y, is_start) in enumerate(cfg.shooting_positions)
             ]
@@ -551,11 +560,11 @@ class StageGenerator:
 
         placement.refine_target_rotations(items)
 
-        _populate_stage_metadata(
-            stage, cfg.difficulty, num_poppers, num_plates, num_moving)
+        _populate_stage_metadata(stage, cfg.difficulty, num_poppers, num_plates, num_moving)
 
         score = _score_stage(
-            stage, items,
+            stage,
+            items,
             perimeter_poly=poly,
             interior_samples=interior,
             get_blocking_walls_fn=lambda: get_blocking_walls(items),
@@ -589,10 +598,6 @@ class StageGenerator:
             self._perimeter_poly = poly
             self._interior_samples = sample_interior_points(poly, 20)
 
-            has_steel = (
-                cfg.num_steel > 0 or cfg.num_poppers > 0 or cfg.num_plates > 0
-                or (cfg.auto_distribution and cfg.course_type)
-            )
             phase2 = Phase2Config(
                 num_targets=cfg.num_targets,
                 num_poppers=cfg.num_poppers,

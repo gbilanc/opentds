@@ -1,11 +1,12 @@
 """
 Fixtures condivise per i test di OpenTDS.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from core.models import Stage, StageItem, ItemType
+from core.models import ItemType, Stage, StageItem
 
 
 @pytest.fixture
@@ -39,10 +40,37 @@ def sample_items() -> dict[str, StageItem]:
         "noshoot": StageItem(5, ItemType.NO_SHOOT, 8.0, 8.0, 0.45, 0.45, 0, "#f87171"),
         "barrier": StageItem(6, ItemType.BARRIER, 7.0, 7.0, 2.0, 0.15, 0, "#fbbf24"),
         "door": StageItem(7, ItemType.DOOR, 15.0, 15.0, 0.9, 0.05, 0, "#92400e"),
-        "swinger": StageItem(8, ItemType.SWINGER, 10.0, 12.0, 0.45, 0.45, 0, "#a855f7",
-                              properties={"amplitude": 45, "speed": 1.0}),
-        "drop_turner": StageItem(9, ItemType.DROP_TURNER, 11.0, 13.0, 0.45, 0.45, 0, "#14b8a6",
-                                  properties={"trigger": "hit", "fall_time": 0.5}),
-        "mover": StageItem(10, ItemType.MOVER, 12.0, 14.0, 0.45, 0.45, 0, "#f97316",
-                            properties={"distance": 3.0, "speed": 1.5}),
+        "swinger": StageItem(
+            8,
+            ItemType.SWINGER,
+            10.0,
+            12.0,
+            0.45,
+            0.45,
+            0,
+            "#a855f7",
+            properties={"amplitude": 45, "speed": 1.0},
+        ),
+        "drop_turner": StageItem(
+            9,
+            ItemType.DROP_TURNER,
+            11.0,
+            13.0,
+            0.45,
+            0.45,
+            0,
+            "#14b8a6",
+            properties={"trigger": "hit", "fall_time": 0.5},
+        ),
+        "mover": StageItem(
+            10,
+            ItemType.MOVER,
+            12.0,
+            14.0,
+            0.45,
+            0.45,
+            0,
+            "#f97316",
+            properties={"distance": 3.0, "speed": 1.5},
+        ),
     }

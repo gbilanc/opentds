@@ -4,14 +4,21 @@
 Ogni tipo bersaglio ha un colore e un SVG associato, definiti
 centralmente e non modificabili per singolo item.
 """
+
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPixmap, QIcon
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QColorDialog, QFrame, QScrollArea,
-    QWidget, QGridLayout, QSizePolicy,
+    QColorDialog,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from core.models import ItemType
@@ -32,16 +39,16 @@ _CONFIGURABLE_TARGETS: list[ItemType] = [
 ]
 
 _LABELS: dict[ItemType, str] = {
-    ItemType.PAPER_TARGET:  "Paper Target",
-    ItemType.MINI_TARGET:   "Mini Target",
-    ItemType.MICRO_TARGET:  "Micro Target",
-    ItemType.STEEL_TARGET:  "Steel Target",
-    ItemType.POPPER:        "Popper",
-    ItemType.METAL_PLATE:   "Metal Plate",
-    ItemType.NO_SHOOT:      "No-Shoot",
-    ItemType.SWINGER:       "Swinger",
-    ItemType.DROP_TURNER:   "Drop Turner",
-    ItemType.MOVER:         "Mover",
+    ItemType.PAPER_TARGET: "Paper Target",
+    ItemType.MINI_TARGET: "Mini Target",
+    ItemType.MICRO_TARGET: "Micro Target",
+    ItemType.STEEL_TARGET: "Steel Target",
+    ItemType.POPPER: "Popper",
+    ItemType.METAL_PLATE: "Metal Plate",
+    ItemType.NO_SHOOT: "No-Shoot",
+    ItemType.SWINGER: "Swinger",
+    ItemType.DROP_TURNER: "Drop Turner",
+    ItemType.MOVER: "Mover",
 }
 
 
@@ -56,7 +63,10 @@ class _TargetColorRow(QFrame):
         self._current_color = QColor(self._original_color)
 
         self.setFrameStyle(QFrame.Shape.StyledPanel)
-        self.setStyleSheet("QFrame { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px; }")
+        self.setStyleSheet(
+            "QFrame { background: #ffffff; border: 1px solid #e2e8f0; "
+            "border-radius: 6px; padding: 4px; }"
+        )
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)

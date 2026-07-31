@@ -7,39 +7,46 @@ PDF strutturato:
   3. Lista bersagli completa
   4. Bersagli mobili (parametri)
 """
+
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import (
-    QImage, QPainter, QColor, QFont, QPdfWriter, QPageSize,
-    QPen, QBrush,
+    QBrush,
+    QColor,
+    QFont,
+    QImage,
+    QPageSize,
+    QPainter,
+    QPdfWriter,
+    QPen,
 )
 from PySide6.QtWidgets import QGraphicsScene
 
-from core.models import Stage, StageItem, ItemType
-
+from core.models import ItemType, Stage
 
 # ── Mappa colore per tipo ────────────────────────────────────────────────────
 
 TYPE_COLORS: dict[ItemType, str] = {
     ItemType.WALL: "#475569",
-    ItemType.PAPER_TARGET: "#8B4513",      # IPSC marrone (Regola 4.1.2.1)
-    ItemType.STEEL_TARGET: "#d1d5db",      # IPSC bianco/grigio (Regola 4.1.2.2)
-    ItemType.POPPER: "#d1d5db",            # IPSC bianco (App. C1-C2)
-    ItemType.METAL_PLATE: "#d1d5db",       # IPSC bianco (App. C3)
-    ItemType.MINI_TARGET: "#8B4513",       # IPSC marrone ridotto (App. B3)
-    ItemType.MICRO_TARGET: "#8B4513",      # IPSC marrone micro
-    ItemType.FAULT_LINE: "#dc2626",        # IPSC rosso (Regola 2.2.1.4)
-    ItemType.NO_SHOOT: "#eab308",          # IPSC colore diverso (Regola 4.1.3)
+    ItemType.PAPER_TARGET: "#8B4513",  # IPSC marrone (Regola 4.1.2.1)
+    ItemType.STEEL_TARGET: "#d1d5db",  # IPSC bianco/grigio (Regola 4.1.2.2)
+    ItemType.POPPER: "#d1d5db",  # IPSC bianco (App. C1-C2)
+    ItemType.METAL_PLATE: "#d1d5db",  # IPSC bianco (App. C3)
+    ItemType.MINI_TARGET: "#8B4513",  # IPSC marrone ridotto (App. B3)
+    ItemType.MICRO_TARGET: "#8B4513",  # IPSC marrone micro
+    ItemType.FAULT_LINE: "#dc2626",  # IPSC rosso (Regola 2.2.1.4)
+    ItemType.NO_SHOOT: "#eab308",  # IPSC colore diverso (Regola 4.1.3)
     ItemType.BARRIER: "#fbbf24",
     ItemType.DOOR: "#92400e",
-    ItemType.HARD_COVER: "#1e293b",        # Copertura impenetrabile
-    ItemType.SOFT_COVER: "#94a3b8",        # Copertura visiva
-    ItemType.SWINGER: "#A0522D",           # Bersaglio cartaceo mobile → marrone
-    ItemType.DROP_TURNER: "#8B6914",        # Bersaglio cartaceo mobile → marrone
-    ItemType.MOVER: "#CD853F",              # Bersaglio cartaceo mobile → marrone
+    ItemType.HARD_COVER: "#1e293b",  # Copertura impenetrabile
+    ItemType.SOFT_COVER: "#94a3b8",  # Copertura visiva
+    ItemType.SWINGER: "#A0522D",  # Bersaglio cartaceo mobile → marrone
+    ItemType.DROP_TURNER: "#8B6914",  # Bersaglio cartaceo mobile → marrone
+    ItemType.MOVER: "#CD853F",  # Bersaglio cartaceo mobile → marrone
     # Compositi
     ItemType.DOUBLET_SIDE: "#8B4513",
     ItemType.DOUBLET_OVERLAP: "#8B4513",
@@ -100,19 +107,24 @@ def _format_target_list(stage: Stage) -> str:
 def _count_total_rounds(stage: Stage) -> int:
     """Calcola il numero di colpi richiesti (default: 2 per carta, 1 per metallo).
     I bersagli compositi vengono risolti nei sub-target."""
-    from core.scoring import is_composite, get_composite_info
+    from core.scoring import get_composite_info, is_composite
+
     total = 0
     for it in stage.items:
         if is_composite(it.item_type):
             info = get_composite_info(it.item_type)
             if info:
                 total += info.get("colpi", 0)
-        elif it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET,
-                            ItemType.MICRO_TARGET, ItemType.SWINGER,
-                            ItemType.DROP_TURNER, ItemType.MOVER):
+        elif it.item_type in (
+            ItemType.PAPER_TARGET,
+            ItemType.MINI_TARGET,
+            ItemType.MICRO_TARGET,
+            ItemType.SWINGER,
+            ItemType.DROP_TURNER,
+            ItemType.MOVER,
+        ):
             total += 2
-        elif it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER,
-                              ItemType.METAL_PLATE):
+        elif it.item_type in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE):
             total += 1
     return total
 
@@ -139,15 +151,18 @@ def _format_procedure(stage: Stage) -> str:
     parts = ["Al segnale di avvio, ingaggiare tutti i bersagli."]
     if stage.course_type:
         parts.append(f"Corso: {stage.course_type.value.title()}.")
-    moving = [it for it in stage.items
-              if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER,
-                                  ItemType.MOVER)]
+    moving = [
+        it
+        for it in stage.items
+        if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    ]
     if moving:
         parts.append(f"Attenzione ai {len(moving)} bersagli mobili.")
     return " ".join(parts)
 
 
 # ── PNG ──────────────────────────────────────────────────────────────────────
+
 
 def export_png(scene: QGraphicsScene, path: Path, dpi: int = 150) -> None:
     """Esporta la scena 2D in PNG ad alta risoluzione."""
@@ -166,6 +181,7 @@ def export_png(scene: QGraphicsScene, path: Path, dpi: int = 150) -> None:
 
 
 # ── Helper di disegno PDF ────────────────────────────────────────────────────
+
 
 def _draw_header(painter: QPainter, title: str, margin: int, page_w: int):
     """Disegna l'intestazione di pagina con linea separatrice."""
@@ -190,8 +206,14 @@ def _draw_footer(painter: QPainter, page: int, margin: int, page_w: int, page_h:
     painter.restore()
 
 
-def _draw_info_box(painter: QPainter, stage: Stage, x: int, y: int,
-                   width: int, violations: Optional[List[str]] = None):
+def _draw_info_box(
+    painter: QPainter,
+    stage: Stage,
+    x: int,
+    y: int,
+    width: int,
+    violations: Optional[List[str]] = None,
+):
     """Disegna un box riepilogativo con dimensioni, conteggi e violazioni."""
     margin_box = 8
     painter.save()
@@ -202,11 +224,15 @@ def _draw_info_box(painter: QPainter, stage: Stage, x: int, y: int,
     painter.drawRoundedRect(x, y, width, 1, 6, 6)
 
     # Calcola altezza box
-    targets = [it for it in stage.items
-               if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)]
+    targets = [
+        it for it in stage.items if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)
+    ]
     steel = [it for it in stage.items if it.item_type == ItemType.STEEL_TARGET]
-    moving = [it for it in stage.items if it.item_type in (
-        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
+    moving = [
+        it
+        for it in stage.items
+        if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    ]
     total_items = len(stage.items)
     violations = violations or []
     line_h = 18
@@ -224,14 +250,14 @@ def _draw_info_box(painter: QPainter, stage: Stage, x: int, y: int,
     cy += line_h + 4
 
     lines = [
-        (f"Nome:", f"{stage.name}"),
-        (f"Dimensioni:", f"{stage.width:.1f} × {stage.depth:.1f} m"),
-        (f"Area:", f"{stage.width * stage.depth:.0f} m²"),
-        (f"Oggetti totali:", f"{total_items}"),
-        (f"Bersagli totali:", f"{len(targets)}"),
-        (f"  - Cartacei:", f"{len(targets) - len(steel)}"),
-        (f"  - Metallici:", f"{len(steel)}"),
-        (f"  - Mobili:", f"{len(moving)}"),
+        ("Nome:", f"{stage.name}"),
+        ("Dimensioni:", f"{stage.width:.1f} × {stage.depth:.1f} m"),
+        ("Area:", f"{stage.width * stage.depth:.0f} m²"),
+        ("Oggetti totali:", f"{total_items}"),
+        ("Bersagli totali:", f"{len(targets)}"),
+        ("  - Cartacei:", f"{len(targets) - len(steel)}"),
+        ("  - Metallici:", f"{len(steel)}"),
+        ("  - Mobili:", f"{len(moving)}"),
     ]
 
     painter.setFont(QFont("Segoe UI", 10))
@@ -285,8 +311,10 @@ def _draw_legend(painter: QPainter, x: int, y: int, width: int, items: List[Item
 
 # ── PDF ──────────────────────────────────────────────────────────────────────
 
-def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
-               violations: Optional[List[str]] = None) -> None:
+
+def export_pdf(
+    stage: Stage, scene: QGraphicsScene, path: Path, violations: Optional[List[str]] = None
+) -> None:
     """Esporta un PDF multi-pagina professionale."""
     writer = QPdfWriter(str(path))
     writer.setPageSize(QPageSize.PageSizeId.A4)
@@ -315,8 +343,9 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
 
     # Info box (a destra della piantina)
     info_width = 240
-    _draw_info_box(painter, stage, page_w - margin - info_width,
-                   margin + 40, info_width, violations)
+    _draw_info_box(
+        painter, stage, page_w - margin - info_width, margin + 40, info_width, violations
+    )
 
     # Piantina
     rect = scene.sceneRect()
@@ -436,8 +465,11 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
     # ═══════════════════════════════════════════════════════════════════════
     # Pagina 3 — Bersagli mobili (se presenti)
     # ═══════════════════════════════════════════════════════════════════════
-    moving = [it for it in stage.items if it.item_type in (
-        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)]
+    moving = [
+        it
+        for it in stage.items
+        if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    ]
     if moving:
         _new_page()
         _draw_header(painter, f"Bersagli mobili — {stage.name}", margin, page_w)
@@ -466,7 +498,7 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
             y += 14
             if y > page_h - margin - 30:
                 _new_page()
-                _draw_header(painter, f"Bersagli mobili (cont.)", margin, page_w)
+                _draw_header(painter, "Bersagli mobili (cont.)", margin, page_w)
                 y = margin + 50
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -493,15 +525,18 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
             y += 16
             if y > page_h - margin - 30:
                 _new_page()
-                _draw_header(painter, f"Posizioni di tiro (cont.)", margin, page_w)
+                _draw_header(painter, "Posizioni di tiro (cont.)", margin, page_w)
                 y = margin + 50
 
     # ═══════════════════════════════════════════════════════════════════════
     # Pagina 4 — Attivatori (se presenti)
     # ═══════════════════════════════════════════════════════════════════════
-    activators = [it for it in stage.items
-                  if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)
-                  and it.properties.get("activates")]
+    activators = [
+        it
+        for it in stage.items
+        if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)
+        and it.properties.get("activates")
+    ]
     if activators:
         _new_page()
         _draw_header(painter, f"Attivatori — {stage.name}", margin, page_w)
@@ -529,7 +564,7 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
 
             painter.setFont(QFont("Segoe UI", 9))
             painter.setPen(QColor("#475569"))
-            painter.drawText(margin + 24, y, f"Attiva: {", ".join(target_labels)}")
+            painter.drawText(margin + 24, y, f"Attiva: {', '.join(target_labels)}")
             y += 16
             painter.drawText(margin + 24, y, f"Posizione: ({a.x:.2f}, {a.y:.2f})")
             y += 16
@@ -541,7 +576,7 @@ def export_pdf(stage: Stage, scene: QGraphicsScene, path: Path,
             y += 16
             if y > page_h - margin - 30:
                 _new_page()
-                _draw_header(painter, f"Attivatori (cont.)", margin, page_w)
+                _draw_header(painter, "Attivatori (cont.)", margin, page_w)
                 y = margin + 50
 
     painter.end()

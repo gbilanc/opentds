@@ -7,16 +7,19 @@ Uso:
     from ui.icons import load_icon
     btn = QPushButton(load_icon("delete"), "Elimina")
 """
+
 from __future__ import annotations
+
 import os
 
-from PySide6.QtGui import QIcon, QPixmap, QColor, QPainter
-from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 _ICONS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "resources", "icons",
+    "resources",
+    "icons",
 )
 _CACHE: dict[str, QIcon] = {}
 
@@ -54,9 +57,11 @@ def load_icon(name: str, color: str | None = None) -> QIcon:
     filepath = _find_icon_file(name)
     if not filepath:
         from PySide6.QtWidgets import QApplication
+
         qapp = QApplication.instance()
         if qapp:
             from PySide6.QtWidgets import QStyle
+
             standard = qapp.style().standardIcon
             # Fallback per icone comuni
             fallbacks = {
@@ -86,9 +91,7 @@ def load_icon(name: str, color: str | None = None) -> QIcon:
 
         # Applica tinta SourceIn
         tint_painter = QPainter(pixmap)
-        tint_painter.setCompositionMode(
-            QPainter.CompositionMode.CompositionMode_SourceIn
-        )
+        tint_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
         tint_painter.fillRect(pixmap.rect(), QColor(color))
         tint_painter.end()
 

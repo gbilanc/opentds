@@ -1,19 +1,18 @@
 """
 Test unitari per services/serializer.py — round-trip JSON.
 """
+
 from __future__ import annotations
 
 import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from core.models import Stage, StageItem, ItemType
-from services.serializer import stage_to_dict, dict_to_stage, save_stage, load_stage
-
+from core.models import ItemType, StageItem
+from services.serializer import dict_to_stage, load_stage, save_stage, stage_to_dict
 
 # ─── stage_to_dict ───────────────────────────────────────────────────────────
+
 
 class TestStageToDict:
     """Conversione Stage → dizionario."""
@@ -57,8 +56,15 @@ class TestStageToDict:
 
     def test_dict_serializes_moving_properties(self, empty_stage):
         """Proprietà di bersagli mobili sono preservate."""
-        swinger = StageItem(0, ItemType.SWINGER, 10.0, 10.0, 0.45, 0.45,
-                            properties={"amplitude": 45, "speed": 1.0, "axis": "y"})
+        swinger = StageItem(
+            0,
+            ItemType.SWINGER,
+            10.0,
+            10.0,
+            0.45,
+            0.45,
+            properties={"amplitude": 45, "speed": 1.0, "axis": "y"},
+        )
         empty_stage.add_item(swinger)
         data = stage_to_dict(empty_stage)
         assert data["items"][0]["type"] == "SWINGER"
@@ -68,8 +74,9 @@ class TestStageToDict:
 
     def test_dict_is_json_serializable(self, empty_stage):
         """Il dizionario è serializzabile in JSON senza errori."""
-        empty_stage.add_item(StageItem(0, ItemType.MOVER, 5.0, 5.0,
-                                        properties={"distance": 3.0, "speed": 1.5}))
+        empty_stage.add_item(
+            StageItem(0, ItemType.MOVER, 5.0, 5.0, properties={"distance": 3.0, "speed": 1.5})
+        )
         data = stage_to_dict(empty_stage)
         json_str = json.dumps(data, indent=2)
         assert isinstance(json_str, str)
@@ -79,6 +86,7 @@ class TestStageToDict:
 
 
 # ─── dict_to_stage ───────────────────────────────────────────────────────────
+
 
 class TestDictToStage:
     """Conversione dizionario → Stage."""
@@ -99,13 +107,31 @@ class TestDictToStage:
             "width": 20.0,
             "depth": 15.0,
             "items": [
-                {"id": 1, "type": "WALL", "x": 5.0, "y": 5.0, "width": 3.0,
-                 "height": 0.2, "rotation": 0.0, "color": "#475569",
-                 "label": "Muro", "properties": {}},
-                {"id": 2, "type": "PAPER_TARGET", "x": 10.0, "y": 10.0,
-                 "width": 0.45, "height": 0.45, "rotation": 15.0,
-                 "color": "#ef4444", "label": "Paper", "properties": {}},
-            ]
+                {
+                    "id": 1,
+                    "type": "WALL",
+                    "x": 5.0,
+                    "y": 5.0,
+                    "width": 3.0,
+                    "height": 0.2,
+                    "rotation": 0.0,
+                    "color": "#475569",
+                    "label": "Muro",
+                    "properties": {},
+                },
+                {
+                    "id": 2,
+                    "type": "PAPER_TARGET",
+                    "x": 10.0,
+                    "y": 10.0,
+                    "width": 0.45,
+                    "height": 0.45,
+                    "rotation": 15.0,
+                    "color": "#ef4444",
+                    "label": "Paper",
+                    "properties": {},
+                },
+            ],
         }
         stage = dict_to_stage(data)
         assert len(stage.items) == 2
@@ -121,10 +147,19 @@ class TestDictToStage:
             "width": 20.0,
             "depth": 15.0,
             "items": [
-                {"id": 1, "type": "SWINGER", "x": 5.0, "y": 5.0, "width": 0.45,
-                 "height": 0.45, "rotation": 0.0, "color": "#a855f7",
-                 "label": "Swinger", "properties": {"amplitude": 60, "speed": 1.5}},
-            ]
+                {
+                    "id": 1,
+                    "type": "SWINGER",
+                    "x": 5.0,
+                    "y": 5.0,
+                    "width": 0.45,
+                    "height": 0.45,
+                    "rotation": 0.0,
+                    "color": "#a855f7",
+                    "label": "Swinger",
+                    "properties": {"amplitude": 60, "speed": 1.5},
+                },
+            ],
         }
         stage = dict_to_stage(data)
         assert stage.items[0].item_type == ItemType.SWINGER
@@ -138,16 +173,26 @@ class TestDictToStage:
             "width": 20.0,
             "depth": 15.0,
             "items": [
-                {"id": 10, "type": "WALL", "x": 1.0, "y": 1.0, "width": 2.0,
-                 "height": 0.2, "rotation": 0.0, "color": "#475569",
-                 "label": "", "properties": {}},
-            ]
+                {
+                    "id": 10,
+                    "type": "WALL",
+                    "x": 1.0,
+                    "y": 1.0,
+                    "width": 2.0,
+                    "height": 0.2,
+                    "rotation": 0.0,
+                    "color": "#475569",
+                    "label": "",
+                    "properties": {},
+                },
+            ],
         }
         stage = dict_to_stage(data)
         assert stage._next_id == 11
 
 
 # ─── Round-trip ──────────────────────────────────────────────────────────────
+
 
 class TestRoundTrip:
     """Test di round-trip: Stage → dict → Stage deve conservare tutto."""
@@ -179,12 +224,39 @@ class TestRoundTrip:
 
     def test_round_trip_with_moving_targets(self, empty_stage):
         """Proprietà bersagli mobili sopravvivono a round-trip."""
-        empty_stage.add_item(StageItem(0, ItemType.SWINGER, 5.0, 5.0, 0.45, 0.45,
-                                        properties={"amplitude": 45, "speed": 2.0}))
-        empty_stage.add_item(StageItem(0, ItemType.MOVER, 10.0, 10.0, 0.45, 0.45,
-                                        properties={"distance": 5.0, "speed": 1.0}))
-        empty_stage.add_item(StageItem(0, ItemType.DROP_TURNER, 15.0, 5.0, 0.45, 0.45,
-                                        properties={"trigger": "hit", "fall_time": 0.8}))
+        empty_stage.add_item(
+            StageItem(
+                0,
+                ItemType.SWINGER,
+                5.0,
+                5.0,
+                0.45,
+                0.45,
+                properties={"amplitude": 45, "speed": 2.0},
+            )
+        )
+        empty_stage.add_item(
+            StageItem(
+                0,
+                ItemType.MOVER,
+                10.0,
+                10.0,
+                0.45,
+                0.45,
+                properties={"distance": 5.0, "speed": 1.0},
+            )
+        )
+        empty_stage.add_item(
+            StageItem(
+                0,
+                ItemType.DROP_TURNER,
+                15.0,
+                5.0,
+                0.45,
+                0.45,
+                properties={"trigger": "hit", "fall_time": 0.8},
+            )
+        )
         data = stage_to_dict(empty_stage)
         stage2 = dict_to_stage(data)
         assert len(stage2.items) == 3
@@ -232,16 +304,30 @@ class TestRoundTrip:
 
 # ─── Casi limite ─────────────────────────────────────────────────────────────
 
+
 class TestSerializerEdgeCases:
     """Casi limite per la serializzazione."""
 
     def test_unknown_type_falls_back_to_paper(self):
         """Tipo sconosciuto fa fallback a PAPER_TARGET (backward compat)."""
         data = {
-            "name": "Bad", "width": 20.0, "depth": 15.0,
-            "items": [{"id": 1, "type": "UNKNOWN_TYPE", "x": 0, "y": 0,
-                        "width": 1, "height": 1, "rotation": 0,
-                        "color": "#000", "label": "", "properties": {}}]
+            "name": "Bad",
+            "width": 20.0,
+            "depth": 15.0,
+            "items": [
+                {
+                    "id": 1,
+                    "type": "UNKNOWN_TYPE",
+                    "x": 0,
+                    "y": 0,
+                    "width": 1,
+                    "height": 1,
+                    "rotation": 0,
+                    "color": "#000",
+                    "label": "",
+                    "properties": {},
+                }
+            ],
         }
         stage = dict_to_stage(data)
         assert stage.items[0].item_type == ItemType.PAPER_TARGET
@@ -254,7 +340,7 @@ class TestSerializerEdgeCases:
             "depth": 15.0,
             "items": [
                 {"id": 1, "type": "WALL"}  # Solo campi obbligatori
-            ]
+            ],
         }
         stage = dict_to_stage(data)
         assert stage.items[0].x == 0.0

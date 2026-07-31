@@ -6,11 +6,12 @@ sequence of waypoints, each with associated target engagements.
 
 Supports shortest-path ordering and barrier avoidance.
 """
+
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 
 @dataclass
@@ -20,6 +21,7 @@ class PathWaypoint:
     Maps to a ShootingPosition but adds engagement metadata and
     ordering information for the path visualization.
     """
+
     id: int
     x: float = 0.0
     y: float = 0.0
@@ -37,6 +39,7 @@ class ShootingPath:
 
     Stored in Stage.properties["shooting_path"] for serialization.
     """
+
     waypoints: List[PathWaypoint] = field(default_factory=list)
     color: str = "#3b82f6"  # blue polyline
     visible: bool = True
@@ -73,7 +76,10 @@ class ShootingPath:
 
     @staticmethod
     def _segment_in_polygon(
-        x1: float, y1: float, x2: float, y2: float,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
         poly: list[tuple[float, float]],
     ) -> bool:
         """True se il segmento (x1,y1)-(x2,y2) rimane dentro il poligono.
@@ -128,7 +134,7 @@ class ShootingPath:
         start_pos = None
         others = []
         for sp in positions:
-            if getattr(sp, 'is_start', False) and start_pos is None:
+            if getattr(sp, "is_start", False) and start_pos is None:
                 start_pos = sp
             else:
                 others.append(sp)
@@ -138,7 +144,9 @@ class ShootingPath:
 
         # Blocker types
         blocking_types = {
-            ItemType.WALL, ItemType.BARRIER, ItemType.DOOR,
+            ItemType.WALL,
+            ItemType.BARRIER,
+            ItemType.DOOR,
             ItemType.HARD_COVER,
         }
 
@@ -149,7 +157,7 @@ class ShootingPath:
         while remaining:
             last = ordered_sp[-1]
             nearest = None
-            nearest_dist = float('inf')
+            nearest_dist = float("inf")
             nearest_path_ok = False  # True = senza barriere E dentro poligono
 
             for sp in remaining:
@@ -165,9 +173,13 @@ class ShootingPath:
                     for wall in blockers:
                         if wall.item_type in blocking_types:
                             if line_intersects_rect(
-                                (last.x, last.y), (sp.x, sp.y),
-                                wall.x, wall.y, wall.width, wall.height,
-                                getattr(wall, 'rotation', 0),
+                                (last.x, last.y),
+                                (sp.x, sp.y),
+                                wall.x,
+                                wall.y,
+                                wall.width,
+                                wall.height,
+                                getattr(wall, "rotation", 0),
                             ):
                                 path_blocked = True
                                 break
@@ -176,7 +188,11 @@ class ShootingPath:
                 inside_area = True
                 if perimeter_poly and dist > 0.5:
                     inside_area = ShootingPath._segment_in_polygon(
-                        last.x, last.y, sp.x, sp.y, perimeter_poly,
+                        last.x,
+                        last.y,
+                        sp.x,
+                        sp.y,
+                        perimeter_poly,
                     )
 
                 path_ok = not path_blocked and inside_area
@@ -215,11 +231,11 @@ class ShootingPath:
                     if dist < 15.0:
                         visible.append(t.id)
             wp = PathWaypoint(
-                id=getattr(sp, 'id', i + 1),
-                x=getattr(sp, 'x', 0),
-                y=getattr(sp, 'y', 0),
-                label=getattr(sp, 'label', '') or f"P{getattr(sp, 'id', i + 1)}",
-                is_start=getattr(sp, 'is_start', False),
+                id=getattr(sp, "id", i + 1),
+                x=getattr(sp, "x", 0),
+                y=getattr(sp, "y", 0),
+                label=getattr(sp, "label", "") or f"P{getattr(sp, 'id', i + 1)}",
+                is_start=getattr(sp, "is_start", False),
                 order=i,
                 engaged_target_ids=engaged,
                 visible_target_ids=visible,

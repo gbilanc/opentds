@@ -8,18 +8,17 @@ Storage:
 
 Thread safety: all file operations are synchronous (lightweight).
 """
+
 from __future__ import annotations
 
 import json
-import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from core.models import Stage
-from services.serializer import save_stage, load_stage
-
+from services.serializer import load_stage, save_stage
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 
@@ -32,9 +31,11 @@ _PREDEFINED_DIR = Path(__file__).resolve().parent.parent / "resources" / "stages
 
 # ── Data model ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class LibraryEntry:
     """Metadata for a stage in the library."""
+
     id: str = ""  # unique slug (e.g. "classifier-01-02")
     name: str = ""
     description: str = ""
@@ -51,6 +52,7 @@ class LibraryEntry:
 
 
 # ── StageLibrary ───────────────────────────────────────────────────────────
+
 
 class StageLibrary:
     """Manages the stage catalog: index, predefined, search, import/export."""
@@ -74,16 +76,14 @@ class StageLibrary:
         results = self._entries
         if query:
             results = [
-                e for e in results
+                e
+                for e in results
                 if query in e.name.lower()
                 or query in e.description.lower()
                 or any(query in t.lower() for t in e.tags)
             ]
         if tags:
-            results = [
-                e for e in results
-                if any(t in e.tags for t in tags)
-            ]
+            results = [e for e in results if any(t in e.tags for t in tags)]
         return results
 
     def get(self, entry_id: str) -> Optional[LibraryEntry]:
@@ -106,9 +106,13 @@ class StageLibrary:
         except Exception:
             return None
 
-    def save_stage(self, stage: Stage, name: str = "",
-                   description: str = "", tags: list[str] | None = None,
-                   ) -> LibraryEntry:
+    def save_stage(
+        self,
+        stage: Stage,
+        name: str = "",
+        description: str = "",
+        tags: list[str] | None = None,
+    ) -> LibraryEntry:
         """Save a stage to the user library."""
         self._ensure_dirs()
         slug = _make_slug(name or stage.name)
@@ -239,14 +243,20 @@ class StageLibrary:
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
+
 def _make_slug(name: str) -> str:
     """Convert a name to a filesystem-safe slug."""
     slug = name.lower().strip()
-    for ch in "àáâäæãåā": slug = slug.replace(ch, "a")
-    for ch in "èéêëēėę": slug = slug.replace(ch, "e")
-    for ch in "ìíîïī": slug = slug.replace(ch, "i")
-    for ch in "òóôöō": slug = slug.replace(ch, "o")
-    for ch in "ùúûüū": slug = slug.replace(ch, "u")
+    for ch in "àáâäæãåā":
+        slug = slug.replace(ch, "a")
+    for ch in "èéêëēėę":
+        slug = slug.replace(ch, "e")
+    for ch in "ìíîïī":
+        slug = slug.replace(ch, "i")
+    for ch in "òóôöō":
+        slug = slug.replace(ch, "o")
+    for ch in "ùúûüū":
+        slug = slug.replace(ch, "u")
     slug = "".join(c for c in slug if c.isalnum() or c in " _-")
     slug = slug.replace(" ", "-")
     # Collapse multiple hyphens
@@ -259,8 +269,15 @@ def _count_rounds(stage: Stage) -> int:
     """Count required rounds for a stage."""
     total = 0
     from core.models import ItemType
-    paper_like = (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                  ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+
+    paper_like = (
+        ItemType.PAPER_TARGET,
+        ItemType.MINI_TARGET,
+        ItemType.MICRO_TARGET,
+        ItemType.SWINGER,
+        ItemType.DROP_TURNER,
+        ItemType.MOVER,
+    )
     steel_like = (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE)
     for it in stage.items:
         if it.item_type in paper_like:
@@ -272,7 +289,16 @@ def _count_rounds(stage: Stage) -> int:
 
 def _is_scoring_item(it) -> bool:
     from core.models import ItemType
-    scoring = (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
-               ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-               ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+
+    scoring = (
+        ItemType.PAPER_TARGET,
+        ItemType.STEEL_TARGET,
+        ItemType.POPPER,
+        ItemType.METAL_PLATE,
+        ItemType.MINI_TARGET,
+        ItemType.MICRO_TARGET,
+        ItemType.SWINGER,
+        ItemType.DROP_TURNER,
+        ItemType.MOVER,
+    )
     return it.item_type in scoring

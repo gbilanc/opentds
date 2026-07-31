@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Genera icone SVG per l'app OpenTDS."""
+
 import os
 
-ICONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "resources", "icons")
+ICONS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "resources", "icons"
+)
 
 ICONS = {
     # ── Azioni ──────────────────────────────────────────────────────
@@ -83,7 +86,6 @@ ICONS = {
     "minus": (
         '<path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
     ),
-
     # ── Tipi bersaglio ──────────────────────────────────────────────
     "target_paper": (
         '<rect x="7" y="3" width="10" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
@@ -134,7 +136,6 @@ ICONS = {
         '<rect x="7" y="3" width="10" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
         '<path d="M9 7l6 10M15 7l-6 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
     ),
-
     # ── Elementi stage ──────────────────────────────────────────────
     "wall": (
         '<rect x="3" y="6" width="18" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>'
@@ -163,7 +164,6 @@ ICONS = {
         '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>'
         '<circle cx="12" cy="12" r="3" fill="currentColor"/>'
     ),
-
     # ── File / Export ───────────────────────────────────────────────
     "file": (
         '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="2"/>'
@@ -202,9 +202,9 @@ ICONS = {
     ),
 }
 
-SVG_TEMPLATE = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+SVG_TEMPLATE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   {paths}
-</svg>'''
+</svg>"""
 
 
 def generate():

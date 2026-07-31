@@ -8,16 +8,18 @@ vettoriale nitido a qualsiasi risoluzione.
 I file SVG usano fill="currentColor" per ricevere la tinta
 tramite compositing QPainter (SourceIn), preservando il canale alpha.
 """
+
 from __future__ import annotations
+
 import os
 from typing import Optional
 
-from PySide6.QtCore import Qt, QRectF
-from PySide6.QtGui import QPixmap, QImage, QColor, QPainter
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-from core.models import ItemType
 from core.constants import TARGET_COLORS
+from core.models import ItemType
 
 
 class TargetSvgManager:
@@ -31,16 +33,16 @@ class TargetSvgManager:
 
     # Percorsi SVG per ogni tipo bersaglio (relativi a resources/)
     _SVG_MAP: dict[ItemType, str] = {
-        ItemType.PAPER_TARGET:  "targets/ipsc_target.svg",
-        ItemType.MINI_TARGET:   "targets/ipsc_target.svg",
-        ItemType.MICRO_TARGET:  "targets/ipsc_target.svg",
-        ItemType.STEEL_TARGET:  "targets/ipsc_popper.svg",
-        ItemType.POPPER:        "targets/ipsc_popper.svg",
-        ItemType.METAL_PLATE:   "targets/ipsc_metal_plate.svg",
-        ItemType.SWINGER:       "targets/ipsc_target.svg",
-        ItemType.DROP_TURNER:   "targets/ipsc_target.svg",
-        ItemType.MOVER:         "targets/ipsc_target.svg",
-        ItemType.NO_SHOOT:      "targets/ipsc_no_shoot.svg",
+        ItemType.PAPER_TARGET: "targets/ipsc_target.svg",
+        ItemType.MINI_TARGET: "targets/ipsc_target.svg",
+        ItemType.MICRO_TARGET: "targets/ipsc_target.svg",
+        ItemType.STEEL_TARGET: "targets/ipsc_popper.svg",
+        ItemType.POPPER: "targets/ipsc_popper.svg",
+        ItemType.METAL_PLATE: "targets/ipsc_metal_plate.svg",
+        ItemType.SWINGER: "targets/ipsc_target.svg",
+        ItemType.DROP_TURNER: "targets/ipsc_target.svg",
+        ItemType.MOVER: "targets/ipsc_target.svg",
+        ItemType.NO_SHOOT: "targets/ipsc_no_shoot.svg",
     }
 
     # Cache per bersagli personalizzati caricati da file
@@ -137,8 +139,10 @@ class TargetSvgManager:
     # ── API pubblica ──────────────────────────────────────────────────────
 
     def get_pixmap(
-        self, item_type: ItemType,
-        target_width: int, target_height: int,
+        self,
+        item_type: ItemType,
+        target_width: int,
+        target_height: int,
     ) -> QPixmap | None:
         """Restituisce un QPixmap vettoriale tintato e scalato.
 
@@ -163,7 +167,8 @@ class TargetSvgManager:
 
         # Renderizza SVG su QImage trasparente, poi applica tinta
         image = QImage(
-            target_width, target_height,
+            target_width,
+            target_height,
             QImage.Format_ARGB32,
         )
         image.fill(Qt.GlobalColor.transparent)
@@ -195,15 +200,16 @@ class TargetSvgManager:
         self._custom_renderers.pop(filepath, None)
         self._custom_mtimes.pop(filepath, None)
         keys_to_del = [
-            k for k in self._cache
-            if isinstance(k, tuple) and len(k) >= 2 and k[1] == filepath
+            k for k in self._cache if isinstance(k, tuple) and len(k) >= 2 and k[1] == filepath
         ]
         for k in keys_to_del:
             del self._cache[k]
 
     def get_custom_pixmap(
-        self, filepath: str,
-        target_width: int, target_height: int,
+        self,
+        filepath: str,
+        target_width: int,
+        target_height: int,
         tint_color: QColor | None = None,
     ) -> QPixmap | None:
         """Carica un SVG personalizzato da file e lo renderizza."""

@@ -4,15 +4,16 @@
 Crea file JSON nella directory examples/ usando il generatore con
 configurazioni predefinite per Short, Medium e Long.
 """
+
 from __future__ import annotations
+
 import json
-import sys
 import os
-import signal
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.generator import StageGenerator, GeneratorConfig
+from core.generator import GeneratorConfig, StageGenerator
 
 
 def generate_and_save(name: str, filename: str, **kwargs):
@@ -62,8 +63,9 @@ def generate_and_save(name: str, filename: str, **kwargs):
     filepath = os.path.join(os.path.dirname(__file__), filename)
     with open(filepath, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"✅ {filename}: score={result.score}, items={len(stage.items)}, "
-          f"attempts={result.attempts}")
+    print(
+        f"✅ {filename}: score={result.score}, items={len(stage.items)}, attempts={result.attempts}"
+    )
     return result
 
 

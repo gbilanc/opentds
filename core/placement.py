@@ -4,44 +4,46 @@ Placement engine for targets and obstacles in IPSC stages.
 Delegates line-of-sight and geometry checks to core/visibility.py and core/geometry.py.
 Used by StageGenerator and RepairEngine.
 """
+
 from __future__ import annotations
 
 import math
 import random
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional
 
-from shapely.geometry import Polygon as ShapelyPolygon
 from shapely import intersects as shapely_intersects
+from shapely.geometry import Polygon as ShapelyPolygon
 
-from core.models import Stage, StageItem, ItemType, ShootingPosition
+from core.collision import item_obb
+from core.collision import min_distance_between as obb_distance
 from core.constants import (
-    MIN_TARGET_TO_EDGE,
-    MIN_TARGET_TO_TARGET,
     MIN_BACKSTOP_DEPTH,
     MIN_STEEL_PLACEMENT_DISTANCE,
-    INTERIOR_SAMPLE_COUNT,
+    MIN_TARGET_TO_EDGE,
     SAME_LINE_OF_FIRE_THRESHOLD_DEG,
     TARGET_COLORS,
-    TARGET_DIMENSIONS,
 )
-from core.geometry import point_in_polygon, line_intersects_rect
-from core.collision import item_obb, min_distance_between as obb_distance
-from core.scoring import is_scoring_target, is_paper_like
+from core.geometry import line_intersects_rect, point_in_polygon
 from core.ipsc_rules import IPSCRulesEngine
+from core.models import ItemType, ShootingPosition, Stage, StageItem
+from core.scoring import is_scoring_target
 from core.shapes import polygon_to_shapely as _perimeter_to_shapely_polygon
 from core.visibility import (
     get_blocking_walls,
-    is_target_visible,
     is_behind_shooting_area,
-    targets_on_same_line,
+    is_target_visible,
     sample_interior_points,
+    targets_on_same_line,
 )
 
 
 def compute_target_rotation(
-    target_x: float, target_y: float,
-    ref_x: float, ref_y: float,
-    target_w: float, target_h: float,
+    target_x: float,
+    target_y: float,
+    ref_x: float,
+    ref_y: float,
+    target_w: float,
+    target_h: float,
 ) -> float:
     """Calculate optimal rotation so the shooter sees the widest side.
 
@@ -58,7 +60,8 @@ def compute_target_rotation(
 
 
 def push_outside_perimeter(
-    wx: float, wy: float,
+    wx: float,
+    wy: float,
     poly: list[tuple[float, float]],
     min_dist: float = 0.3,
 ) -> tuple[float, float]:
@@ -70,7 +73,7 @@ def push_outside_perimeter(
     if not point_in_polygon(wx, wy, poly):
         return (wx, wy)
 
-    best_dist = float('inf')
+    best_dist = float("inf")
     best_nx = best_ny = 0.0
     n = len(poly)
     for i in range(n):
@@ -90,7 +93,7 @@ def push_outside_perimeter(
             best_nx = sy / seg_len
             best_ny = -sx / seg_len
 
-    if best_dist < float('inf'):
+    if best_dist < float("inf"):
         wx = wx + best_nx * (min_dist + best_dist * 1.1)
         wy = wy + best_ny * (min_dist + best_dist * 1.1)
 
@@ -126,19 +129,85 @@ class PlacementEngine:
     def _target_params(ttype: ItemType, is_moving: bool = False) -> dict:
         """Return (width, height, color, label, min_dist) for a target type."""
         params = {
-            ItemType.STEEL_TARGET: (0.30, 0.30, TARGET_COLORS.get("steel_generic", "#d1d5db"), "Steel", MIN_STEEL_PLACEMENT_DISTANCE),
-            ItemType.POPPER: (0.30, 0.30, TARGET_COLORS.get("popper", "#d1d5db"), "Popper", MIN_STEEL_PLACEMENT_DISTANCE),
-            ItemType.METAL_PLATE: (0.20, 0.20, TARGET_COLORS.get("metal_plate", "#e5e7eb"), "Plate", MIN_STEEL_PLACEMENT_DISTANCE),
+            ItemType.STEEL_TARGET: (
+                0.30,
+                0.30,
+                TARGET_COLORS.get("steel_generic", "#d1d5db"),
+                "Steel",
+                MIN_STEEL_PLACEMENT_DISTANCE,
+            ),
+            ItemType.POPPER: (
+                0.30,
+                0.30,
+                TARGET_COLORS.get("popper", "#d1d5db"),
+                "Popper",
+                MIN_STEEL_PLACEMENT_DISTANCE,
+            ),
+            ItemType.METAL_PLATE: (
+                0.20,
+                0.20,
+                TARGET_COLORS.get("metal_plate", "#e5e7eb"),
+                "Plate",
+                MIN_STEEL_PLACEMENT_DISTANCE,
+            ),
             ItemType.MINI_TARGET: (0.34, 0.34, TARGET_COLORS.get("mini", "#A0522D"), "Mini", 1.0),
-            ItemType.MICRO_TARGET: (0.23, 0.23, TARGET_COLORS.get("micro", "#8B4513"), "Micro", 1.0),
+            ItemType.MICRO_TARGET: (
+                0.23,
+                0.23,
+                TARGET_COLORS.get("micro", "#8B4513"),
+                "Micro",
+                1.0,
+            ),
             # Compositi
-            ItemType.DOUBLET_SIDE: (0.95, 0.75, TARGET_COLORS.get("doublet_side", "#8B4513"), "Doppio aff.", 1.0),
-            ItemType.DOUBLET_OVERLAP: (0.65, 0.75, TARGET_COLORS.get("doublet_overlap", "#8B4513"), "Doppio sovr.", 1.0),
-            ItemType.DOUBLET_SIDE_HOSTAGE: (1.20, 0.75, TARGET_COLORS.get("doublet_side_hostage", "#8B4513"), "Doppio+ost.", 1.0),
-            ItemType.DOUBLET_OVERLAP_HOSTAGE: (0.90, 0.75, TARGET_COLORS.get("doublet_overlap_hostage", "#8B4513"), "Doppio+ost.s.", 1.0),
-            ItemType.BOBBER_PLATE: (0.20, 0.20, TARGET_COLORS.get("bobber_plate", "#f97316"), "Bobber", MIN_STEEL_PLACEMENT_DISTANCE),
-            ItemType.DOUBLE_BOBBER: (0.50, 0.20, TARGET_COLORS.get("double_bobber", "#f97316"), "Doppio bobber", MIN_STEEL_PLACEMENT_DISTANCE),
-            ItemType.TARGET_PLUS_NOSHOOT: (0.70, 0.75, TARGET_COLORS.get("target_plus_noshoot", "#8B4513"), "Target+NS", 1.0),
+            ItemType.DOUBLET_SIDE: (
+                0.95,
+                0.75,
+                TARGET_COLORS.get("doublet_side", "#8B4513"),
+                "Doppio aff.",
+                1.0,
+            ),
+            ItemType.DOUBLET_OVERLAP: (
+                0.65,
+                0.75,
+                TARGET_COLORS.get("doublet_overlap", "#8B4513"),
+                "Doppio sovr.",
+                1.0,
+            ),
+            ItemType.DOUBLET_SIDE_HOSTAGE: (
+                1.20,
+                0.75,
+                TARGET_COLORS.get("doublet_side_hostage", "#8B4513"),
+                "Doppio+ost.",
+                1.0,
+            ),
+            ItemType.DOUBLET_OVERLAP_HOSTAGE: (
+                0.90,
+                0.75,
+                TARGET_COLORS.get("doublet_overlap_hostage", "#8B4513"),
+                "Doppio+ost.s.",
+                1.0,
+            ),
+            ItemType.BOBBER_PLATE: (
+                0.20,
+                0.20,
+                TARGET_COLORS.get("bobber_plate", "#f97316"),
+                "Bobber",
+                MIN_STEEL_PLACEMENT_DISTANCE,
+            ),
+            ItemType.DOUBLE_BOBBER: (
+                0.50,
+                0.20,
+                TARGET_COLORS.get("double_bobber", "#f97316"),
+                "Doppio bobber",
+                MIN_STEEL_PLACEMENT_DISTANCE,
+            ),
+            ItemType.TARGET_PLUS_NOSHOOT: (
+                0.70,
+                0.75,
+                TARGET_COLORS.get("target_plus_noshoot", "#8B4513"),
+                "Target+NS",
+                1.0,
+            ),
         }
         moving_labels = {
             ItemType.SWINGER: "Swinger",
@@ -157,13 +226,15 @@ class PlacementEngine:
     def generate_walls(self, existing: List[StageItem]) -> List[StageItem]:
         """Generate walls OUTSIDE the perimeter that obscure targets."""
         avg_len = (
-            3.0 if getattr(self._config, 'difficulty', 'medium') == "easy" else
-            5.0 if getattr(self._config, 'difficulty', 'medium') == "hard" else
-            4.0
+            3.0
+            if getattr(self._config, "difficulty", "medium") == "easy"
+            else 5.0
+            if getattr(self._config, "difficulty", "medium") == "hard"
+            else 4.0
         )
         return self._place_blocking_items(
             existing=existing,
-            count=getattr(self._config, 'num_walls', 1),
+            count=getattr(self._config, "num_walls", 1),
             item_type=ItemType.WALL,
             base_width=lambda: random.uniform(avg_len * 0.7, avg_len * 1.3),
             base_height=0.2,
@@ -175,7 +246,7 @@ class PlacementEngine:
         """Generate barriers OUTSIDE the perimeter that obscure targets."""
         return self._place_blocking_items(
             existing=existing,
-            count=getattr(self._config, 'num_barriers', 4),
+            count=getattr(self._config, "num_barriers", 4),
             item_type=ItemType.BARRIER,
             base_width=lambda: random.uniform(1.5, 3.0),
             base_height=0.15,
@@ -203,9 +274,14 @@ class PlacementEngine:
             return False
 
         w = stage_width if stage_width > 0 else 40.0
-        entrance = ShapelyPolygon([
-            (0, 0), (w, 0), (w, front_y), (0, front_y),
-        ])
+        entrance = ShapelyPolygon(
+            [
+                (0, 0),
+                (w, 0),
+                (w, front_y),
+                (0, front_y),
+            ]
+        )
         return shapely_intersects(item_obb_geom, entrance)
 
     # ── Placement: block walls/barriers ─────────────────────────────────
@@ -242,8 +318,6 @@ class PlacementEngine:
         min_visible = max(1, math.ceil(len(targets) * 0.7)) if targets else 1
         margin = MIN_TARGET_TO_EDGE
 
-        max_attempts = getattr(self._config, 'max_attempts', 500)
-
         for _ in range(count):
             placed = False
 
@@ -272,9 +346,9 @@ class PlacementEngine:
                 angle_to_target = math.degrees(math.atan2(dy, dx))
                 rotation = angle_to_target + random.choice([-90, 90])
 
-                item = StageItem(0, item_type, wx, wy,
-                                 base_width(), base_height,
-                                 rotation, color, label)
+                item = StageItem(
+                    0, item_type, wx, wy, base_width(), base_height, rotation, color, label
+                )
 
                 item_obb_geom = item_obb(item)
                 if item_obb_geom is not None and area_poly is not None:
@@ -284,8 +358,12 @@ class PlacementEngine:
                 if item_obb_geom is not None:
                     overlaps = False
                     for e_it in existing + items:
-                        if e_it.item_type in (ItemType.WALL, ItemType.BARRIER,
-                                              ItemType.DOOR, ItemType.HARD_COVER):
+                        if e_it.item_type in (
+                            ItemType.WALL,
+                            ItemType.BARRIER,
+                            ItemType.DOOR,
+                            ItemType.HARD_COVER,
+                        ):
                             e_obb = item_obb(e_it)
                             if e_obb is not None and shapely_intersects(item_obb_geom, e_obb):
                                 overlaps = True
@@ -300,8 +378,13 @@ class PlacementEngine:
                 for t2 in targets:
                     for ox2, oy2 in self._interior_samples:
                         if line_intersects_rect(
-                            (ox2, oy2), (t2.x, t2.y),
-                            item.x, item.y, item.width, item.height, item.rotation,
+                            (ox2, oy2),
+                            (t2.x, t2.y),
+                            item.x,
+                            item.y,
+                            item.width,
+                            item.height,
+                            item.rotation,
                         ):
                             blocks_any = True
                             break
@@ -317,7 +400,8 @@ class PlacementEngine:
                 test_items = existing + items + [item]
                 test_blockers = get_blocking_walls(test_items)
                 visible_now = sum(
-                    1 for t2 in targets
+                    1
+                    for t2 in targets
                     if is_target_visible(t2, test_blockers, self._interior_samples)
                 )
                 if visible_now >= min_visible:
@@ -358,9 +442,9 @@ class PlacementEngine:
                     angle_to_target = math.degrees(math.atan2(dy, dx))
                     rotation = angle_to_target + random.choice([-90, 90])
 
-                    item = StageItem(0, item_type, wx, wy,
-                                     base_width(), base_height,
-                                     rotation, color, label)
+                    item = StageItem(
+                        0, item_type, wx, wy, base_width(), base_height, rotation, color, label
+                    )
 
                     item_obb_geom = item_obb(item)
                     if item_obb_geom is not None and area_poly is not None:
@@ -374,8 +458,13 @@ class PlacementEngine:
                     for t2 in targets:
                         for o2x, o2y in self._interior_samples:
                             if line_intersects_rect(
-                                (o2x, o2y), (t2.x, t2.y),
-                                item.x, item.y, item.width, item.height, item.rotation,
+                                (o2x, o2y),
+                                (t2.x, t2.y),
+                                item.x,
+                                item.y,
+                                item.width,
+                                item.height,
+                                item.rotation,
                             ):
                                 blocks_any = True
                                 break
@@ -490,20 +579,20 @@ class PlacementEngine:
             elif n_x < 0:
                 md_x = (mx - margin) / max(-n_x, 0.001)
             else:
-                md_x = float('inf')
+                md_x = float("inf")
             if n_y > 0:
                 md_y = (max_y - my) / max(n_y, 0.001)
             elif n_y < 0:
                 md_y = (my - margin) / max(-n_y, 0.001)
             else:
-                md_y = float('inf')
+                md_y = float("inf")
 
             max_dist_edge = min(md_x, md_y)
             if max_dist_edge >= min_dist_from_edge:
                 guided_edges.append((e_idx, max_dist_edge))
 
         use_guided = len(guided_edges) >= 2
-        max_attempts = getattr(self._config, 'max_attempts', 500)
+        max_attempts = getattr(self._config, "max_attempts", 500)
 
         for _ in range(max_attempts):
             if use_guided:
@@ -534,8 +623,7 @@ class PlacementEngine:
             px = ex + n_x * dist
             py = ey + n_y * dist
 
-            if not (margin <= px <= self._stage.width - margin and
-                    margin <= py <= max_y):
+            if not (margin <= px <= self._stage.width - margin and margin <= py <= max_y):
                 continue
 
             if point_in_polygon(px, py, poly):
@@ -545,7 +633,10 @@ class PlacementEngine:
                 continue
 
             if targets_on_same_line(
-                px, py, existing, self._perimeter_poly,
+                px,
+                py,
+                existing,
+                self._perimeter_poly,
                 threshold_deg=SAME_LINE_OF_FIRE_THRESHOLD_DEG,
             ):
                 continue
@@ -557,12 +648,15 @@ class PlacementEngine:
 
             if is_moving:
                 mov_props = {
-                    ItemType.SWINGER: {"amplitude": random.uniform(30, 60),
-                                       "speed": random.uniform(0.5, 2.0)},
-                    ItemType.DROP_TURNER: {"trigger": "hit",
-                                            "fall_time": random.uniform(0.3, 1.0)},
-                    ItemType.MOVER: {"distance": random.uniform(2.0, 5.0),
-                                     "speed": random.uniform(0.5, 2.0)},
+                    ItemType.SWINGER: {
+                        "amplitude": random.uniform(30, 60),
+                        "speed": random.uniform(0.5, 2.0),
+                    },
+                    ItemType.DROP_TURNER: {"trigger": "hit", "fall_time": random.uniform(0.3, 1.0)},
+                    ItemType.MOVER: {
+                        "distance": random.uniform(2.0, 5.0),
+                        "speed": random.uniform(0.5, 2.0),
+                    },
                 }
                 props = mov_props.get(ttype, {})
             else:
@@ -578,18 +672,34 @@ class PlacementEngine:
                 ok = True
                 if it_obb:
                     for other in existing:
-                        if other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                                               ItemType.NO_SHOOT):
+                        if other.item_type in (
+                            ItemType.PAPER_TARGET,
+                            ItemType.STEEL_TARGET,
+                            ItemType.NO_SHOOT,
+                        ):
                             it_is_paper = ttype in (
-                                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                                ItemType.PAPER_TARGET,
+                                ItemType.MINI_TARGET,
+                                ItemType.MICRO_TARGET,
+                                ItemType.SWINGER,
+                                ItemType.DROP_TURNER,
+                                ItemType.MOVER,
+                            )
                             other_is_paper = other.item_type in (
-                                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                                ItemType.PAPER_TARGET,
+                                ItemType.MINI_TARGET,
+                                ItemType.MICRO_TARGET,
+                                ItemType.SWINGER,
+                                ItemType.DROP_TURNER,
+                                ItemType.MOVER,
+                            )
                             if it_is_paper and other_is_paper:
                                 continue
                             o_obb = item_obb(other)
-                            if o_obb and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05:
+                            if (
+                                o_obb
+                                and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05
+                            ):
                                 ok = False
                                 break
                 if ok:
@@ -616,18 +726,26 @@ class PlacementEngine:
         cy = sum(p[1] for p in poly) / len(poly)
 
         margin = engine.MIN_TARGET_TO_EDGE
-        tcolor = TARGET_COLORS.get("popper" if ttype == ItemType.POPPER else "metal_plate", "#d1d5db")
+        tcolor = TARGET_COLORS.get(
+            "popper" if ttype == ItemType.POPPER else "metal_plate", "#d1d5db"
+        )
         w, h = (0.30, 0.30) if ttype == ItemType.POPPER else (0.20, 0.20)
         label = "Popper" if ttype == ItemType.POPPER else "Plate"
 
         # Generate candidate positions along stage edges
         edge_positions: list[tuple[float, float]] = []
         step = 0.5
-        for x_f in [i * step for i in range(int(margin // step), int((self._stage.width - margin) // step))]:
+        for x_f in [
+            i * step for i in range(int(margin // step), int((self._stage.width - margin) // step))
+        ]:
             edge_positions.append((x_f, self._stage.depth - margin))
-        for y_f in [i * step for i in range(int(margin // step), int((self._stage.depth - margin) // step))]:
+        for y_f in [
+            i * step for i in range(int(margin // step), int((self._stage.depth - margin) // step))
+        ]:
             edge_positions.append((margin, y_f))
-        for y_f in [i * step for i in range(int(margin // step), int((self._stage.depth - margin) // step))]:
+        for y_f in [
+            i * step for i in range(int(margin // step), int((self._stage.depth - margin) // step))
+        ]:
             edge_positions.append((self._stage.width - margin, y_f))
 
         random.shuffle(edge_positions)
@@ -648,10 +766,16 @@ class PlacementEngine:
                 ok = True
                 if it_obb:
                     for other in existing:
-                        if other.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                                               ItemType.NO_SHOOT):
+                        if other.item_type in (
+                            ItemType.PAPER_TARGET,
+                            ItemType.STEEL_TARGET,
+                            ItemType.NO_SHOOT,
+                        ):
                             o_obb = item_obb(other)
-                            if o_obb and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05:
+                            if (
+                                o_obb
+                                and obb_distance(it_obb, o_obb) < engine.MIN_TARGET_TO_TARGET - 0.05
+                            ):
                                 ok = False
                                 break
                 if ok:
@@ -675,7 +799,7 @@ class PlacementEngine:
         cx = sum(p[0] for p in poly) / len(poly)
         cy = sum(p[1] for p in poly) / len(poly)
 
-        max_attempts = getattr(self._config, 'max_attempts', 500)
+        max_attempts = getattr(self._config, "max_attempts", 500)
         for _ in range(max_attempts):
             paper = random.choice(papers)
             dx = paper.x - cx
@@ -690,8 +814,17 @@ class PlacementEngine:
             y = paper.y - ny * ns_dist
             if point_in_polygon(x, y, poly):
                 continue
-            it = StageItem(0, ItemType.NO_SHOOT, x, y, 0.45, 0.45, 0,
-                           TARGET_COLORS.get("no_shoot", "#eab308"), "No-Shoot")
+            it = StageItem(
+                0,
+                ItemType.NO_SHOOT,
+                x,
+                y,
+                0.45,
+                0.45,
+                0,
+                TARGET_COLORS.get("no_shoot", "#eab308"),
+                "No-Shoot",
+            )
             if engine.is_valid_position(it, existing):
                 return it
         return None
@@ -708,8 +841,11 @@ class PlacementEngine:
         Moves targets to guarantee minimum distance. Removes if impossible.
         """
         targets = [it for it in items if is_scoring_target(it.item_type)]
-        walls = [it for it in items if it.item_type in (
-            ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)]
+        walls = [
+            it
+            for it in items
+            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
+        ]
         margin = engine.MIN_TARGET_TO_EDGE
 
         for _ in range(8):
@@ -722,7 +858,7 @@ class PlacementEngine:
                 if not t_obb:
                     continue
 
-                for other in targets[i + 1:]:
+                for other in targets[i + 1 :]:
                     if other not in items:
                         continue
                     o_obb = item_obb(other)
@@ -730,11 +866,21 @@ class PlacementEngine:
                         continue
 
                     t_is_paper = t.item_type in (
-                        ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                        ItemType.PAPER_TARGET,
+                        ItemType.MINI_TARGET,
+                        ItemType.MICRO_TARGET,
+                        ItemType.SWINGER,
+                        ItemType.DROP_TURNER,
+                        ItemType.MOVER,
+                    )
                     other_is_paper = other.item_type in (
-                        ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+                        ItemType.PAPER_TARGET,
+                        ItemType.MINI_TARGET,
+                        ItemType.MICRO_TARGET,
+                        ItemType.SWINGER,
+                        ItemType.DROP_TURNER,
+                        ItemType.MOVER,
+                    )
                     if t_is_paper and other_is_paper:
                         continue
 
@@ -797,7 +943,12 @@ class PlacementEngine:
                 key=lambda pos: math.hypot(pos[0] - it.x, pos[1] - it.y),
             )
             it.rotation = compute_target_rotation(
-                it.x, it.y, nearest[0], nearest[1], it.width, it.height,
+                it.x,
+                it.y,
+                nearest[0],
+                nearest[1],
+                it.width,
+                it.height,
             )
 
     # ── Shooting positions ──────────────────────────────────────────────
@@ -818,7 +969,8 @@ class PlacementEngine:
 
         front_y = min(v[1] for v in p)
         front_x = sum(v[0] for v in p if abs(v[1] - front_y) < 0.5) / max(
-            1, sum(1 for v in p if abs(v[1] - front_y) < 0.5))
+            1, sum(1 for v in p if abs(v[1] - front_y) < 0.5)
+        )
 
         start = ShootingPosition(
             id=1,
@@ -831,7 +983,7 @@ class PlacementEngine:
         positions.append(start)
 
         complex_shapes = {"H", "X", "F", "E", "N", "M", "S", "Z"}
-        letter = getattr(self._config, 'letter_shape', 'random')
+        letter = getattr(self._config, "letter_shape", "random")
         if letter in complex_shapes or (letter == "random" and len(p) > 6):
             mid_y = sum(v[1] for v in p) / len(p)
             intermediate = ShootingPosition(
@@ -850,11 +1002,16 @@ class PlacementEngine:
         """Generate strategic fault lines in front of targets."""
         fault_lines: list[StageItem] = []
         targets = [
-            it for it in existing
-            if it.item_type in (
-                ItemType.PAPER_TARGET, ItemType.STEEL_TARGET,
-                ItemType.POPPER, ItemType.METAL_PLATE,
-                ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+            it
+            for it in existing
+            if it.item_type
+            in (
+                ItemType.PAPER_TARGET,
+                ItemType.STEEL_TARGET,
+                ItemType.POPPER,
+                ItemType.METAL_PLATE,
+                ItemType.MINI_TARGET,
+                ItemType.MICRO_TARGET,
             )
         ]
         for target in targets:
@@ -866,10 +1023,21 @@ class PlacementEngine:
                 continue
             length = random.uniform(2.0, 4.0)
             rot = target.rotation + random.uniform(-15, 15)
-            fl = StageItem(0, ItemType.FAULT_LINE, fx, fy, length, 0.0, rot,
-                           TARGET_COLORS.get("fault_line", "#dc2626"), "Fault Line")
+            fl = StageItem(
+                0,
+                ItemType.FAULT_LINE,
+                fx,
+                fy,
+                length,
+                0.0,
+                rot,
+                TARGET_COLORS.get("fault_line", "#dc2626"),
+                "Fault Line",
+            )
             margin = IPSCRulesEngine.MIN_TARGET_TO_EDGE
-            if (margin <= fx <= self._stage.width - margin and
-                    margin <= fy <= self._stage.depth - margin):
+            if (
+                margin <= fx <= self._stage.width - margin
+                and margin <= fy <= self._stage.depth - margin
+            ):
                 fault_lines.append(fl)
         return fault_lines

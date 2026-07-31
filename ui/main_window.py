@@ -1,38 +1,45 @@
 # ui/main_window.py
 from __future__ import annotations
+
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot, QThreadPool
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QToolBar, QPushButton, QLabel, QStatusBar,
-    QApplication, QDockWidget
+    QApplication,
+    QDockWidget,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QStatusBar,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
+from core.generator import Phase1Config
 from core.models import Stage
-from core.generator import GeneratorConfig, Phase1Config, GeneratorResult, StageGenerator
-from ui.editor.stage_scene import StageScene, StageItemWrapper
-from ui.editor.stage_view import StageView
-from ui.editor.property_dock import PropertyDock
-from ui.editor.generator_panel import GeneratorPanel
-from ui.editor.stage_info import StageInfoPanel
-from ui.editor.path_editor import PathEditorPanel
-from ui.icons import load_icon
-from ui.workers.generator_worker import GeneratorWorker
-from services.serializer import save_stage, load_stage
-from services.exporter import export_png, export_pdf
+from services.exporter import export_pdf, export_png
+from services.library import StageLibrary
 from services.openscad_exporter import (
+    ScadExportOptions,
     export_scad,
+    openscad_available,
+    render_scad_to_3mf,
     render_scad_to_png,
     render_scad_to_stl,
-    render_scad_to_3mf,
-    openscad_available,
-    ScadExportOptions,
 )
-from ui.dialogs.target_config_dialog import TargetConfigDialog
+from services.serializer import load_stage, save_stage
 from ui.dialogs.library_dialog import LibraryDialog
-from services.library import StageLibrary
+from ui.dialogs.target_config_dialog import TargetConfigDialog
+from ui.editor.generator_panel import GeneratorPanel
+from ui.editor.path_editor import PathEditorPanel
+from ui.editor.property_dock import PropertyDock
+from ui.editor.stage_info import StageInfoPanel
+from ui.editor.stage_scene import StageItemWrapper, StageScene
+from ui.editor.stage_view import StageView
+from ui.icons import load_icon
 
 
 class MainWindow(QMainWindow):
@@ -106,14 +113,14 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        cx, cy = self._stage.width / 2, self._stage.depth / 2
-
         btn_del = QPushButton(load_icon("delete"), "Elimina")
         btn_del.setToolTip("Elimina oggetti selezionati")
-        btn_del.clicked.connect(lambda: (
-            self._scene.push_remove_selected(),
-            self._refresh_info(),
-        ))
+        btn_del.clicked.connect(
+            lambda: (
+                self._scene.push_remove_selected(),
+                self._refresh_info(),
+            )
+        )
         toolbar.addWidget(btn_del)
 
         toolbar.addSeparator()
@@ -127,22 +134,25 @@ class MainWindow(QMainWindow):
 
         btn_undo = QPushButton(load_icon("undo"), "Undo")
         btn_undo.setToolTip("Annulla (Ctrl+Z)")
-        btn_undo.clicked.connect(lambda: (
-            self._scene.undo_stack.undo(),
-            self._refresh_info(),
-        ))
+        btn_undo.clicked.connect(
+            lambda: (
+                self._scene.undo_stack.undo(),
+                self._refresh_info(),
+            )
+        )
         toolbar.addWidget(btn_undo)
 
         btn_redo = QPushButton(load_icon("redo"), "Redo")
         btn_redo.setToolTip("Ripeti (Ctrl+Shift+Z)")
-        btn_redo.clicked.connect(lambda: (
-            self._scene.undo_stack.redo(),
-            self._refresh_info(),
-        ))
+        btn_redo.clicked.connect(
+            lambda: (
+                self._scene.undo_stack.redo(),
+                self._refresh_info(),
+            )
+        )
         toolbar.addWidget(btn_redo)
 
     def _setup_menu(self):
-        from PySide6.QtWidgets import QFileDialog, QApplication
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("&File")
@@ -211,28 +221,34 @@ class MainWindow(QMainWindow):
 
         undo_action = QAction("&Undo", self)
         undo_action.setShortcut(QKeySequence("Ctrl+Z"))
-        undo_action.triggered.connect(lambda: (
-            self._scene.undo_stack.undo(),
-            self._refresh_info(),
-        ))
+        undo_action.triggered.connect(
+            lambda: (
+                self._scene.undo_stack.undo(),
+                self._refresh_info(),
+            )
+        )
         edit_menu.addAction(undo_action)
 
         redo_action = QAction("&Redo", self)
         redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
-        redo_action.triggered.connect(lambda: (
-            self._scene.undo_stack.redo(),
-            self._refresh_info(),
-        ))
+        redo_action.triggered.connect(
+            lambda: (
+                self._scene.undo_stack.redo(),
+                self._refresh_info(),
+            )
+        )
         edit_menu.addAction(redo_action)
 
         edit_menu.addSeparator()
 
         del_action = QAction("&Elimina selezionati", self)
         del_action.setShortcut(QKeySequence.Delete)
-        del_action.triggered.connect(lambda: (
-            self._scene.push_remove_selected(),
-            self._refresh_info(),
-        ))
+        del_action.triggered.connect(
+            lambda: (
+                self._scene.push_remove_selected(),
+                self._refresh_info(),
+            )
+        )
         edit_menu.addAction(del_action)
 
         # ── Strumenti ──
@@ -310,26 +326,25 @@ class MainWindow(QMainWindow):
     def _on_marker_changed(self, props: dict):
         """Aggiorna un marker sulla scena quando l'utente modifica le proprietà nel dock."""
         dock = self._prop_dock
-        marker = getattr(dock, '_marker_ref', None)
+        marker = getattr(dock, "_marker_ref", None)
         if marker is None:
             return
         scale = self._scene.scale
-        if 'x' in props:
-            marker.setPos(props['x'] * scale, marker.pos().y())
-        if 'y' in props:
-            marker.setPos(marker.pos().x(), props['y'] * scale)
-        if 'rotation' in props and hasattr(marker, 'setRotation'):
-            marker.setRotation(props['rotation'])
-        if 'width' in props and hasattr(marker, '_width'):
-            marker._width = props['width']
+        if "x" in props:
+            marker.setPos(props["x"] * scale, marker.pos().y())
+        if "y" in props:
+            marker.setPos(marker.pos().x(), props["y"] * scale)
+        if "rotation" in props and hasattr(marker, "setRotation"):
+            marker.setRotation(props["rotation"])
+        if "width" in props and hasattr(marker, "_width"):
+            marker._width = props["width"]
         marker.update()
         # Notifica il cambiamento per aggiornare la lista
-        if hasattr(marker, '_on_changed') and marker._on_changed:
+        if hasattr(marker, "_on_changed") and marker._on_changed:
             marker._on_changed(marker)
 
     def _toggle_theme(self):
         """Alterna tema chiaro/scuro."""
-        from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         theme = app.property("opentds_theme")
         if theme:
@@ -343,6 +358,7 @@ class MainWindow(QMainWindow):
     def _on_svg_editor(self):
         """Apre l'editor bersagli SVG."""
         from ui.dialogs.svg_editor_dialog import SvgEditorDialog
+
         dialog = SvgEditorDialog(self)
         if dialog.exec():
             # Refresh la scena per aggiornare eventuali bersagli che usano SVG modificati
@@ -358,6 +374,7 @@ class MainWindow(QMainWindow):
     def _on_validate(self):
         """Esegue validazione IPSC e mostra risultati in Info panel."""
         from core.ipsc_rules import IPSCRulesEngine
+
         engine = IPSCRulesEngine(self._stage)
         result = engine.validate()
         n_violations = len(result.violations)
@@ -386,25 +403,31 @@ class MainWindow(QMainWindow):
     def _on_save_to_library(self):
         """Salva lo stage corrente nella libreria."""
         from PySide6.QtWidgets import QInputDialog
+
         name, ok = QInputDialog.getText(
-            self, "Salva nella libreria",
+            self,
+            "Salva nella libreria",
             "Nome dello stage:",
             text=self._stage.name,
         )
         if ok and name:
             desc, ok2 = QInputDialog.getText(
-                self, "Descrizione",
+                self,
+                "Descrizione",
                 "Descrizione (opzionale):",
             )
             description = desc if ok2 else ""
             entry = self._library.save_stage(
-                self._stage, name=name, description=description,
+                self._stage,
+                name=name,
+                description=description,
                 tags=["utente"],
             )
             self._status.showMessage(f"Stage salvato in libreria: {entry.name}")
 
     def _on_save(self):
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getSaveFileName(self, "Salva Stage", "stage.json", "JSON (*.json)")
         if path:
             save_stage(self._stage, Path(path))
@@ -412,6 +435,7 @@ class MainWindow(QMainWindow):
 
     def _on_open(self):
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getOpenFileName(self, "Apri Stage", "", "JSON (*.json)")
         if path:
             new_stage = load_stage(Path(path))
@@ -420,6 +444,7 @@ class MainWindow(QMainWindow):
 
     def _on_export_png(self):
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getSaveFileName(self, "Esporta PNG", "stage.png", "PNG (*.png)")
         if path:
             export_png(self._scene, Path(path))
@@ -427,6 +452,7 @@ class MainWindow(QMainWindow):
 
     def _on_export_pdf(self):
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getSaveFileName(self, "Esporta PDF", "stage.pdf", "PDF (*.pdf)")
         if path:
             export_pdf(self._stage, self._scene, Path(path))
@@ -436,6 +462,7 @@ class MainWindow(QMainWindow):
 
     def _on_export_scad(self):
         from PySide6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getSaveFileName(
             self, "Esporta OpenSCAD", "stage.scad", "OpenSCAD (*.scad)"
         )
@@ -446,11 +473,15 @@ class MainWindow(QMainWindow):
 
     def _on_export_scad_png(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
+
         if not self._has_openscad:
-            QMessageBox.warning(self, "OpenSCAD non trovato",
-                                "Installa OpenSCAD per il rendering automatico:\n"
-                                "  sudo apt install openscad  # Linux\n"
-                                "  brew install openscad      # macOS")
+            QMessageBox.warning(
+                self,
+                "OpenSCAD non trovato",
+                "Installa OpenSCAD per il rendering automatico:\n"
+                "  sudo apt install openscad  # Linux\n"
+                "  brew install openscad      # macOS",
+            )
             return
         # Prima salva .scad temporaneo
         scad_path = Path("__openscad_export_temp.scad")
@@ -473,9 +504,11 @@ class MainWindow(QMainWindow):
 
     def _on_export_stl(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
+
         if not self._has_openscad:
-            QMessageBox.warning(self, "OpenSCAD non trovato",
-                                "Installa OpenSCAD per l'esportazione STL.")
+            QMessageBox.warning(
+                self, "OpenSCAD non trovato", "Installa OpenSCAD per l'esportazione STL."
+            )
             return
         scad_path = Path("__openscad_export_temp.scad")
         try:
@@ -497,9 +530,11 @@ class MainWindow(QMainWindow):
 
     def _on_export_3mf(self):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
+
         if not self._has_openscad:
-            QMessageBox.warning(self, "OpenSCAD non trovato",
-                                "Installa OpenSCAD per l'esportazione 3MF.")
+            QMessageBox.warning(
+                self, "OpenSCAD non trovato", "Installa OpenSCAD per l'esportazione 3MF."
+            )
             return
         scad_path = Path("__openscad_export_temp.scad")
         try:
@@ -532,8 +567,8 @@ class MainWindow(QMainWindow):
         stage_depth: float,
     ) -> list[tuple[float, float]]:
         """Applica rotazione e scala a un poligono base, poi trasla verso l'up-range."""
-        from core.shapes import _rotate_poly, _scale_poly, _clamp_poly
         from core.constants import MIN_BACKSTOP_DEPTH
+        from core.shapes import _clamp_poly, _rotate_poly, _scale_poly
 
         margin = 1.0  # MIN_TARGET_TO_EDGE
         d_eff = stage_depth - MIN_BACKSTOP_DEPTH
@@ -560,19 +595,16 @@ class MainWindow(QMainWindow):
 
         return poly
 
-    def _apply_perimeter(self, poly: list[tuple[float, float]],
-                          delimitation: str) -> None:
+    def _apply_perimeter(self, poly: list[tuple[float, float]], delimitation: str) -> None:
         """Sostituisce gli item perimetrali nella scena con quelli del nuovo poligono.
 
         Non tocca undo stack, non ricostruisce la scena.
         """
-        from core.shapes import perimeter_to_items
         from core.generator import _assign_ids
+        from core.shapes import perimeter_to_items
 
         self._current_poly = poly
-        self._stage.properties["perimeter_poly"] = [
-            (round(x, 2), round(y, 2)) for x, y in poly
-        ]
+        self._stage.properties["perimeter_poly"] = [(round(x, 2), round(y, 2)) for x, y in poly]
 
         new_items = perimeter_to_items(
             poly,
@@ -583,24 +615,16 @@ class MainWindow(QMainWindow):
         _assign_ids(new_items)
 
         # Rimuove vecchi item perimetrali dalla scena
-        old_ids = {
-            it.id for it in self._stage.items
-            if it.properties.get("perimeter")
-        }
+        old_ids = {it.id for it in self._stage.items if it.properties.get("perimeter")}
         for gid in old_ids:
             g = self._scene._items.pop(gid, None)
             if g:
                 self._scene.removeItem(g)
 
         # Sostituisce nello stage
-        self._stage.items = [
-            it for it in self._stage.items
-            if not it.properties.get("perimeter")
-        ]
+        self._stage.items = [it for it in self._stage.items if not it.properties.get("perimeter")]
         self._stage.items.extend(new_items)
-        self._stage._next_id = max(
-            (it.id for it in self._stage.items), default=0
-        ) + 1
+        self._stage._next_id = max((it.id for it in self._stage.items), default=0) + 1
 
         # Aggiunge nuovi item alla scena
         for it in new_items:
@@ -612,7 +636,6 @@ class MainWindow(QMainWindow):
     # ── Fase 1: generazione iniziale ──────────────────────────────────
 
     @Slot()
-
     def _on_phase1_requested(self, phase1: Phase1Config):
         """Esegue la Fase 1: genera il poligono base (senza rotazione/scala),
         poi applica le trasformazioni corrente e popola lo stage.
@@ -620,13 +643,11 @@ class MainWindow(QMainWindow):
         Se lo stage ha già oggetti oltre al perimetro (bersagli, posizioni, ecc.),
         mostra un avviso prima di rigenerare perché verranno persi.
         """
-        non_perimeter_items = [
-            it for it in self._stage.items
-            if not it.properties.get("perimeter")
-        ]
+        non_perimeter_items = [it for it in self._stage.items if not it.properties.get("perimeter")]
         has_positions = bool(self._stage.shooting_positions)
         if non_perimeter_items or has_positions:
             from PySide6.QtWidgets import QMessageBox
+
             reply = QMessageBox.warning(
                 self,
                 "Rigenera area di tiro",
@@ -646,6 +667,7 @@ class MainWindow(QMainWindow):
         try:
             # 1. Genera il poligono BASE (rotazione=0, scala=1)
             from core.shapes import generate_perimeter_polygon
+
             self._base_poly = generate_perimeter_polygon(
                 self._stage,
                 letter_shape=phase1.letter_shape,
@@ -661,13 +683,11 @@ class MainWindow(QMainWindow):
                 stage_depth=phase1.stage_depth,
             )
             # 3. Applica il poligono trasformato alla scena
-            from core.shapes import perimeter_to_items
             from core.generator import _assign_ids
+            from core.shapes import perimeter_to_items
 
             self._current_poly = poly
-            self._stage.properties["perimeter_poly"] = [
-                (round(x, 2), round(y, 2)) for x, y in poly
-            ]
+            self._stage.properties["perimeter_poly"] = [(round(x, 2), round(y, 2)) for x, y in poly]
             new_items = perimeter_to_items(
                 poly,
                 style=phase1.delimitation,
@@ -676,9 +696,7 @@ class MainWindow(QMainWindow):
             )
             _assign_ids(new_items)
             self._stage.items = new_items
-            self._stage._next_id = max(
-                (it.id for it in self._stage.items), default=0
-            ) + 1
+            self._stage._next_id = max((it.id for it in self._stage.items), default=0) + 1
 
             self._replace_stage(self._stage)
             self._gen_panel.on_phase1_complete(self._stage.name)
@@ -694,10 +712,7 @@ class MainWindow(QMainWindow):
         """Update live: applica rotazione e scala al poligono base,
         aggiorna solo gli item perimetrali senza ricostruire la scena.
         """
-        non_perimeter = [
-            it for it in self._stage.items
-            if not it.properties.get("perimeter")
-        ]
+        non_perimeter = [it for it in self._stage.items if not it.properties.get("perimeter")]
         if non_perimeter or self._stage.shooting_positions:
             return
         if self._base_poly is None:
@@ -722,11 +737,15 @@ class MainWindow(QMainWindow):
         """Ricostruisce stage.shooting_positions dalla lista del wizard."""
         positions = self._gen_panel.get_shooting_positions()
         from core.models import ShootingPosition
+
         self._stage.shooting_positions = [
             ShootingPosition(
-                id=i + 1, x=x, y=y,
+                id=i + 1,
+                x=x,
+                y=y,
                 label="Start" if is_start else f"Pos {i + 1}",
-                is_start=is_start, angle=90.0,
+                is_start=is_start,
+                angle=90.0,
             )
             for i, (x, y, is_start) in enumerate(positions)
         ]
@@ -741,7 +760,7 @@ class MainWindow(QMainWindow):
         def _on_pos_deleted(item):
             """Rimuove il marker corrispondente dalla scena."""
             for gi in list(self._scene.items()):
-                if hasattr(gi, 'pos_m') and hasattr(gi, '_label'):
+                if hasattr(gi, "pos_m") and hasattr(gi, "_label"):
                     pm = gi.pos_m
                     if abs(pm[0] - saved_x) < 0.5 and abs(pm[1] - saved_y) < 0.5:
                         self._scene.removeItem(gi)
@@ -753,7 +772,7 @@ class MainWindow(QMainWindow):
             """Aggiorna le etichette dei marker sulla scena dopo cancellazione."""
             lst = self._gen_panel._pos_list
             for gi in self._scene.items():
-                if not hasattr(gi, 'pos_m') or not hasattr(gi, '_is_start'):
+                if not hasattr(gi, "pos_m") or not hasattr(gi, "_is_start"):
                     continue
                 pm = gi.pos_m
                 for j in range(lst.count()):
@@ -779,7 +798,9 @@ class MainWindow(QMainWindow):
             self._sync_shooting_positions()
 
         self._gen_panel.add_shooting_position(
-            saved_x, saved_y, is_start,
+            saved_x,
+            saved_y,
+            is_start,
             on_delete_clicked=_on_pos_deleted,
             on_renumbered=_renumber_markers,
         )
@@ -818,10 +839,15 @@ class MainWindow(QMainWindow):
 
         # Aggiunge marker visivo nella scena
         self._scene.add_shooting_position_marker(
-            saved_x, saved_y, is_start=is_start, index=index,
+            saved_x,
+            saved_y,
+            is_start=is_start,
+            index=index,
             on_changed=_on_pos_changed,
         )
-        self._status.showMessage(f"Posizione di tiro #{index} aggiunta: ({saved_x:.1f}, {saved_y:.1f})")
+        self._status.showMessage(
+            f"Posizione di tiro #{index} aggiunta: ({saved_x:.1f}, {saved_y:.1f})"
+        )
         self._sync_shooting_positions()
 
         # Auto-disattiva la modalità posizionamento dopo aver piazzato

@@ -1,45 +1,59 @@
 """
 Scoring, metadati di briefing e risoluzione conteggi per stage IPSC.
 """
+
 from __future__ import annotations
 
 import math
-import random
-from typing import List, Optional
+from typing import List
 
 from core.constants import (
+    ACTIVATOR_SECTOR_ANGLE_DEG,
     COURSE_TARGET_DISTRIBUTION,
+    MAX_ACTIVATED_PER_ACTIVATOR,
     MAX_ACTIVATOR_DISTANCE,
     MAX_ACTIVATOR_MOVING_DISTANCE,
-    MAX_ACTIVATED_PER_ACTIVATOR,
-    ACTIVATOR_SECTOR_ANGLE_DEG,
 )
-from core.models import Stage, StageItem, ItemType
 from core.geometry import euclidean_distance
-
+from core.models import ItemType, Stage, StageItem
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers per classificazione tipi
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def is_paper_like(t: ItemType) -> bool:
     """True per tipi bersaglio cartaceo."""
-    return t in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                  ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-                  ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
-                  ItemType.TARGET_PLUS_NOSHOOT)
+    return t in (
+        ItemType.PAPER_TARGET,
+        ItemType.MINI_TARGET,
+        ItemType.MICRO_TARGET,
+        ItemType.DOUBLET_SIDE,
+        ItemType.DOUBLET_OVERLAP,
+        ItemType.DOUBLET_SIDE_HOSTAGE,
+        ItemType.DOUBLET_OVERLAP_HOSTAGE,
+        ItemType.TARGET_PLUS_NOSHOOT,
+    )
 
 
 def is_steel_like(t: ItemType) -> bool:
     """True per tipi bersaglio metallico."""
-    return t in (ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE,
-                  ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER)
+    return t in (
+        ItemType.STEEL_TARGET,
+        ItemType.POPPER,
+        ItemType.METAL_PLATE,
+        ItemType.BOBBER_PLATE,
+        ItemType.DOUBLE_BOBBER,
+    )
 
 
 def is_scoring_target(t: ItemType) -> bool:
     """True per tutti i bersagli che assegnano punti."""
-    return is_paper_like(t) or is_steel_like(t) or t in (
-        ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    return (
+        is_paper_like(t)
+        or is_steel_like(t)
+        or t in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -60,7 +74,7 @@ COMPOSITE_TARGETS: dict[ItemType, dict] = {
         "colpi": 4,
         "sub_targets": [
             (0, -0.11, ItemType.PAPER_TARGET, "T1"),  # sopra
-            (0, 0.11, ItemType.PAPER_TARGET, "T2"),   # sotto
+            (0, 0.11, ItemType.PAPER_TARGET, "T2"),  # sotto
         ],
         "description": "Doppio target sovrapposto verticale",
     },
@@ -76,9 +90,9 @@ COMPOSITE_TARGETS: dict[ItemType, dict] = {
     ItemType.DOUBLET_OVERLAP_HOSTAGE: {
         "colpi": 4,
         "sub_targets": [
-            (0, -0.18, ItemType.PAPER_TARGET, "T1"),   # sopra
-            (0, 0.18, ItemType.PAPER_TARGET, "T2"),    # sotto
-            (0, 0, ItemType.NO_SHOOT, "NS"),           # centro
+            (0, -0.18, ItemType.PAPER_TARGET, "T1"),  # sopra
+            (0, 0.18, ItemType.PAPER_TARGET, "T2"),  # sotto
+            (0, 0, ItemType.NO_SHOOT, "NS"),  # centro
         ],
         "description": "Doppio target con ostaggio (sovrapposto verticale)",
     },
@@ -122,8 +136,13 @@ def get_composite_info(t: ItemType) -> dict | None:
 
 def is_obstacle(t: ItemType) -> bool:
     """True per ostacoli/barriere/muri/coperture."""
-    return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR,
-                  ItemType.HARD_COVER, ItemType.SOFT_COVER)
+    return t in (
+        ItemType.WALL,
+        ItemType.BARRIER,
+        ItemType.DOOR,
+        ItemType.HARD_COVER,
+        ItemType.SOFT_COVER,
+    )
 
 
 def is_blocking_wall(t: ItemType) -> bool:
@@ -134,6 +153,7 @@ def is_blocking_wall(t: ItemType) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Risoluzione conteggi bersagli
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def resolve_target_counts(
     num_targets: int,
@@ -196,6 +216,7 @@ def resolve_target_counts(
 #  Relazioni attivatore-attivato
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def create_activator_relationships(
     stage: Stage,
     items: List[StageItem],
@@ -215,12 +236,18 @@ def create_activator_relationships(
     cx = sum(p[0] for p in perimeter_poly) / len(perimeter_poly)
     cy = sum(p[1] for p in perimeter_poly) / len(perimeter_poly)
 
-    moving_targets = [it for it in items
-                      if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
-                      and "activated_by" not in it.properties]
-    papers = [it for it in items
-              if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
-              and "activated_by" not in it.properties]
+    moving_targets = [
+        it
+        for it in items
+        if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
+        and "activated_by" not in it.properties
+    ]
+    papers = [
+        it
+        for it in items
+        if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
+        and "activated_by" not in it.properties
+    ]
 
     if not moving_targets and not papers:
         return
@@ -244,7 +271,10 @@ def create_activator_relationships(
             if angle_diff > math.pi:
                 angle_diff = 2 * math.pi - angle_diff
             dist = euclidean_distance(activator.x, activator.y, mt.x, mt.y)
-            if angle_diff < math.radians(ACTIVATOR_SECTOR_ANGLE_DEG) and dist < MAX_ACTIVATOR_MOVING_DISTANCE:
+            if (
+                angle_diff < math.radians(ACTIVATOR_SECTOR_ANGLE_DEG)
+                and dist < MAX_ACTIVATOR_MOVING_DISTANCE
+            ):
                 nearby.append((dist, mt))
 
         if not nearby:
@@ -302,7 +332,10 @@ def create_activator_relationships(
             if angle_diff > math.pi:
                 angle_diff = 2 * math.pi - angle_diff
             dist = euclidean_distance(activator.x, activator.y, p.x, p.y)
-            if angle_diff < math.radians(ACTIVATOR_SECTOR_ANGLE_DEG) and dist < MAX_ACTIVATOR_DISTANCE:
+            if (
+                angle_diff < math.radians(ACTIVATOR_SECTOR_ANGLE_DEG)
+                and dist < MAX_ACTIVATOR_DISTANCE
+            ):
                 nearby.append((dist, p))
 
         if not nearby:
@@ -345,14 +378,14 @@ def create_activator_relationships(
     if descs:
         stage.properties["activator_descs"] = descs
         stage.properties["procedure"] = (
-            "Al segnale di partenza ingaggiare tutti i bersagli. "
-            + " ".join(descs) + "."
+            "Al segnale di partenza ingaggiare tutti i bersagli. " + " ".join(descs) + "."
         )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Metadati di briefing
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def populate_stage_metadata(
     stage: Stage,
@@ -384,16 +417,20 @@ def populate_stage_metadata(
         stage.properties["handgun_condition"] = "Arma scarica in fondina"
         stage.properties["pcc_condition"] = "Scarico Option 3"
     else:
-        stage.properties["handgun_condition"] = "Arma in fondina caricatore inserito colpo non camerato"
+        stage.properties["handgun_condition"] = (
+            "Arma in fondina caricatore inserito colpo non camerato"
+        )
         stage.properties["pcc_condition"] = "Carico Option 1"
 
     if "procedure" not in stage.properties:
         stage.properties["procedure"] = "Al segnale di partenza ingaggiare tutti i bersagli."
 
-    paper_count = sum(1 for it in stage.items
-                      if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET))
-    steel_count = sum(1 for it in stage.items
-                      if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE))
+    paper_count = sum(
+        1 for it in stage.items if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
+    )
+    steel_count = sum(
+        1 for it in stage.items if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)
+    )
     stage.properties["max_points"] = paper_count * 10 + steel_count * 5
 
     stage.properties["angoli_sicurezza"] = "90° laterali e parapalle in verticale"
@@ -407,6 +444,7 @@ def populate_stage_metadata(
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Scoring qualità stage
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def score_stage(
     stage: Stage,
@@ -427,14 +465,18 @@ def score_stage(
     steel = [it for it in targets if is_steel_like(it.item_type)]
     score += len(steel) * 5
 
-    moving = [it for it in items if it.item_type in (ItemType.SWINGER, ItemType.MOVER, ItemType.DROP_TURNER)]
+    moving = [
+        it
+        for it in items
+        if it.item_type in (ItemType.SWINGER, ItemType.MOVER, ItemType.DROP_TURNER)
+    ]
     score += len(moving) * 15
 
     if len(targets) >= 2:
         total_dist = 0.0
         count = 0
         for i, a in enumerate(targets):
-            for b in targets[i + 1:]:
+            for b in targets[i + 1 :]:
                 total_dist += euclidean_distance(a.x, a.y, b.x, b.y)
                 count += 1
         if count > 0:
@@ -444,7 +486,9 @@ def score_stage(
     if len(walls) > 0:
         score += len(walls) * 3
 
-    perim_items = [it for it in items if it.item_type in (ItemType.FAULT_LINE, ItemType.WALL, ItemType.BARRIER)]
+    perim_items = [
+        it for it in items if it.item_type in (ItemType.FAULT_LINE, ItemType.WALL, ItemType.BARRIER)
+    ]
     score += len(perim_items) * 2
     if perimeter_poly and len(perimeter_poly) >= 5:
         score += 5
