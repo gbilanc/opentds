@@ -515,11 +515,12 @@ class IPSCRulesEngine:
         e con linea di vista non ostruita da muri/barriere.
         """
         v = []
-        targets = [
-            it
-            for it in self.stage.items
-            if it.item_type in (ItemType.PAPER_TARGET, ItemType.STEEL_TARGET)
-        ]
+        _SCORING = (
+            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
+            ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+        )
+        targets = [it for it in self.stage.items if it.item_type in _SCORING]
         if not targets:
             return v
 
@@ -577,38 +578,53 @@ class IPSCRulesEngine:
         frontali (90° a sinistra + 90° a destra) dalla direzione di
         puntamento della posizione di tiro.
 
+        Un bersaglio è valido se esiste ALMENO UNA posizione di tiro
+        da cui è entro il cono di sicurezza (non deve esserlo da tutte).
+
         Usa ShootingPosition.angle come direzione frontale; se non
         definita, assume direzione verso il parapalle (90° = +Y).
         """
         v = []
-        targets = [
-            it
-            for it in self.stage.items
-            if it.item_type
-            in (
-                ItemType.PAPER_TARGET,
-                ItemType.STEEL_TARGET,
-                ItemType.SWINGER,
-                ItemType.DROP_TURNER,
-                ItemType.MOVER,
-            )
-        ]
+        # Tutti i tipi di bersaglio rilevanti per gli angoli di sicurezza
+        _SCORING_TYPES = (
+            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
+            ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+            ItemType.NO_SHOOT, ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
+            ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
+            ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER, ItemType.TARGET_PLUS_NOSHOOT,
+        )
+        targets = [it for it in self.stage.items if it.item_type in _SCORING_TYPES]
         if not targets:
+            return v
+
+        positions = self._get_positions_with_directions()
+        if not positions:
             return v
 
         max_angle = self.SAFETY_ANGLE_DEFAULT + self.SAFETY_ANGLE_TOLERANCE_DEG
 
-        for pos, forward_deg in self._get_positions_with_directions():
-            for t in targets:
+        # Per ogni bersaglio: verifica che esista almeno una posizione
+        # da cui è entro il cono di sicurezza
+        for t in targets:
+            ok_from_any = False
+            for pos, forward_deg in positions:
                 angle_deg = self._target_angle_from_position(pos, t, forward_deg)
+                if angle_deg <= max_angle:
+                    ok_from_any = True
+                    break
 
-                if angle_deg > max_angle:
-                    v.append(
-                        f"Bersaglio #{t.id} a {angle_deg:.0f}° dalla posizione "
-                        f"({pos.x:.1f}, {pos.y:.1f}) — "
-                        f"supera angolo sicurezza {self.SAFETY_ANGLE_DEFAULT}° "
-                        f"(cono ingaggio 180°, Reg. 2.1.2)"
-                    )
+            if not ok_from_any:
+                # Calcola l'angolo dalla prima posizione per il messaggio
+                ref_pos, ref_fwd = positions[0]
+                ref_angle = self._target_angle_from_position(ref_pos, t, ref_fwd)
+                v.append(
+                    f"Bersaglio #{t.id} '{t.label or t.item_type.name}' "
+                    f"fuori dal cono di sicurezza 180° da tutte le "
+                    f"posizioni di tiro (angolo min: {ref_angle:.0f}° "
+                    f"da ({ref_pos.x:.1f}, {ref_pos.y:.1f}), "
+                    f"max consentito {max_angle:.0f}°, Reg. 2.1.2)"
+                )
 
         return v
 
@@ -636,23 +652,15 @@ class IPSCRulesEngine:
         # Calcola il numero di colpi richiesti dallo stage
         total_rounds = 0
         paper_like = (
-            ItemType.PAPER_TARGET,
-            ItemType.MINI_TARGET,
-            ItemType.MICRO_TARGET,
-            ItemType.SWINGER,
-            ItemType.DROP_TURNER,
-            ItemType.MOVER,
-            ItemType.DOUBLET_SIDE,
-            ItemType.DOUBLET_OVERLAP,
-            ItemType.DOUBLET_SIDE_HOSTAGE,
-            ItemType.DOUBLET_OVERLAP_HOSTAGE,
+            ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+            ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
+            ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
+            ItemType.TARGET_PLUS_NOSHOOT,
         )
         steel_like = (
-            ItemType.STEEL_TARGET,
-            ItemType.POPPER,
-            ItemType.METAL_PLATE,
-            ItemType.BOBBER_PLATE,
-            ItemType.DOUBLE_BOBBER,
+            ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE,
+            ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER,
         )
 
         for it in self.stage.items:
