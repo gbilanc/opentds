@@ -37,7 +37,11 @@ function createIpscTargetShape(width: number, height: number): THREE.BufferGeome
   shape.lineTo(-hw, -hh + hh * 0.8);
   shape.closePath();
 
-  return new THREE.ShapeGeometry(shape);
+  // Extrude with small depth so both sides are visible
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.005, bevelEnabled: false });
+  // Center the geometry vertically
+  geo.translate(0, -hh, -0.0025);
+  return geo;
 }
 
 /**
