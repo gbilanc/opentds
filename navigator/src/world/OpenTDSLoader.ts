@@ -305,9 +305,9 @@ function buildMetalTarget(item: OpenTDSItem): WorldObject[] {
 /** Build a doublet (two targets side by side or overlapping vertically) */
 function buildDoublet(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[] {
   if (mode === 'overlap') {
-    // Vertical overlap: targets offset by ±10cm in world Y (20cm total)
+    // Vertical overlap: targets offset by ±20cm in world Y
     const results: WorldObject[] = [];
-    const offsets = [-0.10, 0.10]; // bottom, top
+    const offsets = [-0.20, 0.20]; // bottom, top
     for (let i = 0; i < 2; i++) {
       const objs = buildTarget({
         ...item,
@@ -343,9 +343,10 @@ function buildDoublet(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[
 /** Build two targets with a no-shoot in between */
 function buildDoubletWithHostage(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[] {
   if (mode === 'overlap') {
-    // Vertical overlap with no-shoot at center (no Y offset)
+    // Vertical overlap with no-shoot at center
+    // Paper at -20cm, no-shoot at 0, paper at +20cm
     const results: WorldObject[] = [];
-    const offsets = [-0.10, 0.10];
+    const offsets = [-0.20, 0.20];
     for (let i = 0; i < 2; i++) {
       const objs = buildTarget({
         ...item,
