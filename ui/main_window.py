@@ -169,6 +169,14 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        self._btn_safety = QPushButton(load_icon("check"), "Sic")
+        self._btn_safety.setCheckable(True)
+        self._btn_safety.setToolTip("Mostra/nasconde zone di sicurezza (coni di ingaggio)")
+        self._btn_safety.toggled.connect(self._on_toggle_safety_zones)
+        toolbar.addWidget(self._btn_safety)
+
+        toolbar.addSeparator()
+
         btn_undo = QPushButton(load_icon("undo"), "Undo")
         btn_undo.setToolTip("Annulla (Ctrl+Z)")
         btn_undo.clicked.connect(
@@ -287,6 +295,16 @@ class MainWindow(QMainWindow):
             )
         )
         edit_menu.addAction(del_action)
+
+        dup_action = QAction("&Duplica selezionati", self)
+        dup_action.setShortcut(QKeySequence("Ctrl+D"))
+        dup_action.triggered.connect(
+            lambda: (
+                self._scene.push_duplicate_selected(),
+                self._refresh_info(),
+            )
+        )
+        edit_menu.addAction(dup_action)
 
         # ── Strumenti ──
         tools_menu = menubar.addMenu("&Strumenti")
@@ -463,6 +481,11 @@ class MainWindow(QMainWindow):
             self._status.setStyleSheet("color: #dc2626;")
         self._status.showMessage(msg)
         self._refresh_info()
+
+    def _on_toggle_safety_zones(self, checked: bool):
+        """Toggle zone di sicurezza (coni di ingaggio)."""
+        self._scene.toggle_safety_zones(checked)
+        self._scene.update()
 
     def _on_library(self):
         """Apre la libreria stage."""

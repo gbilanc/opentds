@@ -14,6 +14,9 @@ async function main(): Promise<void> {
   const stageFile = params.get('stage') ?? 'stage_short.json';
 
   try {
+    // Preload PBR textures (non-blocking but renders after load)
+    SceneManager.preloadAssets();
+
     const world = await loadOpenTDS(`/${stageFile}`);
     const builder = new WorldBuilder();
     const built = builder.build(world);

@@ -654,6 +654,37 @@ def _is_obstacle(t: ItemType) -> bool:
     )
 
 
+_TYPE_LABELS: dict[ItemType, str] = {
+    ItemType.PAPER_TARGET: "Bersaglio cartaceo",
+    ItemType.STEEL_TARGET: "Bersaglio metallico",
+    ItemType.POPPER: "Popper",
+    ItemType.METAL_PLATE: "Piatto metallico",
+    ItemType.MINI_TARGET: "Mini Target",
+    ItemType.MICRO_TARGET: "Micro Target",
+    ItemType.NO_SHOOT: "No-Shoot (penalità)",
+    ItemType.SWINGER: "Swinger (mobile)",
+    ItemType.DROP_TURNER: "Drop Turner (mobile)",
+    ItemType.MOVER: "Mover (mobile)",
+    ItemType.WALL: "Muro",
+    ItemType.BARRIER: "Barriera",
+    ItemType.DOOR: "Porta",
+    ItemType.HARD_COVER: "Hard Cover",
+    ItemType.SOFT_COVER: "Soft Cover",
+    ItemType.FAULT_LINE: "Fault Line",
+    ItemType.DOUBLET_SIDE: "Doppio affiancato",
+    ItemType.DOUBLET_OVERLAP: "Doppio sovrapposto",
+    ItemType.DOUBLET_SIDE_HOSTAGE: "Doppio + ostaggio (aff.)",
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: "Doppio + ostaggio (sovr.)",
+    ItemType.BOBBER_PLATE: "Piatto bobber",
+    ItemType.DOUBLE_BOBBER: "Doppio bobber",
+    ItemType.TARGET_PLUS_NOSHOOT: "Target + No-Shoot",
+}
+
+
+def _type_label(t: ItemType) -> str:
+    return _TYPE_LABELS.get(t, t.name)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Utilities
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -764,6 +795,8 @@ class StageItemMixin:
         self.wrapper = wrapper
         self.scale = scale
         self._is_rotating = False
+        self._is_dragging = False
+        self._collision_flag = False
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
             | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
@@ -928,13 +961,26 @@ class StageItemMixin:
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            self._is_dragging = True
+            self.setOpacity(0.65)
             snapped = _snap_pos(value, self.scale)
-            if self._would_collide_with_obstacles(snapped):
+            self._collision_flag = self._would_collide_with_obstacles(snapped) or self._would_block_shooter_path(snapped)
+            if self._collision_flag:
                 return self.pos()  # Rifiuta la mossa
-            if self._would_block_shooter_path(snapped):
-                return self.pos()  # Rifiuta — blocca il passaggio tiratore
+            # Alignment guides magnetic snap
+            scene = self.scene()
+            if scene and hasattr(scene, '_compute_alignment_guides'):
+                aligned = scene._compute_alignment_guides(self, snapped)
+                if aligned is not None:
+                    return aligned
             return snapped
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._is_dragging = False
+            self._collision_flag = False
+            self.setOpacity(1.0)
+            scene = self.scene()
+            if scene and hasattr(scene, '_clear_alignment_guides'):
+                scene._clear_alignment_guides()
             self.wrapper.item.x = self.pos().x() / self.scale
             self.wrapper.item.y = self.pos().y() / self.scale
             self.wrapper.changed.emit()
@@ -952,15 +998,19 @@ class StageItemMixin:
     # ---- Evidenziazione violazioni ----
 
     def _draw_violation_highlight(self, painter: QPainter):
-        """Disegna un bordo rosso pulsante se l'item ha una violazione IPSC."""
+        """Disegna bordo rosso per violazioni IPSC o per collisione durante drag."""
         if not self.wrapper or not self.scene():
             return
         scene: "StageScene" = self.scene()
-        if not scene.has_violation(self.wrapper.item.id):
+        has_violation = scene.has_violation(self.wrapper.item.id)
+        has_collision = getattr(self, '_collision_flag', False)
+        if not has_violation and not has_collision:
             return
         painter.save()
-        pen = QPen(QColor("#dc2626"), 3)
-        pen.setStyle(Qt.PenStyle.DashLine)
+        if has_collision:
+            pen = QPen(QColor("#ef4444"), 3, Qt.PenStyle.SolidLine)
+        else:
+            pen = QPen(QColor("#dc2626"), 3, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         br = self.boundingRect()
@@ -1035,6 +1085,39 @@ class StageItemMixin:
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().hoverMoveEvent(event)
+
+    def hoverEnterEvent(self, event):
+        self._refresh_tooltip()
+        super().hoverEnterEvent(event)
+
+    def _refresh_tooltip(self):
+        """Aggiorna il tooltip con informazioni sull'oggetto."""
+        it = self.wrapper.item
+        scene = self.scene()
+        type_name = _type_label(it.item_type)
+        dist_str = ""
+        if scene and hasattr(scene, "stage"):
+            sp_list = scene.stage.shooting_positions
+            if sp_list:
+                start = next((sp for sp in sp_list if sp.is_start), sp_list[0])
+                dx = it.x - start.x
+                dy = it.y - start.y
+                dist = (dx * dx + dy * dy) ** 0.5
+                dist_str = f"\nDistanza da start: {dist:.2f} m"
+        scoring_str = ""
+        if it.item_type in self._TARGET_TYPES:
+            from core.scoring import _count_total_rounds
+            hits = 2 if it.item_type in (
+                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
+                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
+            ) else 1
+            scoring_str = f"\nColpi: {hits}"
+        self.setToolTip(
+            f"{type_name}: {it.label or '—'}\n"
+            f"Pos: ({it.x:.2f}, {it.y:.2f})  Rot: {it.rotation:.1f}°\n"
+            f"Dim: {it.width:.2f}×{it.height:.2f} m"
+            f"{dist_str}{scoring_str}"
+        )
 
     # ---- Evidenziazione selezione ----
 
@@ -1728,6 +1811,38 @@ class RemoveItemCommand(QUndoCommand):
             self.scene._do_add_graphics_item(self._backup)
 
 
+class DuplicateItemsCommand(QUndoCommand):
+    """Clona gli item selezionati con offset di 0.5m in X e Y."""
+
+    def __init__(self, scene: "StageScene", items: list[StageItem], description: str = "Duplica oggetti"):
+        super().__init__(description)
+        self.scene = scene
+        self._originals = items
+        self._clones: list[StageItem] = []
+
+    def redo(self):
+        if self._clones:
+            # Re-add already existing clones
+            for clone in self._clones:
+                self.scene.stage.add_item(clone)
+                self.scene._do_add_graphics_item(clone)
+        else:
+            import copy
+            for item in self._originals:
+                clone = copy.deepcopy(item)
+                clone.id = 0  # will be auto-assigned
+                clone.x += 0.5
+                clone.y += 0.5
+                self._clones.append(clone)
+                self.scene.stage.add_item(clone)
+                self.scene._do_add_graphics_item(clone)
+
+    def undo(self):
+        for clone in self._clones:
+            self.scene._do_remove_item(clone.id)
+        # Keep _clones for redo
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  StageScene
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1753,6 +1868,8 @@ class StageScene(QGraphicsScene):
         self.undo_stack = QUndoStack(self)
         self._shooting_area: ShootingAreaItem | None = None
         self._engagement_area: EngagementAreaItem | None = None
+        self._safety_zones_visible: bool = False
+        self._safety_zone_items: list[EngagementAreaItem] = []
         self._path_item: PathPolylineItem = PathPolylineItem()
         self._setup_grid()
         self._sync_from_model()
@@ -1905,6 +2022,7 @@ class StageScene(QGraphicsScene):
             if hasattr(g, "wrapper"):
                 self.selectionChangedWrapper.emit(g.wrapper)
                 self._hide_engagement_area()
+                self._sync_selection_to_navigator(g.wrapper.item.id)
             elif isinstance(g, ShootingPositionMarker):
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit(
@@ -1949,13 +2067,115 @@ class StageScene(QGraphicsScene):
 
     # ── Public API con undo ──────────────────────────────────────────────────
 
+    # ── Guide di allineamento ──────────────────────────────────────────────
+
+    _ALIGN_THRESHOLD_PX = 6.0  # soglia snap magnetico in pixel
+
+    def _compute_alignment_guides(
+        self, moving_item, candidate_pos: QPointF
+    ) -> QPointF | None:
+        """Calcola guide di allineamento e snap magnetico.
+
+        Restituisce la posizione aggiustata se c'è allineamento,
+        altrimenti None. Popola self._guide_lines per il disegno.
+        """
+        self._guide_lines = []
+        threshold = self._ALIGN_THRESHOLD_PX
+        scale = self.scale
+
+        moving_br = moving_item.boundingRect()
+        moving_w = moving_br.width()
+        moving_h = moving_br.height()
+
+        # Edge del moving item nella candidate position
+        m_left = candidate_pos.x() - moving_w / 2
+        m_right = candidate_pos.x() + moving_w / 2
+        m_top = candidate_pos.y() - moving_h / 2
+        m_bottom = candidate_pos.y() + moving_h / 2
+        m_cx = candidate_pos.x()
+        m_cy = candidate_pos.y()
+
+        best_x = candidate_pos.x()
+        best_y = candidate_pos.y()
+        snapped_x = False
+        snapped_y = False
+
+        for other in self._items.values():
+            if other is moving_item:
+                continue
+            if not hasattr(other, "wrapper"):
+                continue
+            obr = other.sceneBoundingRect()
+            o_left = obr.left()
+            o_right = obr.right()
+            o_top = obr.top()
+            o_bottom = obr.bottom()
+            o_cx = obr.center().x()
+            o_cy = obr.center().y()
+
+            # ── Allineamenti orizzontali ──
+            checks_x = [
+                (m_left, o_left, "left-left"),
+                (m_left, o_right, "left-right"),
+                (m_right, o_left, "right-left"),
+                (m_right, o_right, "right-right"),
+                (m_cx, o_cx, "center-center"),
+            ]
+            for m_edge, o_edge, kind in checks_x:
+                if abs(m_edge - o_edge) < threshold:
+                    best_x = candidate_pos.x() - (m_edge - o_edge)
+                    snapped_x = True
+                    self._guide_lines.append(
+                        (QPointF(o_edge, min(m_top, o_top) - 20),
+                         QPointF(o_edge, max(m_bottom, o_bottom) + 20),
+                         "#3b82f6", kind)
+                    )
+
+            # ── Allineamenti verticali ──
+            checks_y = [
+                (m_top, o_top, "top-top"),
+                (m_top, o_bottom, "top-bottom"),
+                (m_bottom, o_top, "bottom-top"),
+                (m_bottom, o_bottom, "bottom-bottom"),
+                (m_cy, o_cy, "center-center"),
+            ]
+            for m_edge, o_edge, kind in checks_y:
+                if abs(m_edge - o_edge) < threshold:
+                    best_y = candidate_pos.y() - (m_edge - o_edge)
+                    snapped_y = True
+                    self._guide_lines.append(
+                        (QPointF(min(m_left, o_left) - 20, o_edge),
+                         QPointF(max(m_right, o_right) + 20, o_edge),
+                         "#3b82f6", kind)
+                    )
+
+        if snapped_x or snapped_y:
+            return QPointF(best_x, best_y)
+        return None
+
+    def _clear_alignment_guides(self):
+        """Rimuove le guide di allineamento."""
+        self._guide_lines = []
+        self.update()
+
     def drawForeground(self, painter: QPainter, rect: QRectF):
-        """Disegna la bounding box collettiva per selezione multipla."""
+        """Disegna guide di allineamento e bounding box collettiva."""
         super().drawForeground(painter, rect)
+
+        # ── Guide di allineamento ──
+        guide_lines = getattr(self, '_guide_lines', [])
+        if guide_lines:
+            painter.save()
+            guide_pen = QPen(QColor("#3b82f6"), 1, Qt.PenStyle.DashLine)
+            guide_pen.setDashPattern([4, 3])
+            painter.setPen(guide_pen)
+            for p1, p2, color, kind in guide_lines:
+                painter.drawLine(p1, p2)
+            painter.restore()
+
         sel = self.selectedItems()
         if len(sel) < 2:
             return
-        # Calcola bounding box collettiva
         has_wrapper = all(hasattr(g, "wrapper") for g in sel)
         if not has_wrapper:
             return
@@ -1973,7 +2193,6 @@ class StageScene(QGraphicsScene):
         painter.setBrush(QBrush(QColor("#6366f1"), Qt.BrushStyle.Dense4Pattern))
         margin = 8.0
         painter.drawRoundedRect(br.adjusted(-margin, -margin, margin, margin), 6, 6)
-        # Etichetta col conteggio
         font = painter.font()
         font.setPointSize(9)
         font.setBold(True)
@@ -2054,6 +2273,61 @@ class StageScene(QGraphicsScene):
             self.removeItem(self._engagement_area)
             self._engagement_area = None
 
+    def _sync_selection_to_navigator(self, item_id: int):
+        """Scrive l'ID dell'item selezionato in un file JSON per il navigator 3D."""
+        import json, os
+        try:
+            dist_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "navigator", "dist"
+            )
+            sel_path = os.path.join(dist_dir, "selection.json")
+            data = {"selected_id": item_id, "timestamp": __import__("time").time()}
+            with open(sel_path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except Exception:
+            pass  # silenzioso: il navigator potrebbe non essere in esecuzione
+
+    def toggle_safety_zones(self, visible: bool | None = None) -> bool:
+        """Mostra/nasconde le zone di sicurezza (coni 180°) da tutte
+        le shooting position contemporaneamente.
+
+        Restituisce il nuovo stato (True = visibili).
+        """
+        if visible is None:
+            visible = not self._safety_zones_visible
+        self._safety_zones_visible = visible
+
+        # Pulisci le zone esistenti
+        for zone in self._safety_zone_items:
+            self.removeItem(zone)
+        self._safety_zone_items.clear()
+
+        if not visible:
+            self.update()
+            return False
+
+        # Raccogli ostacoli
+        obstacles = []
+        for it in self.stage.items:
+            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.HARD_COVER):
+                obstacles.append((it.x, it.y, it.width, it.height, it.rotation))
+
+        range_m = max(self.stage.width, self.stage.depth) * 1.2
+
+        for sp in self.stage.shooting_positions:
+            zone = EngagementAreaItem(
+                sp.x, sp.y, self.scale,
+                angle=sp.angle,
+                range_m=range_m,
+                obstacles=obstacles,
+            )
+            self.addItem(zone)
+            self._safety_zone_items.append(zone)
+
+        self.update()
+        return True
+
     def push_add_item(self, item: StageItem):
         self.undo_stack.push(AddItemCommand(self, item))
 
@@ -2061,23 +2335,32 @@ class StageScene(QGraphicsScene):
         self.undo_stack.push(RemoveItemCommand(self, item_id))
 
     def push_remove_selected(self):
-        """Rimuove tutti gli oggetti selezionati.
-
-        Scansiona TUTTI gli item della scena (non solo selectedItems())
-        perché i marker figli del grid potrebbero non essere rilevati
-        da selectedItems() in alcuni contesti Qt.
-        """
+        """Rimuove tutti gli oggetti selezionati."""
         for g in list(self.items()):
             if not g.isSelected():
                 continue
             if isinstance(g, (ShootingPositionMarker, ObstacleMarker)):
                 self._remove_marker(g)
             else:
-                # Item stage normale
                 for gid, gi in list(self._items.items()):
                     if gi is g:
                         self.push_remove_item(gid)
                         break
+
+    def push_duplicate_selected(self):
+        """Duplica tutti gli item stage selezionati (Ctrl+D).
+
+        I nuovi item sono spostati di +0.5m in X e Y e aggiunti
+        all'undo stack come operazione atomica.
+        """
+        originals: list[StageItem] = []
+        for g in list(self.items()):
+            if not g.isSelected():
+                continue
+            if hasattr(g, "wrapper") and g.wrapper is not None:
+                originals.append(g.wrapper.item)
+        if originals:
+            self.undo_stack.push(DuplicateItemsCommand(self, originals))
 
     def _remove_marker(self, g):
         """Rimuove un marker e notifica il callback."""

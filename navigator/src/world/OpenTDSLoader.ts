@@ -55,7 +55,7 @@ function itemToObjects(item: OpenTDSItem): WorldObject[] {
         kind: 'box',
         scale: { x: item.width, y: 2.0, z: Math.max(item.height, 0.15) },
         color: item.color,
-        texture: 'solid',
+        texture: 'real:bricks',
         collision: true,
         interactable: false,
       }];
@@ -67,7 +67,7 @@ function itemToObjects(item: OpenTDSItem): WorldObject[] {
         kind: 'box',
         scale: { x: item.width, y: 1.0, z: Math.max(item.height, 0.15) },
         color: item.color,
-        texture: 'solid',
+        texture: 'real:wood',
         collision: true,
         interactable: false,
       }];
@@ -103,7 +103,7 @@ function itemToObjects(item: OpenTDSItem): WorldObject[] {
         kind: 'box',
         scale: { x: item.width, y: 2.0, z: Math.max(item.height, 0.1) },
         color: '#8B6914',
-        texture: 'wood',
+        texture: 'real:wood',
         collision: true,
         interactable: true,
         interactLabel: item.label || 'Porta',
@@ -404,7 +404,7 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
     position: { x: stageOffsetX + json.width / 2, y: 0.006, z: stageOffsetZ + json.depth / 2 },
     scale: { x: json.width, y: 1, z: json.depth },
     color: '#e8e0d0',
-    texture: 'dirt',
+    texture: 'real:ground',
     textureRepeat: [Math.ceil(json.width / 2), Math.ceil(json.depth / 2)],
     collision: false,
   });
@@ -452,12 +452,12 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
       {
         kind: 'ambient',
         color: '#b1c9e8',
-        intensity: 0.7,
+        intensity: 0.5,
       },
       {
         kind: 'directional',
         color: '#fff8e8',
-        intensity: 1.4,
+        intensity: 1.8,
         position: { x: json.width / 2, y: 15, z: json.depth + 5 },
         castShadow: true,
         shadowMapSize: 2048,

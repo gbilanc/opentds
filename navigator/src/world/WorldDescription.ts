@@ -24,7 +24,8 @@ export type TextureKind =
   | 'stone'
   | 'dirt'
   | 'roof'
-  | 'solid'; // solid color (no texture)
+  | 'solid'  // solid color (no texture)
+  | `real:${string}`; // PBR texture from public/textures/real/ (e.g. "real:grass", "real:wood")
 
 // ─── Object Definition ─────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ProceduralTextures } from '../utils/ProceduralTextures.js';
+import { RealTextures } from '../utils/RealTextures.js';
 import type { WorldObject, TextureKind, PrimitiveKind } from '../world/WorldDescription.js';
 
 /**
@@ -7,7 +8,7 @@ import type { WorldObject, TextureKind, PrimitiveKind } from '../world/WorldDesc
  */
 export class AssetFactory {
 
-  private textureCache = new Map<TextureKind, THREE.Texture>();
+  private textureCache = new Map<string, THREE.Texture>();
 
   /** Create a single mesh from a WorldObject description */
   createMesh(obj: WorldObject): THREE.Mesh {
@@ -46,7 +47,8 @@ export class AssetFactory {
       case 'box':
         return new THREE.BoxGeometry(s.x, s.y, s.z);
       case 'cylinder':
-        return new THREE.CylinderGeometry(s.x, s.y, s.z, 16);
+        // s.x = radius, s.y = height, s.z = radius (unused for uniform cylinder)
+        return new THREE.CylinderGeometry(s.x, s.x, s.y, 16);
       case 'sphere':
         return new THREE.SphereGeometry(s.x, 24, 16);
       case 'cone':
@@ -61,6 +63,13 @@ export class AssetFactory {
   private createMaterial(obj: WorldObject): THREE.Material {
     const texture = obj.texture ?? 'solid';
 
+    // Real PBR textures (e.g. "real:grass", "real:wood")
+    if (texture.startsWith('real:')) {
+      const name = texture.slice(5); // strip "real:" prefix
+      const repeat = obj.textureRepeat;
+      return RealTextures.createMaterial(name, obj.color, repeat as [number, number] | undefined);
+    }
+
     if (texture === 'solid') {
       const color = obj.color ?? '#808080';
       return new THREE.MeshStandardMaterial({
@@ -69,8 +78,8 @@ export class AssetFactory {
       });
     }
 
-    // Procedural texture
-    const tex = this.getTexture(texture);
+    // Procedural texture (fallback)
+    const tex = this.getProceduralTexture(texture as TextureKind);
 
     return new THREE.MeshStandardMaterial({
       map: tex,
@@ -80,7 +89,7 @@ export class AssetFactory {
     });
   }
 
-  private getTexture(kind: TextureKind): THREE.Texture {
+  private getProceduralTexture(kind: TextureKind): THREE.Texture {
     if (this.textureCache.has(kind)) {
       return this.textureCache.get(kind)!;
     }

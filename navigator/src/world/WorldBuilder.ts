@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AssetFactory } from '../engine/AssetFactory.js';
 import { ProceduralTextures } from '../utils/ProceduralTextures.js';
+import { RealTextures } from '../utils/RealTextures.js';
 import type {
   WorldDescription,
   CompositeObject,
@@ -35,6 +36,14 @@ export class WorldBuilder {
       desc.groundColor,
       desc.fogDensity ?? 0.015
     );
+
+    // Hemisphere light (sky/ground) for natural outdoor lighting
+    const hemiLight = new THREE.HemisphereLight(
+      desc.skyColor,      // sky color (top)
+      desc.groundColor,   // ground color (bottom)
+      0.5,                // intensity
+    );
+    scene.add(hemiLight);
 
     // ── Ground ─────────────────────────────────────────────
     this.buildGround(scene, desc);
@@ -95,28 +104,35 @@ export class WorldBuilder {
     const sizeX = desc.size.x;
     const sizeZ = desc.size.z;
 
-    const texKind = desc.groundTexture ?? 'grass';
-    let texture: THREE.Texture;
-    switch (texKind) {
-      case 'grass': texture = ProceduralTextures.grass(); break;
-      case 'stone': texture = ProceduralTextures.stone(); break;
-      case 'dirt':  texture = ProceduralTextures.dirt(); break;
-      default:      texture = ProceduralTextures.grass(); break;
+    const texKind = desc.groundTexture ?? 'real:grass';
+    const repeat = desc.groundTextureRepeat ?? [Math.ceil(sizeX), Math.ceil(sizeZ)];
+
+    let groundMat: THREE.MeshStandardMaterial;
+
+    if (texKind.startsWith('real:')) {
+      const name = texKind.slice(5);
+      groundMat = RealTextures.createMaterial(name, undefined, repeat as [number, number]);
+    } else {
+      // Procedural fallback
+      let texture: THREE.Texture;
+      switch (texKind) {
+        case 'grass': texture = ProceduralTextures.grass(); break;
+        case 'stone': texture = ProceduralTextures.stone(); break;
+        case 'dirt':  texture = ProceduralTextures.dirt(); break;
+        default:      texture = ProceduralTextures.grass(); break;
+      }
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(repeat[0], repeat[1]);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      groundMat = new THREE.MeshStandardMaterial({
+        map: texture,
+        roughness: 0.9,
+        metalness: 0.0,
+      });
     }
 
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    const repeat = desc.groundTextureRepeat ?? [Math.ceil(sizeX), Math.ceil(sizeZ)];
-    texture.repeat.set(repeat[0], repeat[1]);
-    texture.colorSpace = THREE.SRGBColorSpace;
-
     const groundGeo = new THREE.PlaneGeometry(sizeX, sizeZ);
-    const groundMat = new THREE.MeshStandardMaterial({
-      map: texture,
-      roughness: 0.9,
-      metalness: 0.0,
-    });
-
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2; // Lay flat
     ground.position.y = desc.groundLevel;
