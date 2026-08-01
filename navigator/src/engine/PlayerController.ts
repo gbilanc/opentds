@@ -25,12 +25,16 @@ export class PlayerController {
   // Physics
   private gravity = -9.8;
   private onGround = false;
-  private playerHeight = 1.7;
+  private readonly STANDING_HEIGHT = 1.70;
+  private readonly CROUCH_HEIGHT = 0.40;
+  private readonly CROUCH_SPEED = 4.0; // meters per second transition
+  private currentHeight = this.STANDING_HEIGHT;
+  private crouchActive = false;
   private playerRadius = 0.3;
 
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     this.camera = camera;
-    this.camera.position.set(1, this.playerHeight, 1);
+    this.camera.position.set(1, this.currentHeight, 1);
 
     this.controls = new PointerLockControls(camera, domElement);
 
@@ -98,8 +102,18 @@ export class PlayerController {
     newPosition.z += this.velocity.z * dt;
     newPosition.y += this.velocity.y * dt;
 
+    // Smooth crouch transition
+    const targetHeight = this.crouchActive ? this.CROUCH_HEIGHT : this.STANDING_HEIGHT;
+    if (Math.abs(this.currentHeight - targetHeight) > 0.001) {
+      const sign = targetHeight > this.currentHeight ? 1 : -1;
+      this.currentHeight += sign * this.CROUCH_SPEED * dt;
+      if (sign > 0 ? this.currentHeight > targetHeight : this.currentHeight < targetHeight) {
+        this.currentHeight = targetHeight;
+      }
+    }
+
     // Ground collision
-    const minY = groundHeight + this.playerHeight;
+    const minY = groundHeight + this.currentHeight;
     if (newPosition.y < minY) {
       this.velocity.y = 0;
       newPosition.y = minY;
@@ -151,13 +165,13 @@ export class PlayerController {
       box.expandByScalar(this.playerRadius);
 
       // Player point (at center of body)
-      const playerPoint = new THREE.Vector3(result.x, result.y - this.playerHeight * 0.5, result.z);
+      const playerPoint = new THREE.Vector3(result.x, result.y - this.currentHeight * 0.5, result.z);
 
       if (box.containsPoint(playerPoint)) {
         // Push player out — try to restore X and Z from old position
         const oldPlayerPoint = new THREE.Vector3(
           oldPos.x,
-          oldPos.y - this.playerHeight * 0.5,
+          oldPos.y - this.currentHeight * 0.5,
           oldPos.z
         );
 
@@ -195,6 +209,8 @@ export class PlayerController {
       case 'KeyA': case 'ArrowLeft':  this.moveLeft = true; break;
       case 'KeyD': case 'ArrowRight': this.moveRight = true; break;
       case 'Space':                    this.jump(); break;
+      case 'KeyC': case 'ControlLeft': case 'ControlRight':
+        this.crouchActive = true; break;
     }
   }
 
@@ -204,6 +220,8 @@ export class PlayerController {
       case 'KeyS': case 'ArrowDown':  this.moveBackward = false; break;
       case 'KeyA': case 'ArrowLeft':  this.moveLeft = false; break;
       case 'KeyD': case 'ArrowRight': this.moveRight = false; break;
+      case 'KeyC': case 'ControlLeft': case 'ControlRight':
+        this.crouchActive = false; break;
     }
   }
 }

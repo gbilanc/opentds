@@ -40,6 +40,7 @@ export class HUD {
         <span class="key">W A S D</span><span>Muoviti</span>
         <span class="key">Mouse</span><span>Guarda intorno</span>
         <span class="key">Spazio</span><span>Salta</span>
+        <span class="key">C / Ctrl</span><span>Abbassati (40cm)</span>
         <span class="key">E</span><span>Interagisci</span>
         <span class="key">ESC</span><span>Rilascia mouse</span>
       </div>
