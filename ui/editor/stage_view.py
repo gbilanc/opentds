@@ -1,9 +1,8 @@
 # ui/editor/stage_view.py
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCursor, QKeyEvent, QMouseEvent, QPainter, QBrush, QColor, QPen, QFont
-from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QCursor, QKeyEvent, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsView
 
 
@@ -129,10 +128,12 @@ class StageView(QGraphicsView):
 
     def mousePressEvent(self, event: QMouseEvent):
         # Misuratore distanza: Shift + Left click
-        if (event.modifiers() & Qt.KeyboardModifier.ShiftModifier
-                and event.button() == Qt.MouseButton.LeftButton
-                and not self._placing_position
-                and not self._placing_obstacle):
+        if (
+            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+            and event.button() == Qt.MouseButton.LeftButton
+            and not self._placing_position
+            and not self._placing_obstacle
+        ):
             self._measuring = True
             self._measure_start = self.mapToScene(event.pos())
             self._measure_end = self._measure_start
@@ -232,7 +233,9 @@ class StageView(QGraphicsView):
             self._rotate_selected(15)
         elif event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
             self._delete_selected()
-        elif event.key() == Qt.Key.Key_D and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+        elif (
+            event.key() == Qt.Key.Key_D and event.modifiers() == Qt.KeyboardModifier.ControlModifier
+        ):
             self._duplicate_selected()
         elif event.key() == Qt.Key.Key_Escape:
             if self._placing_position:

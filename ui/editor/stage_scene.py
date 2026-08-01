@@ -964,12 +964,14 @@ class StageItemMixin:
             self._is_dragging = True
             self.setOpacity(0.65)
             snapped = _snap_pos(value, self.scale)
-            self._collision_flag = self._would_collide_with_obstacles(snapped) or self._would_block_shooter_path(snapped)
+            self._collision_flag = self._would_collide_with_obstacles(
+                snapped
+            ) or self._would_block_shooter_path(snapped)
             if self._collision_flag:
                 return self.pos()  # Rifiuta la mossa
             # Alignment guides magnetic snap
             scene = self.scene()
-            if scene and hasattr(scene, '_compute_alignment_guides'):
+            if scene and hasattr(scene, "_compute_alignment_guides"):
                 aligned = scene._compute_alignment_guides(self, snapped)
                 if aligned is not None:
                     return aligned
@@ -979,7 +981,7 @@ class StageItemMixin:
             self._collision_flag = False
             self.setOpacity(1.0)
             scene = self.scene()
-            if scene and hasattr(scene, '_clear_alignment_guides'):
+            if scene and hasattr(scene, "_clear_alignment_guides"):
                 scene._clear_alignment_guides()
             self.wrapper.item.x = self.pos().x() / self.scale
             self.wrapper.item.y = self.pos().y() / self.scale
@@ -1003,7 +1005,7 @@ class StageItemMixin:
             return
         scene: "StageScene" = self.scene()
         has_violation = scene.has_violation(self.wrapper.item.id)
-        has_collision = getattr(self, '_collision_flag', False)
+        has_collision = getattr(self, "_collision_flag", False)
         if not has_violation and not has_collision:
             return
         painter.save()
@@ -1106,10 +1108,19 @@ class StageItemMixin:
                 dist_str = f"\nDistanza da start: {dist:.2f} m"
         scoring_str = ""
         if it.item_type in self._TARGET_TYPES:
-            hits = 2 if it.item_type in (
-                ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-                ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
-            ) else 1
+            hits = (
+                2
+                if it.item_type
+                in (
+                    ItemType.PAPER_TARGET,
+                    ItemType.MINI_TARGET,
+                    ItemType.MICRO_TARGET,
+                    ItemType.SWINGER,
+                    ItemType.DROP_TURNER,
+                    ItemType.MOVER,
+                )
+                else 1
+            )
             scoring_str = f"\nColpi: {hits}"
         self.setToolTip(
             f"{type_name}: {it.label or '—'}\n"
@@ -1813,7 +1824,9 @@ class RemoveItemCommand(QUndoCommand):
 class DuplicateItemsCommand(QUndoCommand):
     """Clona gli item selezionati con offset di 0.5m in X e Y."""
 
-    def __init__(self, scene: "StageScene", items: list[StageItem], description: str = "Duplica oggetti"):
+    def __init__(
+        self, scene: "StageScene", items: list[StageItem], description: str = "Duplica oggetti"
+    ):
         super().__init__(description)
         self.scene = scene
         self._originals = items
@@ -1827,6 +1840,7 @@ class DuplicateItemsCommand(QUndoCommand):
                 self.scene._do_add_graphics_item(clone)
         else:
             import copy
+
             for item in self._originals:
                 clone = copy.deepcopy(item)
                 clone.id = 0  # will be auto-assigned
@@ -2070,9 +2084,7 @@ class StageScene(QGraphicsScene):
 
     _ALIGN_THRESHOLD_PX = 6.0  # soglia snap magnetico in pixel
 
-    def _compute_alignment_guides(
-        self, moving_item, candidate_pos: QPointF
-    ) -> QPointF | None:
+    def _compute_alignment_guides(self, moving_item, candidate_pos: QPointF) -> QPointF | None:
         """Calcola guide di allineamento e snap magnetico.
 
         Restituisce la posizione aggiustata se c'è allineamento,
@@ -2080,7 +2092,7 @@ class StageScene(QGraphicsScene):
         """
         self._guide_lines = []
         threshold = self._ALIGN_THRESHOLD_PX
-        scale = self.scale
+        self.scale
 
         moving_br = moving_item.boundingRect()
         moving_w = moving_br.width()
@@ -2125,9 +2137,12 @@ class StageScene(QGraphicsScene):
                     best_x = candidate_pos.x() - (m_edge - o_edge)
                     snapped_x = True
                     self._guide_lines.append(
-                        (QPointF(o_edge, min(m_top, o_top) - 20),
-                         QPointF(o_edge, max(m_bottom, o_bottom) + 20),
-                         "#3b82f6", kind)
+                        (
+                            QPointF(o_edge, min(m_top, o_top) - 20),
+                            QPointF(o_edge, max(m_bottom, o_bottom) + 20),
+                            "#3b82f6",
+                            kind,
+                        )
                     )
 
             # ── Allineamenti verticali ──
@@ -2143,9 +2158,12 @@ class StageScene(QGraphicsScene):
                     best_y = candidate_pos.y() - (m_edge - o_edge)
                     snapped_y = True
                     self._guide_lines.append(
-                        (QPointF(min(m_left, o_left) - 20, o_edge),
-                         QPointF(max(m_right, o_right) + 20, o_edge),
-                         "#3b82f6", kind)
+                        (
+                            QPointF(min(m_left, o_left) - 20, o_edge),
+                            QPointF(max(m_right, o_right) + 20, o_edge),
+                            "#3b82f6",
+                            kind,
+                        )
                     )
 
         if snapped_x or snapped_y:
@@ -2162,7 +2180,7 @@ class StageScene(QGraphicsScene):
         super().drawForeground(painter, rect)
 
         # ── Guide di allineamento ──
-        guide_lines = getattr(self, '_guide_lines', [])
+        guide_lines = getattr(self, "_guide_lines", [])
         if guide_lines:
             painter.save()
             guide_pen = QPen(QColor("#3b82f6"), 1, Qt.PenStyle.DashLine)
@@ -2274,11 +2292,12 @@ class StageScene(QGraphicsScene):
 
     def _sync_selection_to_navigator(self, item_id: int):
         """Scrive l'ID dell'item selezionato in un file JSON per il navigator 3D."""
-        import json, os
+        import json
+        import os
+
         try:
             dist_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "navigator", "dist"
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "navigator", "dist"
             )
             sel_path = os.path.join(dist_dir, "selection.json")
             data = {"selected_id": item_id, "timestamp": __import__("time").time()}
@@ -2316,7 +2335,9 @@ class StageScene(QGraphicsScene):
 
         for sp in self.stage.shooting_positions:
             zone = EngagementAreaItem(
-                sp.x, sp.y, self.scale,
+                sp.x,
+                sp.y,
+                self.scale,
                 angle=sp.angle,
                 range_m=range_m,
                 obstacles=obstacles,

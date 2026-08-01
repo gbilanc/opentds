@@ -26,9 +26,7 @@ def _find_free_port(start: int = 8080, max_attempts: int = 20) -> int:
                 return port
             except OSError:
                 continue
-    raise RuntimeError(
-        f"Nessuna porta libera trovata tra {start} e {start + max_attempts}"
-    )
+    raise RuntimeError(f"Nessuna porta libera trovata tra {start} e {start + max_attempts}")
 
 
 class NavigatorServer:

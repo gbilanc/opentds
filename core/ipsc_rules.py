@@ -217,8 +217,7 @@ class IPSCRulesEngine:
 
         if total_scoring > 0 and steel / total_scoring > self.MAX_STEEL_PCT:
             v.append(
-                f"Troppi bersagli steel: {steel}/{total_scoring} "
-                f"(max {self.MAX_STEEL_PCT:.0%})"
+                f"Troppi bersagli steel: {steel}/{total_scoring} (max {self.MAX_STEEL_PCT:.0%})"
             )
 
         # No-shoot consigliati
@@ -519,7 +518,12 @@ class IPSCRulesEngine:
         """
         v = []
         from core.scoring import is_paper_like, is_steel_like
-        targets = [it for it in self.stage.items if is_paper_like(it.item_type) or is_steel_like(it.item_type)]
+
+        targets = [
+            it
+            for it in self.stage.items
+            if is_paper_like(it.item_type) or is_steel_like(it.item_type)
+        ]
         if not targets:
             return v
 
@@ -585,9 +589,11 @@ class IPSCRulesEngine:
         """
         v = []
         # Tutti i bersagli rilevanti: scoring + no-shoot
-        from core.scoring import is_scoring_target, is_composite
+        from core.scoring import is_scoring_target
+
         targets = [
-            it for it in self.stage.items
+            it
+            for it in self.stage.items
             if is_scoring_target(it.item_type) or it.item_type == ItemType.NO_SHOOT
         ]
         if not targets:
@@ -646,7 +652,7 @@ class IPSCRulesEngine:
 
         # Calcola il numero di colpi richiesti dallo stage
         total_rounds = 0
-        from core.scoring import is_paper_like, is_steel_like, is_scoring_target
+        from core.scoring import is_paper_like, is_scoring_target, is_steel_like
 
         for it in self.stage.items:
             if is_paper_like(it.item_type):
@@ -662,11 +668,7 @@ class IPSCRulesEngine:
 
         # Medium/Long: non tutti i bersagli ingaggiabili da una posizione
         if ct in ("medium", "long"):
-            targets = [
-                it
-                for it in self.stage.items
-                if is_scoring_target(it.item_type)
-            ]
+            targets = [it for it in self.stage.items if is_scoring_target(it.item_type)]
             if targets:
                 walls = [
                     it

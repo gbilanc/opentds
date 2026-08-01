@@ -1,6 +1,8 @@
 # ui/main_window.py
 from __future__ import annotations
 
+import json
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot
@@ -18,9 +20,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-import json
-import webbrowser
 
 from core.generator import Phase1Config
 from core.models import ItemType, Stage
@@ -815,7 +814,9 @@ class MainWindow(QMainWindow):
                 self._sync_shooting_positions()
 
             self._gen_panel.add_shooting_position(
-                x, y, is_start,
+                x,
+                y,
+                is_start,
                 on_delete_clicked=_on_pos_deleted,
                 on_renumbered=_renumber_markers,
             )
@@ -852,7 +853,8 @@ class MainWindow(QMainWindow):
                         continue
 
             self._scene.add_shooting_position_marker(
-                x, y,
+                x,
+                y,
                 is_start=is_start,
                 index=index,
                 on_changed=_on_pos_changed,
