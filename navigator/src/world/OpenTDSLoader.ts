@@ -285,26 +285,38 @@ function buildMetalTarget(item: OpenTDSItem): WorldObject[] {
   ];
 }
 
-/** Build a doublet (two targets side by side or overlapping) */
+/** Build a doublet (two targets side by side or overlapping vertically) */
 function buildDoublet(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[] {
+  if (mode === 'overlap') {
+    // Vertical overlap: targets offset by ±10cm in world Y (20cm total)
+    const results: WorldObject[] = [];
+    const offsets = [-0.10, 0.10]; // bottom, top
+    for (let i = 0; i < 2; i++) {
+      const objs = buildTarget({
+        ...item,
+        id: item.id * 100 + i,
+        x: item.x, y: item.y,
+        label: `${item.label || 'Paper'} ${i + 1}`,
+      });
+      for (const obj of objs) {
+        obj.position.y += offsets[i];
+      }
+      results.push(...objs);
+    }
+    return results;
+  }
+
+  // Side by side: offset perpendicular to rotation
+  const spacing = 0.3;
+  const perpAngle = (item.rotation + 90) * Math.PI / 180;
   const results: WorldObject[] = [];
-  const spacing = mode === 'side' ? 0.3 : 0.05;
-  // side: offset perpendicular to rotation (lateral)
-  // overlap: offset along rotation (depth)
-  const offsetAngle = mode === 'side'
-    ? (item.rotation + 90) * Math.PI / 180
-    : item.rotation * Math.PI / 180;
-
   for (let i = 0; i < 2; i++) {
-    const offsetX = (i - 0.5) * spacing;
-    const dx = offsetX * Math.cos(offsetAngle);
-    const dz = offsetX * Math.sin(offsetAngle);
-
+    const dist = (i - 0.5) * spacing;
     results.push(...buildTarget({
       ...item,
       id: item.id * 100 + i,
-      x: item.x + dx,
-      y: item.y + dz,
+      x: item.x + dist * Math.cos(perpAngle),
+      y: item.y + dist * Math.sin(perpAngle),
       label: `${item.label || 'Paper'} ${i + 1}`,
     }));
   }
@@ -313,28 +325,38 @@ function buildDoublet(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[
 
 /** Build two targets with a no-shoot in between */
 function buildDoubletWithHostage(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[] {
+  if (mode === 'overlap') {
+    // Vertical overlap with no-shoot at center (no Y offset)
+    const results: WorldObject[] = [];
+    const offsets = [-0.10, 0.10];
+    for (let i = 0; i < 2; i++) {
+      const objs = buildTarget({
+        ...item,
+        id: item.id * 100 + i,
+        x: item.x, y: item.y,
+        label: `${item.label || 'Paper'} ${i + 1}`,
+      });
+      for (const obj of objs) obj.position.y += offsets[i];
+      results.push(...objs);
+    }
+    results.push(...buildTarget({ ...item, id: item.id * 100 + 99, type: 'NO_SHOOT', label: 'No-Shoot' }));
+    return results;
+  }
+
+  // Side by side with no-shoot in the middle
+  const spacing = 0.3;
+  const perpAngle = (item.rotation + 90) * Math.PI / 180;
   const results: WorldObject[] = [];
-  const spacing = mode === 'side' ? 0.3 : 0.05;
-  const rad = (item.rotation * Math.PI) / 180;
-
-  // No-shoot in the middle
-  results.push(...buildTarget({
-    ...item,
-    id: item.id * 100 + 99,
-    type: 'NO_SHOOT',
-    label: 'No-Shoot',
-  }));
-
+  // No-shoot at center
+  results.push(...buildTarget({ ...item, id: item.id * 100 + 99, type: 'NO_SHOOT', label: 'No-Shoot' }));
   // Two papers on sides
   for (let i = 0; i < 2; i++) {
-    const offsetX = (i - 0.5) * spacing * 2;
-    const dx = offsetX * Math.cos(rad);
-    const dz = offsetX * Math.sin(rad);
+    const dist = (i - 0.5) * spacing;
     results.push(...buildTarget({
       ...item,
       id: item.id * 100 + i,
-      x: item.x + dx,
-      y: item.y + dz,
+      x: item.x + dist * Math.cos(perpAngle),
+      y: item.y + dist * Math.sin(perpAngle),
       label: `${item.label || 'Paper'} ${i + 1}`,
     }));
   }
