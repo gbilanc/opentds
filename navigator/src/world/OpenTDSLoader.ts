@@ -38,8 +38,13 @@ interface OpenTDSStage {
 
 // ─── Mapping ────────────────────────────────────────────────
 
+/** Compute angle from point to area center (degrees, 0=+X) */
+function autoFaceAngle(x: number, y: number, center: {x: number; z: number}): number {
+  return Math.atan2(center.z - y, center.x - x) * 180 / Math.PI;
+}
+
 /** Convert OpenTDS item to one or more WorldObjects */
-function itemToObjects(item: OpenTDSItem): WorldObject[] {
+function itemToObjects(item: OpenTDSItem, areaCenter: {x: number; z: number}): WorldObject[] {
   const base: Pick<WorldObject, 'position' | 'rotation' | 'collision'> = {
     position: { x: item.x, y: 0, z: item.y },
     rotation: { x: 0, y: item.rotation, z: 0 },
@@ -132,36 +137,48 @@ function itemToObjects(item: OpenTDSItem): WorldObject[] {
     case 'MINI_TARGET':
     case 'MICRO_TARGET':
     case 'NO_SHOOT':
-      return buildTarget(item);
+      return buildTarget({
+        ...item,
+        rotation: autoFaceAngle(item.x, item.y, areaCenter),
+      });
 
     case 'STEEL_TARGET':
     case 'POPPER':
-      return buildSteelTarget(item);
+      return buildSteelTarget({
+        ...item,
+        rotation: autoFaceAngle(item.x, item.y, areaCenter),
+      });
 
     case 'METAL_PLATE':
-      return buildMetalTarget(item);
+      return buildMetalTarget({
+        ...item,
+        rotation: autoFaceAngle(item.x, item.y, areaCenter),
+      });
 
     // ── Mobile targets: represent as static for now ─────────
     case 'SWINGER':
     case 'DROP_TURNER':
     case 'MOVER':
-      return buildTarget(item);
+      return buildTarget({
+        ...item,
+        rotation: autoFaceAngle(item.x, item.y, areaCenter),
+      });
 
     // ── Composite targets ───────────────────────────────────
     case 'DOUBLET_SIDE':
-      return buildDoublet(item, 'side');
+      return buildDoublet({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) }, 'side');
     case 'DOUBLET_OVERLAP':
-      return buildDoublet(item, 'overlap');
+      return buildDoublet({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) }, 'overlap');
     case 'DOUBLET_SIDE_HOSTAGE':
-      return buildDoubletWithHostage(item, 'side');
+      return buildDoubletWithHostage({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) }, 'side');
     case 'DOUBLET_OVERLAP_HOSTAGE':
-      return buildDoubletWithHostage(item, 'overlap');
+      return buildDoubletWithHostage({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) }, 'overlap');
     case 'BOBBER_PLATE':
-      return buildSteelTarget(item);
+      return buildSteelTarget({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) });
     case 'DOUBLE_BOBBER':
-      return buildSteelTarget(item);
+      return buildSteelTarget({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) });
     case 'TARGET_PLUS_NOSHOOT':
-      return buildTargetWithNoShoot(item);
+      return buildTargetWithNoShoot({ ...item, rotation: autoFaceAngle(item.x, item.y, areaCenter) });
 
     default:
       console.warn(`Unknown item type: ${item.type}`);
@@ -493,9 +510,27 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
   const objects: WorldObject[] = [];
   const composites: CompositeObject[] = [];
 
-  // ── Items ─────────────────────────────────────────────────
+  // ── Layout constants (needed early for polygon and area center) ──
+  const margin = 6;
+  const stageOffsetX = margin;
+  const stageOffsetZ = margin;
+  const worldWidth = json.width + margin * 2;
+  const worldDepth = json.depth + margin * 2;
+  const halfW = worldWidth / 2;
+  const halfD = worldDepth / 2;
+
+  // ── Shooting area polygon & center (for containment + auto-facing) ──
+  const shootingAreaPolygon = buildShootingAreaPolygon(json, stageOffsetX, stageOffsetZ);
+  let areaCenter = { x: stageOffsetX + json.width / 2, z: stageOffsetZ + json.depth / 2 };
+  if (shootingAreaPolygon && shootingAreaPolygon.length >= 3) {
+    let cx = 0, cz = 0;
+    for (const v of shootingAreaPolygon) { cx += v.x; cz += v.z; }
+    areaCenter = { x: cx / shootingAreaPolygon.length, z: cz / shootingAreaPolygon.length };
+  }
+
+  // ── Items (targets auto-face the area center) ────────────
   for (const item of json.items) {
-    objects.push(...itemToObjects(item));
+    objects.push(...itemToObjects(item, areaCenter));
   }
 
   // ── Shooting positions ────────────────────────────────────
@@ -503,18 +538,7 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
     objects.push(...buildShootingPosition(sp));
   }
 
-  // ── Ground border (terrain extension beyond the stage) ────
-  const margin = 6; // meters of extra terrain around the stage
-  const worldWidth = json.width + margin * 2;
-  const worldDepth = json.depth + margin * 2;
-  const halfW = worldWidth / 2;
-  const halfD = worldDepth / 2;
-
-  // ── Shooting area overlay (lighter rectangle on the ground) ──
-  // Offset so the stage area is centered in the world
-  const stageOffsetX = margin;
-  const stageOffsetZ = margin;
-
+  // ── Shooting area overlay ─────────────────────────────────
   objects.push({
     id: 'shooting-area',
     kind: 'plane',
@@ -532,9 +556,9 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
     obj.position.z += stageOffsetZ;
   }
 
-  // ── Boundary walls (around world perimeter) ───────────────
-  const bw = 0.2; // thickness
-  const bh = 3.0; // height
+  // ── Boundary walls ────────────────────────────────────────
+  const bw = 0.2;
+  const bh = 3.0;
   objects.push(
     { id: 'boundary-n', kind: 'box', position: { x: halfW, y: bh / 2, z: 0 }, scale: { x: worldWidth, y: bh, z: bw }, color: '#5a5a5a', texture: 'stone', collision: true },
     { id: 'boundary-s', kind: 'box', position: { x: halfW, y: bh / 2, z: worldDepth }, scale: { x: worldWidth, y: bh, z: bw }, color: '#5a5a5a', texture: 'stone', collision: true },
@@ -546,14 +570,8 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
   const playerSpawnPos = json.shooting_positions.find(sp => sp.is_start) ?? json.shooting_positions[0];
   const spawnX = (playerSpawnPos?.x ?? json.width / 2) + stageOffsetX;
   const spawnZ = (playerSpawnPos?.y ?? json.depth / 2) + stageOffsetZ;
-
-  // Convert 2D angle (0°=+X, 90°=+Y/down-range) to Three.js yaw
-  // Default camera forward is -Z; yaw rotates it: -Z + yaw → look direction
   const spawnAngle = playerSpawnPos?.angle ?? 0;
   const playerYaw = -(spawnAngle + 90);
-
-  // ── Shooting area polygon (for player containment) ──────
-  const shootingAreaPolygon = buildShootingAreaPolygon(json, stageOffsetX, stageOffsetZ);
 
   return {
     name: json.name || 'Stage IPSC',
