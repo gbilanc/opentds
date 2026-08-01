@@ -56,7 +56,7 @@ export class PlayerController {
     document.addEventListener('keyup', (e) => this.onKeyUp(e));
   }
 
-  update(deltaTime: number, groundHeight: number, collisionMeshes: THREE.Object3D[]): void {
+  update(deltaTime: number, groundHeight: number, collisionMeshes: THREE.Object3D[], shootingArea?: Array<{x: number; z: number}>): void {
     if (!this.controls.isLocked) return;
 
     // Clamp delta to avoid huge jumps on tab-away
@@ -125,7 +125,35 @@ export class PlayerController {
     // Obstacle collision (simple AABB + cylinder)
     const adjustedPosition = this.resolveCollisions(oldPosition, newPosition, collisionMeshes);
 
+    // Shooting area containment (2D polygon)
+    if (shootingArea && shootingArea.length >= 3) {
+      const inside = this.isInsidePolygon(adjustedPosition.x, adjustedPosition.z, shootingArea);
+      if (!inside) {
+        // Push back to old position if outside
+        if (this.isInsidePolygon(oldPosition.x, oldPosition.z, shootingArea)) {
+          adjustedPosition.x = oldPosition.x;
+          adjustedPosition.z = oldPosition.z;
+          this.velocity.x = 0;
+          this.velocity.z = 0;
+        }
+      }
+    }
+
     this.camera.position.copy(adjustedPosition);
+  }
+
+  /** Point-in-polygon test (ray casting algorithm) */
+  private isInsidePolygon(x: number, z: number, polygon: Array<{x: number; z: number}>): boolean {
+    let inside = false;
+    const n = polygon.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = polygon[i].x, zi = polygon[i].z;
+      const xj = polygon[j].x, zj = polygon[j].z;
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) {
+        inside = !inside;
+      }
+    }
+    return inside;
   }
 
   jump(): void {

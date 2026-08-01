@@ -100,6 +100,7 @@ export class SceneManager {
       delta,
       this.world.groundHeight,
       this.world.collisionObjects,
+      this.world.shootingAreaPolygon,
     );
 
     // Check interaction target

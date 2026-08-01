@@ -16,6 +16,8 @@ export interface BuiltWorld {
   spawnPosition: THREE.Vector3;
   /** Initial yaw in degrees (0 = look -Z, 90 = look -X) */
   playerYaw: number;
+  /** Vertices of the shooting area polygon for player containment */
+  shootingAreaPolygon?: Array<{x: number; z: number}>;
 }
 
 /**
@@ -97,6 +99,7 @@ export class WorldBuilder {
         desc.playerSpawn.z
       ),
       playerYaw: desc.playerYaw ?? 0,
+      shootingAreaPolygon: desc.shootingAreaPolygon,
     };
   }
 

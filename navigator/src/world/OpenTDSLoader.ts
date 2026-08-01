@@ -121,8 +121,8 @@ function itemToObjects(item: OpenTDSItem): WorldObject[] {
         position: { x: item.x, y: 0.0025, z: item.y },
         rotation: { x: 0, y: item.rotation, z: 0 },
         color: isPerimeter ? '#b91c1c' : '#dc2626',
-        texture: 'solid',
-        collision: isPerimeter,  // only perimeter lines block movement
+        texture: 'solid' as const,
+        collision: false,  // perimeter is enforced via 2D polygon containment
         interactable: false,
       }];
     }
@@ -371,7 +371,82 @@ function buildTargetWithNoShoot(item: OpenTDSItem): WorldObject[] {
   ];
 }
 
-/** Build shooting position markers */
+/** Build the shooting area polygon from perimeter fault lines */
+function buildShootingAreaPolygon(
+  json: OpenTDSStage,
+  offsetX: number,
+  offsetZ: number
+): Array<{x: number; z: number}> | undefined {
+  // Use pre-computed perimeter_poly if available
+  const poly = json.properties?.perimeter_poly as [number, number][] | undefined;
+  if (poly && poly.length >= 3) {
+    return poly.map(([x, y]) => ({ x: x + offsetX, z: y + offsetZ }));
+  }
+
+  // Reconstruct from perimeter fault lines
+  const faultLines = json.items.filter(
+    it => it.type === 'FAULT_LINE' && it.properties?.perimeter === true
+  );
+  if (faultLines.length < 3) return undefined;
+
+  // Compute endpoints of each segment
+  const segments: Array<{p1: [number, number]; p2: [number, number]}> = [];
+  for (const fl of faultLines) {
+    const rad = (fl.rotation * Math.PI) / 180;
+    const half = fl.width / 2;
+    const dx = Math.cos(rad) * half;
+    const dy = Math.sin(rad) * half;
+    segments.push({
+      p1: [fl.x - dx + offsetX, fl.y - dy + offsetZ],
+      p2: [fl.x + dx + offsetX, fl.y + dy + offsetZ],
+    });
+  }
+
+  // Chain segments into polygon
+  const used = new Set<number>();
+  const chain: Array<{x: number; z: number}> = [];
+  let [x, y] = segments[0].p1;
+  chain.push({ x, z: y });
+  [x, y] = segments[0].p2;
+  chain.push({ x, z: y });
+  used.add(0);
+
+  while (used.size < segments.length) {
+    const last = chain[chain.length - 1];
+    let found = false;
+    for (let i = 0; i < segments.length; i++) {
+      if (used.has(i)) continue;
+      const s = segments[i];
+      const d1 = Math.hypot(s.p1[0] - last.x, s.p1[1] - last.z);
+      const d2 = Math.hypot(s.p2[0] - last.x, s.p2[1] - last.z);
+      if (d1 < 0.15) {
+        chain.push({ x: s.p1[0], z: s.p1[1] });
+        chain.push({ x: s.p2[0], z: s.p2[1] });
+        used.add(i);
+        found = true;
+        break;
+      } else if (d2 < 0.15) {
+        chain.push({ x: s.p2[0], z: s.p2[1] });
+        chain.push({ x: s.p1[0], z: s.p1[1] });
+        used.add(i);
+        found = true;
+        break;
+      }
+    }
+    if (!found) break;
+  }
+
+  // Close: remove last point if it matches first
+  if (chain.length >= 3) {
+    const first = chain[0];
+    const last = chain[chain.length - 1];
+    if (Math.hypot(last.x - first.x, last.z - first.z) < 0.15) {
+      chain.pop();
+    }
+  }
+
+  return chain.length >= 3 ? chain : undefined;
+}
 function buildShootingPosition(sp: OpenTDSShootingPosition): WorldObject[] {
   const rad = (sp.angle * Math.PI) / 180;
   const arrowLen = 0.5;
@@ -477,6 +552,9 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
   const spawnAngle = playerSpawnPos?.angle ?? 0;
   const playerYaw = -(spawnAngle + 90);
 
+  // ── Shooting area polygon (for player containment) ──────
+  const shootingAreaPolygon = buildShootingAreaPolygon(json, stageOffsetX, stageOffsetZ);
+
   return {
     name: json.name || 'Stage IPSC',
     size: { x: worldWidth, y: 1, z: worldDepth },
@@ -490,6 +568,7 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
     playerYaw,
     objects,
     composites,
+    shootingAreaPolygon,
     lights: [
       {
         kind: 'ambient',

@@ -113,4 +113,6 @@ export interface WorldDescription {
   composites: CompositeObject[];
   /** Lights */
   lights: WorldLight[];
+  /** Shooting area polygon vertices [x, z] for player containment */
+  shootingAreaPolygon?: Array<{x: number; z: number}>;
 }
