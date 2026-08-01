@@ -197,34 +197,37 @@ class IPSCRulesEngine:
         return v
 
     def _validate_target_counts(self) -> List[str]:
-        """Verifica conteggi bersagli secondo regole IPSC."""
+        """Verifica conteggi bersagli secondo regole IPSC.
+
+        I bersagli compositi (DOUBLET_*, BOBBER_*, ecc.) vengono risolti
+        nei loro sub-target. Es: DOUBLET_SIDE conta come 2 paper, non 1.
+        """
         v: List[str] = []
 
-        from core.scoring import is_paper_like, is_steel_like
-
-        paper = [it for it in self.stage.items if is_paper_like(it.item_type)]
-        steel = [it for it in self.stage.items if is_steel_like(it.item_type)]
-        no_shoots = [it for it in self.stage.items if it.item_type == ItemType.NO_SHOOT]
-        total_scoring = len(paper) + len(steel)
+        counts = self.count_targets()
+        paper = counts["paper"]
+        steel = counts["steel"]
+        no_shoots = counts["no_shoots"]
+        total_scoring = counts["total_scoring"]
 
         if total_scoring < self.MIN_TARGETS:
             v.append(f"Bersagli insufficienti: {total_scoring} (min {self.MIN_TARGETS})")
         if total_scoring > self.MAX_TARGETS:
             v.append(f"Troppi bersagli: {total_scoring} (max {self.MAX_TARGETS})")
 
-        if len(paper) > 0 and len(steel) / total_scoring > self.MAX_STEEL_PCT:
+        if total_scoring > 0 and steel / total_scoring > self.MAX_STEEL_PCT:
             v.append(
-                f"Troppi bersagli steel: {len(steel)}/{total_scoring} "
+                f"Troppi bersagli steel: {steel}/{total_scoring} "
                 f"(max {self.MAX_STEEL_PCT:.0%})"
             )
 
         # No-shoot consigliati
-        if len(paper) >= self.RECOMMENDED_NO_SHOOT_INTERVAL:
-            expected_ns = max(1, len(paper) // self.RECOMMENDED_NO_SHOOT_INTERVAL)
-            if len(no_shoots) < expected_ns:
+        if paper >= self.RECOMMENDED_NO_SHOOT_INTERVAL:
+            expected_ns = max(1, paper // self.RECOMMENDED_NO_SHOOT_INTERVAL)
+            if no_shoots < expected_ns:
                 v.append(
-                    f"No-shoot insufficienti: {len(no_shoots)} "
-                    f"(consigliati almeno {expected_ns} per {len(paper)} paper)"
+                    f"No-shoot insufficienti: {no_shoots} "
+                    f"(consigliati almeno {expected_ns} per {paper} paper)"
                 )
 
         return v
@@ -1109,12 +1112,12 @@ class IPSCRulesEngine:
                             no_shoots += 1
             elif is_paper_like(it.item_type):
                 paper += 1
+                if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
+                    moving += 1
             elif is_steel_like(it.item_type):
                 steel += 1
             elif it.item_type == ItemType.NO_SHOOT:
                 no_shoots += 1
-            elif it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
-                moving += 1
 
         return {
             "paper": paper,
