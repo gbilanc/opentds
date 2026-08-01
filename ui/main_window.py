@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QStatusBar,
+    QTabWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -90,30 +91,32 @@ class MainWindow(QMainWindow):
         self._panel_2d = panel_2d
         self._ui_layout.addWidget(self._panel_2d)
 
-        # Info dock (sinistra)
+        # Info dock (sinistra) — con QTabWidget per etichette sempre visibili
         self._info_panel = StageInfoPanel()
-        self._info_dock = QDockWidget("Info Stage", self)
-        self._info_dock.setWidget(self._info_panel)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._info_dock)
-
-        # Property dock (destra)
-        self._prop_dock = PropertyDock(self)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._prop_dock)
-
-        # Generator dock (raggruppato con info a sinistra)
         self._gen_panel = GeneratorPanel(self)
         self._gen_panel.scene_ref = self._scene  # per Fase 3
-        self._gen_dock = QDockWidget("Generazione", self)
-        self._gen_dock.setWidget(self._gen_panel)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._gen_dock)
-        self.tabifyDockWidget(self._info_dock, self._gen_dock)
 
-        # Path editor dock (raggruppato con property a destra)
+        left_tabs = QTabWidget()
+        left_tabs.setTabPosition(QTabWidget.TabPosition.North)
+        left_tabs.addTab(self._info_panel, "Info Stage")
+        left_tabs.addTab(self._gen_panel, "Generazione")
+
+        self._info_dock = QDockWidget("Info Stage", self)
+        self._info_dock.setWidget(left_tabs)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._info_dock)
+
+        # Property dock + Path editor (destra) — con QTabWidget per etichette sempre visibili
+        self._prop_dock_widget = PropertyDock(self)
         self._path_panel = PathEditorPanel(self)
-        self._path_dock = QDockWidget("Percorso di Tiro", self)
-        self._path_dock.setWidget(self._path_panel)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._path_dock)
-        self.tabifyDockWidget(self._prop_dock, self._path_dock)
+
+        right_tabs = QTabWidget()
+        right_tabs.setTabPosition(QTabWidget.TabPosition.North)
+        right_tabs.addTab(self._prop_dock_widget, "Proprietà")
+        right_tabs.addTab(self._path_panel, "Percorso di Tiro")
+
+        self._prop_dock = QDockWidget("Proprietà", self)
+        self._prop_dock.setWidget(right_tabs)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._prop_dock)
 
     def _setup_toolbar(self):
         toolbar = QToolBar("Strumenti")
@@ -347,10 +350,10 @@ class MainWindow(QMainWindow):
         self._scene.itemAdded.connect(self._on_item_added)
         self._scene.itemUpdated.connect(self._on_item_updated)
         self._scene.itemRemoved.connect(self._on_item_removed)
-        self._scene.selectionChangedWrapper.connect(self._prop_dock.set_item)
-        self._scene.markerSelected.connect(self._prop_dock.set_marker)
-        self._prop_dock.propertyChanged.connect(self._on_property_changed)
-        self._prop_dock.markerChanged.connect(self._on_marker_changed)
+        self._scene.selectionChangedWrapper.connect(self._prop_dock_widget.set_item)
+        self._scene.markerSelected.connect(self._prop_dock_widget.set_marker)
+        self._prop_dock_widget.propertyChanged.connect(self._on_property_changed)
+        self._prop_dock_widget.markerChanged.connect(self._on_marker_changed)
         self._gen_panel.phase1Requested.connect(self._on_phase1_requested)
         self._gen_panel.phase1PreviewChanged.connect(self._on_phase1_preview)
         self._view.shootingPositionPlaced.connect(self._on_shooting_position_placed)
@@ -370,15 +373,15 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def _on_item_updated(self, item_id: int):
-        wrapper = self._prop_dock._wrapper
+        wrapper = self._prop_dock_widget._wrapper
         if wrapper and wrapper.item.id == item_id:
-            self._prop_dock.set_item(wrapper)
+            self._prop_dock_widget.set_item(wrapper)
 
     @Slot(int)
     def _on_item_removed(self, item_id: int):
-        wrapper = self._prop_dock._wrapper
+        wrapper = self._prop_dock_widget._wrapper
         if wrapper and wrapper.item.id == item_id:
-            self._prop_dock.set_item(None)
+            self._prop_dock_widget.set_item(None)
 
     @Slot(int, dict)
     def _on_property_changed(self, item_id: int, props: dict):
@@ -387,7 +390,7 @@ class MainWindow(QMainWindow):
     @Slot(dict)
     def _on_marker_changed(self, props: dict):
         """Aggiorna un marker sulla scena quando l'utente modifica le proprietà nel dock."""
-        dock = self._prop_dock
+        dock = self._prop_dock_widget
         marker = getattr(dock, "_marker_ref", None)
         if marker is None:
             return
@@ -1124,7 +1127,7 @@ class MainWindow(QMainWindow):
         self._scene._sync_from_model()
         self._scene._update_shooting_area()
         self._view.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        self._prop_dock.set_item(None)
+        self._prop_dock_widget.set_item(None)
         self._refresh_info()
         # ── Prepara wizard e marker per editing (solo se caricamento esterno) ──
         if new_stage is not self._stage:
