@@ -515,12 +515,8 @@ class IPSCRulesEngine:
         e con linea di vista non ostruita da muri/barriere.
         """
         v = []
-        _SCORING = (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
-            ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
-        )
-        targets = [it for it in self.stage.items if it.item_type in _SCORING]
+        from core.scoring import is_paper_like, is_steel_like
+        targets = [it for it in self.stage.items if is_paper_like(it.item_type) or is_steel_like(it.item_type)]
         if not targets:
             return v
 
@@ -585,16 +581,12 @@ class IPSCRulesEngine:
         definita, assume direzione verso il parapalle (90° = +Y).
         """
         v = []
-        # Tutti i tipi di bersaglio rilevanti per gli angoli di sicurezza
-        _SCORING_TYPES = (
-            ItemType.PAPER_TARGET, ItemType.STEEL_TARGET, ItemType.POPPER,
-            ItemType.METAL_PLATE, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
-            ItemType.NO_SHOOT, ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-            ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
-            ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER, ItemType.TARGET_PLUS_NOSHOOT,
-        )
-        targets = [it for it in self.stage.items if it.item_type in _SCORING_TYPES]
+        # Tutti i bersagli rilevanti: scoring + no-shoot
+        from core.scoring import is_scoring_target, is_composite
+        targets = [
+            it for it in self.stage.items
+            if is_scoring_target(it.item_type) or it.item_type == ItemType.NO_SHOOT
+        ]
         if not targets:
             return v
 
@@ -651,22 +643,12 @@ class IPSCRulesEngine:
 
         # Calcola il numero di colpi richiesti dallo stage
         total_rounds = 0
-        paper_like = (
-            ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
-            ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
-            ItemType.DOUBLET_SIDE, ItemType.DOUBLET_OVERLAP,
-            ItemType.DOUBLET_SIDE_HOSTAGE, ItemType.DOUBLET_OVERLAP_HOSTAGE,
-            ItemType.TARGET_PLUS_NOSHOOT,
-        )
-        steel_like = (
-            ItemType.STEEL_TARGET, ItemType.POPPER, ItemType.METAL_PLATE,
-            ItemType.BOBBER_PLATE, ItemType.DOUBLE_BOBBER,
-        )
+        from core.scoring import is_paper_like, is_steel_like, is_scoring_target
 
         for it in self.stage.items:
-            if it.item_type in paper_like:
+            if is_paper_like(it.item_type):
                 total_rounds += 2
-            elif it.item_type in steel_like:
+            elif is_steel_like(it.item_type):
                 total_rounds += 1
 
         if total_rounds > max_rounds:
@@ -680,7 +662,7 @@ class IPSCRulesEngine:
             targets = [
                 it
                 for it in self.stage.items
-                if it.item_type in paper_like or it.item_type in steel_like
+                if is_scoring_target(it.item_type)
             ]
             if targets:
                 walls = [

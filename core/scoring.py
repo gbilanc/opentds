@@ -23,11 +23,14 @@ from core.models import ItemType, Stage, StageItem
 
 
 def is_paper_like(t: ItemType) -> bool:
-    """True per tipi bersaglio cartaceo."""
+    """True per tipi bersaglio cartaceo (inclusi mobili: swinger, drop-turner, mover)."""
     return t in (
         ItemType.PAPER_TARGET,
         ItemType.MINI_TARGET,
         ItemType.MICRO_TARGET,
+        ItemType.SWINGER,
+        ItemType.DROP_TURNER,
+        ItemType.MOVER,
         ItemType.DOUBLET_SIDE,
         ItemType.DOUBLET_OVERLAP,
         ItemType.DOUBLET_SIDE_HOSTAGE,
@@ -49,11 +52,7 @@ def is_steel_like(t: ItemType) -> bool:
 
 def is_scoring_target(t: ItemType) -> bool:
     """True per tutti i bersagli che assegnano punti."""
-    return (
-        is_paper_like(t)
-        or is_steel_like(t)
-        or t in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER)
-    )
+    return is_paper_like(t) or is_steel_like(t)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
