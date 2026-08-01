@@ -1106,7 +1106,6 @@ class StageItemMixin:
                 dist_str = f"\nDistanza da start: {dist:.2f} m"
         scoring_str = ""
         if it.item_type in self._TARGET_TYPES:
-            from core.scoring import _count_total_rounds
             hits = 2 if it.item_type in (
                 ItemType.PAPER_TARGET, ItemType.MINI_TARGET, ItemType.MICRO_TARGET,
                 ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER,
