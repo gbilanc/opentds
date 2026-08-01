@@ -9,37 +9,22 @@ import type { WorldObject, TextureKind, PrimitiveKind } from '../world/WorldDesc
  * s.x = total width, s.y = total height.
  */
 function createIpscTargetShape(width: number, height: number): THREE.BufferGeometry {
-  const hw = width / 2;   // half width (body)
-  const hh = height / 2;  // half height
-  const headW = hw * 0.33; // head is ~1/3 of body width
-  const headH = hh * 0.4;  // head top portion
+  const hw = width / 2;
+  const hh = height / 2;
 
+  // Perfect regular octagon
   const shape = new THREE.Shape();
-  // Start at bottom-left
-  shape.moveTo(-hw, -hh);
-  // Bottom right
-  shape.lineTo(hw, -hh);
-  // Body right up to shoulder
-  shape.lineTo(hw, -hh + hh * 0.8);
-  // Shoulder angled cut (body → neck)
-  shape.lineTo(headW, -hh + hh * 0.9);
-  // Neck right
-  shape.lineTo(headW, hh - headH * 0.6);
-  // Head right top  
-  shape.lineTo(headW * 0.6, hh);
-  // Head top
-  shape.lineTo(-headW * 0.6, hh);
-  // Head left
-  shape.lineTo(-headW, hh - headH * 0.6);
-  // Neck left
-  shape.lineTo(-headW, -hh + hh * 0.9);
-  // Shoulder left
-  shape.lineTo(-hw, -hh + hh * 0.8);
+  const segments = 8;
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2 - Math.PI / 2; // start from top
+    const x = Math.cos(angle) * hw;
+    const y = Math.sin(angle) * hh;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
   shape.closePath();
 
-  // Extrude with small depth so both sides are visible
   const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.005, bevelEnabled: false });
-  // Center the geometry vertically
   geo.translate(0, -hh, -0.0025);
   return geo;
 }

@@ -289,13 +289,16 @@ function buildMetalTarget(item: OpenTDSItem): WorldObject[] {
 function buildDoublet(item: OpenTDSItem, mode: 'side' | 'overlap'): WorldObject[] {
   const results: WorldObject[] = [];
   const spacing = mode === 'side' ? 0.3 : 0.05;
+  // side: offset perpendicular to rotation (lateral)
+  // overlap: offset along rotation (depth)
+  const offsetAngle = mode === 'side'
+    ? (item.rotation + 90) * Math.PI / 180
+    : item.rotation * Math.PI / 180;
 
-  // Two paper targets next to each other
   for (let i = 0; i < 2; i++) {
     const offsetX = (i - 0.5) * spacing;
-    const rad = (item.rotation * Math.PI) / 180;
-    const dx = offsetX * Math.cos(rad);
-    const dz = offsetX * Math.sin(rad);
+    const dx = offsetX * Math.cos(offsetAngle);
+    const dz = offsetX * Math.sin(offsetAngle);
 
     results.push(...buildTarget({
       ...item,
