@@ -139,7 +139,7 @@ export class SceneManager {
 
       // Find mesh by userData id pattern: "target-{id}-..." or "wall-{id}" etc.
       const targetPatterns = [
-        `target-${id}-board`, `target-${id}-pole`,
+        `target-${id}-board`, `target-${id}-stick-l`, `target-${id}-stick-r`,
         `steel-${id}-plate`, `steel-${id}-pole`,
         `metal-${id}-plate`, `metal-${id}-pole`,
         `wall-${id}`, `barrier-${id}`, `hard-cover-${id}`,

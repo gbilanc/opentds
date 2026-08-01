@@ -169,34 +169,51 @@ function itemToObjects(item: OpenTDSItem): WorldObject[] {
   }
 }
 
-/** Build a paper target: pole + target board */
+/** Build a paper target: two side wooden sticks + octagonal board */
 function buildTarget(item: OpenTDSItem): WorldObject[] {
   const isNoShoot = item.type === 'NO_SHOOT';
   const targetColor = isNoShoot ? '#eab308' : item.color;
   const targetHeight = 0.75; // IPSC paper target height
-  const targetWidth = item.width; // usually 0.45
-  const poleHeight = 1.5;
+  const targetWidth = 0.45;  // body width
+  const stickHeight = 1.5;   // height of the side sticks
+  const stickOffset = targetWidth / 2 + 0.02; // sticks just outside the board
+  const boardY = stickHeight - targetHeight / 2 + 0.05; // board center Y
+
+  // Compute stick positions rotated according to item.rotation
+  const rotRad = ((item.rotation - 90) * Math.PI) / 180;
+  const perpX = Math.cos(rotRad) * stickOffset;
+  const perpZ = Math.sin(rotRad) * stickOffset;
 
   return [
-    // Pole
+    // Left wooden stick
     {
-      id: `target-${item.id}-pole`,
-      kind: 'cylinder',
-      position: { x: item.x, y: poleHeight / 2, z: item.y },
-      scale: { x: 0.03, y: poleHeight, z: 0.03 },
-      color: '#666666',
-      texture: 'solid',
+      id: `target-${item.id}-stick-l`,
+      kind: 'cylinder' as const,
+      position: { x: item.x - perpX, y: stickHeight / 2, z: item.y - perpZ },
+      scale: { x: 0.02, y: stickHeight, z: 0.02 },
+      color: '#8B6914',
+      texture: 'wood' as const,
       collision: false,
     },
-    // Target board — faces shooter: 2D rotation→3D with -90° offset
+    // Right wooden stick
+    {
+      id: `target-${item.id}-stick-r`,
+      kind: 'cylinder' as const,
+      position: { x: item.x + perpX, y: stickHeight / 2, z: item.y + perpZ },
+      scale: { x: 0.02, y: stickHeight, z: 0.02 },
+      color: '#8B6914',
+      texture: 'wood' as const,
+      collision: false,
+    },
+    // Octagonal target board
     {
       id: `target-${item.id}-board`,
-      kind: 'box',
-      position: { x: item.x, y: poleHeight + targetHeight / 2 - 0.1, z: item.y },
-      scale: { x: targetWidth, y: targetHeight, z: 0.02 },
+      kind: 'octagon' as const,
+      position: { x: item.x, y: boardY, z: item.y },
+      scale: { x: targetWidth, y: targetHeight, z: 1 },
       rotation: { x: 0, y: item.rotation - 90, z: 0 },
       color: targetColor,
-      texture: 'solid',
+      texture: 'solid' as const,
       collision: false,
       interactable: true,
       interactLabel: isNoShoot ? 'No-Shoot (penalità)' : item.label || 'Bersaglio',
@@ -204,7 +221,7 @@ function buildTarget(item: OpenTDSItem): WorldObject[] {
   ];
 }
 
-/** Build a steel popper target — vertical disc on a pole */
+/** Build a steel popper target — light blue vertical disc on a pole */
 function buildSteelTarget(item: OpenTDSItem): WorldObject[] {
   const poleHeight = 1.2;
   const discRadius = 0.15;
@@ -214,22 +231,22 @@ function buildSteelTarget(item: OpenTDSItem): WorldObject[] {
     // Pole
     {
       id: `steel-${item.id}-pole`,
-      kind: 'cylinder',
+      kind: 'cylinder' as const,
       position: { x: item.x, y: poleHeight / 2, z: item.y },
       scale: { x: 0.04, y: poleHeight, z: 0.04 },
       color: '#666666',
-      texture: 'solid',
+      texture: 'solid' as const,
       collision: false,
     },
-    // Vertical disc — X=90 stands it up, Y rotation faces the shooter
+    // Vertical disc — light blue, faces the shooter
     {
       id: `steel-${item.id}-plate`,
-      kind: 'cylinder',
+      kind: 'cylinder' as const,
       position: { x: item.x, y: poleHeight + 0.05, z: item.y },
       scale: { x: discRadius, y: discThickness, z: discRadius },
       rotation: { x: 90, y: item.rotation - 90, z: 0 },
-      color: item.color || '#d1d5db',
-      texture: 'solid',
+      color: '#87CEEB',
+      texture: 'solid' as const,
       collision: false,
       interactable: true,
       interactLabel: item.label || 'Metallico',
@@ -237,7 +254,7 @@ function buildSteelTarget(item: OpenTDSItem): WorldObject[] {
   ];
 }
 
-/** Build a small metal plate — vertical disc on a short pole */
+/** Build a small metal plate — light blue disc on a short pole */
 function buildMetalTarget(item: OpenTDSItem): WorldObject[] {
   const poleHeight = 0.8;
   const discRadius = item.width; // e.g. 0.20 for metal plate
@@ -246,21 +263,21 @@ function buildMetalTarget(item: OpenTDSItem): WorldObject[] {
   return [
     {
       id: `metal-${item.id}-pole`,
-      kind: 'cylinder',
+      kind: 'cylinder' as const,
       position: { x: item.x, y: poleHeight / 2, z: item.y },
       scale: { x: 0.03, y: poleHeight, z: 0.03 },
       color: '#666666',
-      texture: 'solid',
+      texture: 'solid' as const,
       collision: false,
     },
     {
       id: `metal-${item.id}-plate`,
-      kind: 'cylinder',
+      kind: 'cylinder' as const,
       position: { x: item.x, y: poleHeight + 0.03, z: item.y },
       scale: { x: discRadius, y: discThickness, z: discRadius },
       rotation: { x: 90, y: item.rotation - 90, z: 0 },
-      color: item.color || '#e5e7eb',
-      texture: 'solid',
+      color: '#87CEEB',
+      texture: 'solid' as const,
       collision: false,
       interactable: true,
       interactLabel: item.label || 'Piatto metallico',

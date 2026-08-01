@@ -16,7 +16,8 @@ export type PrimitiveKind =
   | 'cylinder'
   | 'sphere'
   | 'cone'
-  | 'plane';
+  | 'plane'
+  | 'octagon';  // flat octagonal IPSC target shape
 
 export type TextureKind =
   | 'grass'

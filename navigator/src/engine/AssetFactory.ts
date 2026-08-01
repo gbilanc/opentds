@@ -4,6 +4,43 @@ import { RealTextures } from '../utils/RealTextures.js';
 import type { WorldObject, TextureKind, PrimitiveKind } from '../world/WorldDescription.js';
 
 /**
+ * Create a flat octagonal IPSC target shape (like the classic cardboard target).
+ * The shape is a polygon with: narrow head, angled shoulders, wide body.
+ * s.x = total width, s.y = total height.
+ */
+function createIpscTargetShape(width: number, height: number): THREE.BufferGeometry {
+  const hw = width / 2;   // half width (body)
+  const hh = height / 2;  // half height
+  const headW = hw * 0.33; // head is ~1/3 of body width
+  const headH = hh * 0.4;  // head top portion
+
+  const shape = new THREE.Shape();
+  // Start at bottom-left
+  shape.moveTo(-hw, -hh);
+  // Bottom right
+  shape.lineTo(hw, -hh);
+  // Body right up to shoulder
+  shape.lineTo(hw, -hh + hh * 0.8);
+  // Shoulder angled cut (body → neck)
+  shape.lineTo(headW, -hh + hh * 0.9);
+  // Neck right
+  shape.lineTo(headW, hh - headH * 0.6);
+  // Head right top  
+  shape.lineTo(headW * 0.6, hh);
+  // Head top
+  shape.lineTo(-headW * 0.6, hh);
+  // Head left
+  shape.lineTo(-headW, hh - headH * 0.6);
+  // Neck left
+  shape.lineTo(-headW, -hh + hh * 0.9);
+  // Shoulder left
+  shape.lineTo(-hw, -hh + hh * 0.8);
+  shape.closePath();
+
+  return new THREE.ShapeGeometry(shape);
+}
+
+/**
  * Factory that creates Three.js meshes from world object descriptions.
  */
 export class AssetFactory {
@@ -55,6 +92,9 @@ export class AssetFactory {
         return new THREE.ConeGeometry(s.x, s.y, 12);
       case 'plane':
         return new THREE.PlaneGeometry(s.x, s.z);
+      case 'octagon':
+        // IPSC target shape: flat octagon, s.x = width (0.45m), s.y = height (0.75m)
+        return createIpscTargetShape(s.x, s.y);
       default:
         return new THREE.BoxGeometry(1, 1, 1);
     }
