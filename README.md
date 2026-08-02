@@ -105,7 +105,28 @@ uv run ruff check .  # linting (opzionale)
 | **PNG** | Piantina 2D ad alta risoluzione (150 DPI) |
 | **PDF** | Piantina + lista bersagli + dettagli mobili |
 | **PNG (Blender)** | Anteprima 3D renderizzata con Blender EEVEE |
-| **Blend (Blender)** | File `.blend` editabile per modifiche manuali |
+| **Blend (Blender)** | File `.blend` editabile, **navigabile in prima persona** |
+
+#### Navigare il file `.blend`
+
+Aprendo il `.blend` generato, il viewport parte dalla posizione di tiro
+**start** e lo stage è esplorabile in prima persona con la Walk
+Navigation nativa di Blender:
+
+- `Shift+~` — entra nel walk mode (parti dalla posizione start)
+- `WASD` / frecce — muoviti, `mouse` — guardati attorno, `scroll` — velocità
+- `Tab` — alterna volo / camminata
+- Seleziona `NAV_Start` o `NAV_Pos2`… nella outliner e premi `Ctrl+Numpad0`
+  per saltare alla vista da quella posizione di tiro
+- La velocità è preconfigurata a ~4 m/s con altezza occhi 1,6 m
+- Un cartello `NAV_Help` in scena mostra le istruzioni (visibile solo nel
+  viewport, non nel render PNG)
+
+> ⚠️ Il walk mode di Blender non ha collisioni con i muri: puoi
+> attraversare gli ostacoli. Serve solo per ispezionare lo stage.
+>
+> La prima generazione configura i parametri di Walk Navigation nelle
+> preferenze globali di Blender (salvate una tantum sul tuo PC).
 
 ---
 

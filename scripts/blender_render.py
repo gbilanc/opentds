@@ -5,6 +5,11 @@ Legge una descrizione di scena JSON prodotta da
 ``services.blender_exporter.py`` e costruisce geometria, materiali,
 luci e camera, poi renderizza in PNG (e salva opzionalmente il .blend).
 
+Quando viene salvato il .blend, lo script lo rende navigabile in
+prima persona: telecamere bookmark alle posizioni di tiro (NAV_Start /
+NAV_PosN), viewport iniziale alla partenza e parametri di Walk
+Navigation configurati (Shift+~ nel viewport, WASD per muoversi).
+
 Esecuzione (da root del progetto):
     blender -b -P scripts/blender_render.py -- scene.json out.png [out.blend]
 
@@ -291,6 +296,171 @@ def setup_camera(camera: dict) -> None:
     bpy.context.scene.camera = cam
 
 
+# ─── Navigazione interattiva (walk mode) ─────────────────────────────
+
+EYE_HEIGHT = 1.6  # altezza occhi del tiratore (m)
+WALK_SPEED = 4.0  # velocità di camminata (m/s)
+
+NAV_HELP_TEXT = (
+    "Walk: Shift+~ · WASD/frecce muovi · mouse guarda · scroll velocità\n"
+    "Tab vola/cammina · seleziona NAV_Start / NAV_PosN e premi Ctrl+Numpad0"
+)
+
+
+def configure_walk_navigation(persist: bool) -> bool:
+    """Configura la Walk Navigation del viewport.
+
+    Blender 5.x espone i parametri in ``preferences.inputs.walk_navigation``,
+    Blender 4.x in ``space.walk_navigation`` (per-aree). La gravità è
+    disattivata: il walk mode non ha collisioni con le mesh e con gravità
+    la camera attraverserebbe il pavimento. ``persist`` salva le
+    preferenze globali (una tantum, sul PC dell'utente).
+    """
+    space = next((a.spaces[0] for a in bpy.context.screen.areas if a.type == "VIEW_3D"), None)
+    settings = getattr(bpy.context.preferences.inputs, "walk_navigation", None)
+    if settings is None and space is not None:
+        settings = getattr(space, "walk_navigation", None)
+    if settings is None:
+        print("⚠ WalkNavigation non disponibile in questa versione di Blender")
+        return False
+
+    try:
+        settings.walk_speed = WALK_SPEED
+        settings.view_height = EYE_HEIGHT
+        settings.mouse_speed = 1.0
+        settings.use_gravity = False
+    except AttributeError:
+        print("⚠ Impostazioni walk navigation incomplete, applicate in parte")
+        return False
+    if persist:
+        try:
+            bpy.ops.wm.save_userpref()
+        except RuntimeError:
+            print("⚠ Salvataggio preferenze Blender non riuscito")
+    return True
+
+
+def _yaw_quaternion(angle_deg: float):
+    """Quaternione che orienta una camera lungo la direzione di ingaggio.
+
+    La direzione di ingaggio in coordinate stage (x, y) mappa su Blender
+    (x, z): dir = (cos, 0, sin). ``to_track_quat`` allinea l'asse di vista
+    (-Z) alla direzione, con Y in alto.
+    """
+    rad = math.radians(angle_deg)
+    direction = Vector((math.cos(rad), 0.0, math.sin(rad))).normalized()
+    return direction.to_track_quat("-Z", "Y")
+
+
+def _aim_quaternion(origin: Vector, target: Vector):
+    """Quaternione che punta una camera da ``origin`` verso ``target``."""
+    direction = (target - origin).normalized()
+    return direction.to_track_quat("-Z", "Y")
+
+
+def create_nav_cameras(scene: dict) -> None:
+    """Telecamere bookmark alle posizioni di tiro (NAV_Start / NAV_PosN).
+
+    L'utente seleziona una camera e preme Ctrl+Numpad0 per saltare alla
+    vista da quella posizione; il walk mode parte dalla ``NAV_Start``.
+    """
+    positions = scene.get("shooting_positions", [])
+    if not positions:
+        return
+    target = Vector(scene["camera"]["target"])
+    for sp in positions:
+        name = "NAV_Start" if sp["is_start"] else f"NAV_Pos{sp['id']}"
+        cam_data = bpy.data.cameras.new(name)
+        cam_data.lens = 35.0  # lunghezza focale naturalistica per l'FPS
+        cam = bpy.data.objects.new(name, cam_data)
+        bpy.context.collection.objects.link(cam)
+        cam.location = (sp["x"], EYE_HEIGHT, sp["z"])
+        cam.rotation_mode = "QUATERNION"
+        if sp.get("angle"):
+            cam.rotation_quaternion = _yaw_quaternion(sp["angle"])
+        else:
+            cam.rotation_quaternion = _aim_quaternion(cam.location, target)
+
+
+def setup_viewport_start(scene: dict) -> None:
+    """Posiziona la vista del viewport alla posizione di partenza.
+
+    All'apertura del .blend il viewport guarda lo stage da lì: premendo
+    Shift+~ (walk mode) si parte esattamente in quel punto.
+    """
+    positions = scene.get("shooting_positions", [])
+    start = next((sp for sp in positions if sp["is_start"]), positions[0] if positions else None)
+    target = Vector(scene["camera"]["target"])
+
+    for area in bpy.context.screen.areas:
+        if area.type != "VIEW_3D":
+            continue
+        r3d = area.spaces[0].region_3d
+        r3d.view_perspective = "PERSP"
+        r3d.view_location = target
+        if start is not None:
+            origin = Vector((start["x"], EYE_HEIGHT, start["z"]))
+            r3d.view_rotation = _aim_quaternion(origin, target)
+            r3d.view_distance = (target - origin).length
+        break
+
+
+def add_nav_help_text(scene: dict) -> None:
+    """Cartello 3D con le istruzioni, visibile solo nel viewport.
+
+    ``hide_render`` lo esclude dal render PNG ma resta visibile in
+    viewport; è orientato verso lo stage dalla posizione di partenza.
+    """
+    positions = scene.get("shooting_positions", [])
+    start = next((sp for sp in positions if sp["is_start"]), positions[0] if positions else None)
+    if start is None:
+        return
+    rad = math.radians(start["angle"])
+    direction = Vector((math.cos(rad), 0.0, math.sin(rad)))
+
+    curve = bpy.data.curves.new("NAV_HelpText", type="FONT")
+    curve.body = NAV_HELP_TEXT
+    curve.size = 0.12
+    curve.align_x = "CENTER"
+    curve.align_y = "CENTER"
+    obj = bpy.data.objects.new("NAV_Help", curve)
+    bpy.context.collection.objects.link(obj)
+    obj.location = Vector((start["x"], 1.5, start["z"])) + direction * 0.4
+    obj.rotation_mode = "QUATERNION"
+    obj.rotation_quaternion = direction.to_track_quat("Z", "Y")
+    obj.hide_render = True
+
+
+def set_nav_metadata(scene: dict) -> None:
+    """Custom property sulla scena con le istruzioni di navigazione."""
+    nav_cameras = [
+        o.name for o in bpy.data.objects if o.type == "CAMERA" and o.name.startswith("NAV_")
+    ]
+    bpy.context.scene["opentds_nav"] = {
+        "help": NAV_HELP_TEXT,
+        "cameras": nav_cameras,
+        "walk_speed": WALK_SPEED,
+        "eye_height": EYE_HEIGHT,
+        "gravity": False,
+    }
+
+
+def setup_navigation(scene: dict, persist_prefs: bool) -> None:
+    """Rende il .blend navigabile: walk prefs, telecamere, viewport, help.
+
+    Non tocca il render PNG: la camera statica resta invariata.
+    Un errore in questa fase non deve impedire il salvataggio del .blend.
+    """
+    try:
+        configure_walk_navigation(persist=persist_prefs)
+        create_nav_cameras(scene)
+        setup_viewport_start(scene)
+        add_nav_help_text(scene)
+        set_nav_metadata(scene)
+    except Exception as exc:
+        print(f"⚠ Navigazione non configurata: {exc}")
+
+
 def setup_render(out_png: str) -> None:
     """Engine EEVEE, risoluzione e formato PNG.
 
@@ -324,6 +494,7 @@ def main() -> int:
 
     scene_path, out_png = argv[0], argv[1]
     out_blend = argv[2] if len(argv) > 2 else None
+    no_nav = len(argv) > 3 and argv[3] == "no-nav"
 
     with open(scene_path, encoding="utf-8") as f:
         scene = json.load(f)
@@ -344,7 +515,9 @@ def main() -> int:
     setup_render(out_png)
 
     bpy.ops.render.render(write_still=True)
-    if out_blend:
+    if out_blend and not no_nav:
+        # La navigazione è utile solo nel .blend: il PNG usa la camera statica.
+        setup_navigation(scene, persist_prefs=True)
         bpy.ops.wm.save_as_mainfile(filepath=out_blend)
     print(f"✅ Render completato: {out_png}")
     return 0

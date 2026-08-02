@@ -55,6 +55,29 @@ def test_scene_is_json_serializable(tmp_path):
     assert data["name"] == "Stage IPSC"
 
 
+def test_scene_includes_shooting_positions_for_navigation(tmp_path):
+    """Le posizioni di tiro finiscono nella scena per le NAV cameras."""
+    stage = load_stage(STAGE2)
+    scene = build_scene(stage, BlenderExportOptions(svg_dir=tmp_path))
+
+    positions = scene["shooting_positions"]
+    assert len(positions) == len(stage.shooting_positions)
+
+    # Coordinate Blender: stage (x, y) → (x, z), con is_start marcato.
+    first = positions[0]
+    assert {"id", "x", "z", "angle", "is_start"} <= set(first)
+    assert any(p["is_start"] for p in positions)
+    for p in positions:
+        assert p["x"] != p["z"] or abs(p["x"] - p["z"]) < 0.01  # non invertite
+    z_ok = all(
+        round(p["z"], 3) == round(sp.y, 3)
+        for p, sp in zip(positions, stage.shooting_positions)
+    )
+    assert z_ok
+    # La camera statica fornisce il target di osservazione per le NAV.
+    assert len(scene["camera"]["target"]) == 3
+
+
 def test_clean_svg_replaces_fill_and_strips_text(tmp_path):
     """Il preprocesso SVG colora la silhouette e rimuove i testi."""
     src = tmp_path / "raw.svg"

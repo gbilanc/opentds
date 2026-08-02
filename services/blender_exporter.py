@@ -636,6 +636,8 @@ def build_scene(stage: Stage, opts: BlenderExportOptions | None = None) -> dict[
           ``board_box``, ``board_cylinder``, ``polygon``
         - ``camera``: posizione/target/lens della camera statica
         - ``lights``: sole direzionale + area light di fill
+        - ``shooting_positions``: posizioni di tiro (per le telecamere
+          di navigazione del file .blend)
     """
     if opts is None:
         opts = BlenderExportOptions()
@@ -663,6 +665,16 @@ def build_scene(stage: Stage, opts: BlenderExportOptions | None = None) -> dict[
         "objects": objects,
         "camera": _compute_camera(stage, opts),
         "lights": _compute_lights(stage, opts),
+        "shooting_positions": [
+            {
+                "id": sp.id,
+                "x": _r(sp.x, 3),
+                "z": _r(sp.y, 3),  # coordinate Blender: stage y → z
+                "angle": _r(sp.angle, 3),
+                "is_start": sp.is_start,
+            }
+            for sp in stage.shooting_positions
+        ],
     }
 
 

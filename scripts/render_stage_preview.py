@@ -69,6 +69,7 @@ def run_render(
     blender: str,
     resolution: str,
     timeout: int = 600,
+    no_nav: bool = False,
 ) -> Path:
     """Lancia Blender headless e renderizza la scena."""
     out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +84,9 @@ def run_render(
     ]
     if out_blend:
         cmd.append(str(out_blend))
+        # Il marker è significativo solo se viene salvato il .blend.
+        if no_nav:
+            cmd.append("no-nav")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -93,6 +97,8 @@ def run_render(
         raise RuntimeError("Render Blender fallito:\n" + "\n".join(detail[-20:]))
     if not out_png.exists():
         raise RuntimeError("Blender è terminato senza produrre il PNG")
+    if out_blend and not Path(out_blend).exists():
+        raise RuntimeError("Blender è terminato senza produrre il file .blend")
     return out_png
 
 
@@ -110,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("stage", type=Path, help="file stage JSON (v3)")
     parser.add_argument("-o", "--output", type=Path, default=Path(".build/preview.png"))
     parser.add_argument("--blend", type=Path, default=None, help="salva anche il .blend")
+    parser.add_argument("--no-nav", action="store_true",
+                        help=".blend senza telecamere di navigazione (solo render)")
     parser.add_argument("--no-boundary", action="store_true", help="salta i muri perimetrali")
     parser.add_argument("--no-auto-face", action="store_true",
                         help="usa la rotazione originale dei bersagli")
@@ -143,7 +151,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # 2. Render headless.
     try:
-        run_render(scene_path, args.output, args.blend, blender, args.resolution)
+        run_render(
+            scene_path, args.output, args.blend, blender, args.resolution, no_nav=args.no_nav
+        )
     except (FileNotFoundError, TimeoutError, RuntimeError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
