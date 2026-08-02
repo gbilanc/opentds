@@ -5,8 +5,8 @@ import json
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import Qt, QThread, QUrl, Signal, Slot
+from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 
 from core.generator import Phase1Config
 from core.models import ItemType, Stage
+from scripts.render_stage_preview import find_blender, run_render
+from services.blender_exporter import BlenderExportOptions, export_scene
 from services.exporter import export_pdf, export_png
 from services.library import StageLibrary
 from services.navigator_server import (
@@ -47,6 +49,42 @@ from ui.editor.stage_info import StageInfoPanel
 from ui.editor.stage_scene import StageItemWrapper, StageScene
 from ui.editor.stage_view import StageView
 from ui.icons import load_icon
+
+
+class _BlenderRenderThread(QThread):
+    """Esegue il render Blender headless in un thread separato."""
+
+    rendered = Signal(str, str)  # (png, blend)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        blender: str,
+        scene_path: Path,
+        png_path: Path,
+        blend_path: Path | None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._blender = blender
+        self._scene_path = scene_path
+        self._png_path = png_path
+        self._blend_path = blend_path
+
+    def run(self):
+        try:
+            run_render(
+                self._scene_path,
+                self._png_path,
+                self._blend_path,
+                self._blender,
+                resolution="1920x1080",
+            )
+            self.rendered.emit(
+                str(self._png_path), str(self._blend_path) if self._blend_path else ""
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
 
 
 class MainWindow(QMainWindow):
@@ -256,6 +294,13 @@ class MainWindow(QMainWindow):
             export_3mf_action = QAction("3MF (&.3mf)\u2026", self)
             export_3mf_action.triggered.connect(self._on_export_3mf)
             file_menu.addAction(export_3mf_action)
+
+        file_menu.addSeparator()
+
+        # ── Blender Render ──
+        blender_action = QAction("Anteprima 3D (Blender)…", self)
+        blender_action.triggered.connect(self._on_export_blender)
+        file_menu.addAction(blender_action)
 
         file_menu.addSeparator()
 
@@ -656,7 +701,57 @@ class MainWindow(QMainWindow):
             if scad_path.exists():
                 scad_path.unlink()
 
-    # ── Blender Export ──────────────────────────────────────────────────
+    # ── Blender Render ──────────────────────────────────────────────────
+
+    def _on_export_blender(self):
+        """Renderizza l'anteprima 3D dello stage con Blender (EEVEE)."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        try:
+            blender = find_blender(None)
+        except FileNotFoundError as exc:
+            QMessageBox.warning(self, "Blender non trovato", str(exc))
+            return
+
+        png_path, _ = QFileDialog.getSaveFileName(
+            self, "Salva anteprima 3D (Blender)", "stage_preview.png", "PNG (*.png)"
+        )
+        if not png_path:
+            return
+
+        png = Path(png_path)
+        try:
+            opts = BlenderExportOptions(svg_dir=Path(".build/svg"))
+            scene_path = png.parent / f"{png.stem}_scene.json"
+            export_scene(self._stage, scene_path, opts)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Errore", f"Impossibile generare la scena 3D: {exc}")
+            return
+
+        blend_path = png.with_suffix(".blend")
+        self._status.showMessage("🎬 Rendering Blender in corso (EEVEE)...")
+        self._blender_thread = _BlenderRenderThread(
+            blender, scene_path, png, blend_path, self
+        )
+        self._blender_thread.rendered.connect(self._on_blender_rendered)
+        self._blender_thread.failed.connect(self._on_blender_failed)
+        self._blender_thread.start()
+
+    @Slot(str, str)
+    def _on_blender_rendered(self, png: str, blend: str):
+        """Apre il PNG generato e aggiorna la barra di stato."""
+        self._status.showMessage(f"✅ Anteprima 3D salvata: {png}")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(png))
+        if blend and Path(blend).exists():
+            self._status.showMessage(f"✅ Anteprima 3D salvata: {png}  (.blend: {blend})")
+
+    @Slot(str)
+    def _on_blender_failed(self, message: str):
+        """Segnala il fallimento del render senza bloccare la UI."""
+        from PySide6.QtWidgets import QMessageBox
+
+        self._status.showMessage("❌ Render Blender fallito")
+        QMessageBox.warning(self, "Render Blender fallito", message)
 
     def _on_add_paper_target(self):
         """Aggiunge un Paper Target al centro dello stage."""

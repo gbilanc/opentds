@@ -33,3 +33,10 @@ Thumbs.db
 *.scad
 stage.json
 *.stage.json
+
+# Artefatti build locale (render Blender/OpenSCAD)
+.build/
+*_scene.json
+
+# File temporanei dialog XDG (portal)
+.xdp-*
