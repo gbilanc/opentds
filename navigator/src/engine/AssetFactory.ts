@@ -129,6 +129,7 @@ export class AssetFactory {
       case 'wood':   texture = ProceduralTextures.wood(); break;
       case 'stone':  texture = ProceduralTextures.stone(); break;
       case 'dirt':   texture = ProceduralTextures.dirt(); break;
+      case 'gravel': texture = ProceduralTextures.gravel(); break;
       case 'roof':   texture = ProceduralTextures.roof(); break;
       default:       texture = ProceduralTextures.grass(); break;
     }

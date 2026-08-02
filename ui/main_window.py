@@ -989,6 +989,10 @@ class MainWindow(QMainWindow):
 
         self._status.showMessage("Generazione area di tiro...")
         try:
+            # Sincronizza le dimensioni dello stage con i valori della Fase 1
+            self._stage.width = phase1.stage_width
+            self._stage.depth = phase1.stage_depth
+
             # 1. Genera il poligono BASE (rotazione=0, scala=1)
             from core.shapes import generate_perimeter_polygon
 

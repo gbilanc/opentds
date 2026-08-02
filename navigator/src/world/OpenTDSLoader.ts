@@ -544,15 +544,15 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
     objects.push(...buildShootingPosition(sp));
   }
 
-  // ── Shooting area overlay ─────────────────────────────────
+  // ── Shooting area overlay (gravel inside the shooting area polygon) ──
   objects.push({
     id: 'shooting-area',
     kind: 'plane',
-    position: { x: stageOffsetX + json.width / 2, y: 0.006, z: stageOffsetZ + json.depth / 2 },
+    position: { x: json.width / 2, y: 0.006, z: json.depth / 2 },
     scale: { x: json.width, y: 1, z: json.depth },
-    color: '#e8e0d0',
-    texture: 'real:ground',
-    textureRepeat: [Math.ceil(json.width / 2), Math.ceil(json.depth / 2)],
+    color: '#b0a898',
+    texture: 'gravel',
+    textureRepeat: [Math.ceil(json.width / 3), Math.ceil(json.depth / 3)],
     collision: false,
   });
 
@@ -586,7 +586,7 @@ export function parseOpenTDS(json: OpenTDSStage): WorldDescription {
     groundColor: '#c8d8c8',
     fogDensity: 0.008,
     groundLevel: 0,
-    groundTexture: 'grass',
+    groundTexture: 'real:grass',
     groundTextureRepeat: [Math.ceil(worldWidth), Math.ceil(worldDepth)],
     playerSpawn: { x: spawnX, y: 1.7, z: spawnZ },
     playerYaw,

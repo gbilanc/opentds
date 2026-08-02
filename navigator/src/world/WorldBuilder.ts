@@ -119,10 +119,11 @@ export class WorldBuilder {
       // Procedural fallback
       let texture: THREE.Texture;
       switch (texKind) {
-        case 'grass': texture = ProceduralTextures.grass(); break;
-        case 'stone': texture = ProceduralTextures.stone(); break;
-        case 'dirt':  texture = ProceduralTextures.dirt(); break;
-        default:      texture = ProceduralTextures.grass(); break;
+        case 'grass':  texture = ProceduralTextures.grass(); break;
+        case 'stone':  texture = ProceduralTextures.stone(); break;
+        case 'dirt':   texture = ProceduralTextures.dirt(); break;
+        case 'gravel': texture = ProceduralTextures.gravel(); break;
+        default:       texture = ProceduralTextures.grass(); break;
       }
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;

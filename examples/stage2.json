@@ -1,0 +1,365 @@
+{
+  "version": 3,
+  "name": "Stage IPSC",
+  "width": 20.0,
+  "depth": 20.0,
+  "properties": {
+    "perimeter_poly": [
+      [
+        5.97,
+        5.34
+      ],
+      [
+        8.85,
+        5.4
+      ],
+      [
+        8.68,
+        1.1
+      ],
+      [
+        11.11,
+        1.23
+      ],
+      [
+        11.28,
+        5.48
+      ],
+      [
+        13.9,
+        5.48
+      ],
+      [
+        14.07,
+        7.59
+      ],
+      [
+        6.04,
+        7.62
+      ]
+    ]
+  },
+  "items": [
+    {
+      "id": 1,
+      "type": "FAULT_LINE",
+      "x": 7.5,
+      "y": 5.5,
+      "width": 2.8806249321978727,
+      "height": 0.0,
+      "rotation": 1.193489423982045,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "FAULT_LINE",
+      "x": 9.0,
+      "y": 3.0,
+      "width": 4.303359153033826,
+      "height": 0.0,
+      "rotation": -92.26400292115879,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "FAULT_LINE",
+      "x": 10.0,
+      "y": 1.0,
+      "width": 2.433474881727773,
+      "height": 0.0,
+      "rotation": 3.062287085400052,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "FAULT_LINE",
+      "x": 11.0,
+      "y": 3.5,
+      "width": 4.253398641086913,
+      "height": 0.0,
+      "rotation": 87.70938995736148,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "FAULT_LINE",
+      "x": 12.5,
+      "y": 5.5,
+      "width": 2.620000000000001,
+      "height": 0.0,
+      "rotation": 0.0,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "FAULT_LINE",
+      "x": 14.0,
+      "y": 6.5,
+      "width": 2.116837263466419,
+      "height": 0.0,
+      "rotation": 85.39370214935815,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "FAULT_LINE",
+      "x": 10.0,
+      "y": 7.5,
+      "width": 8.030056039655017,
+      "height": 0.0,
+      "rotation": 179.7859445344544,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "FAULT_LINE",
+      "x": 6.0,
+      "y": 6.5,
+      "width": 2.281074308302998,
+      "height": 0.0,
+      "rotation": -91.75852856043912,
+      "color": "#dc2626",
+      "label": "Fault Line",
+      "properties": {
+        "perimeter": true,
+        "closed_chain": true
+      }
+    },
+    {
+      "id": 9,
+      "type": "PAPER_TARGET",
+      "x": 5.534239313769932,
+      "y": 13.5,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_target_2s+ns .svg"
+      }
+    },
+    {
+      "id": 10,
+      "type": "PAPER_TARGET",
+      "x": 16.5,
+      "y": 13.5,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_target_2a+ns.svg"
+      }
+    },
+    {
+      "id": 11,
+      "type": "BARRIER",
+      "x": 11.5,
+      "y": 4.5,
+      "width": 2.0,
+      "height": 0.15,
+      "rotation": 90.0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {}
+    },
+    {
+      "id": 12,
+      "type": "BARRIER",
+      "x": 8.5,
+      "y": 4.5,
+      "width": 2.0,
+      "height": 0.15,
+      "rotation": 90.0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {}
+    },
+    {
+      "id": 13,
+      "type": "BARRIER",
+      "x": 7.095223666219942,
+      "y": 5.541456734206674,
+      "width": 2.0,
+      "height": 0.15,
+      "rotation": 0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {}
+    },
+    {
+      "id": 14,
+      "type": "BARRIER",
+      "x": 12.997499999999999,
+      "y": 5.6,
+      "width": 2.0,
+      "height": 0.15,
+      "rotation": 0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {}
+    },
+    {
+      "id": 15,
+      "type": "PAPER_TARGET",
+      "x": 6.457723666219943,
+      "y": 4.025,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_target_2s.svg"
+      }
+    },
+    {
+      "id": 16,
+      "type": "PAPER_TARGET",
+      "x": 14.074584290975077,
+      "y": 4.025,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_target_2s.svg"
+      }
+    },
+    {
+      "id": 17,
+      "type": "BARRIER",
+      "x": 9.9725,
+      "y": 9.5,
+      "width": 4.0,
+      "height": 0.15,
+      "rotation": 90.0,
+      "color": "#fbbf24",
+      "label": "Barriera",
+      "properties": {}
+    },
+    {
+      "id": 18,
+      "type": "PAPER_TARGET",
+      "x": 16.5,
+      "y": 15.5,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_popper.svg"
+      }
+    },
+    {
+      "id": 19,
+      "type": "PAPER_TARGET",
+      "x": 5.866043265793325,
+      "y": 15.5,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_popper.svg"
+      }
+    },
+    {
+      "id": 20,
+      "type": "PAPER_TARGET",
+      "x": 8.482723666219943,
+      "y": 11.0,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_target_2s+ns .svg"
+      }
+    },
+    {
+      "id": 21,
+      "type": "PAPER_TARGET",
+      "x": 11.61,
+      "y": 11.0,
+      "width": 0.75,
+      "height": 0.75,
+      "rotation": 0,
+      "color": "#8B4513",
+      "label": "Paper",
+      "properties": {
+        "custom_svg_path": "targets/custom/ipsc_target_2s+ns .svg"
+      }
+    }
+  ],
+  "shooting_positions": [
+    {
+      "id": 1,
+      "x": 9.5,
+      "y": 1.5,
+      "label": "Start",
+      "is_start": true,
+      "angle": 90.0,
+      "properties": {}
+    },
+    {
+      "id": 2,
+      "x": 6.5,
+      "y": 7.0,
+      "label": "Pos 2",
+      "is_start": false,
+      "angle": 90.0,
+      "properties": {}
+    },
+    {
+      "id": 3,
+      "x": 13.5,
+      "y": 7.0,
+      "label": "Pos 3",
+      "is_start": false,
+      "angle": 90.0,
+      "properties": {}
+    }
+  ]
+}

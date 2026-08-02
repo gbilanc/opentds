@@ -126,6 +126,76 @@ export class ProceduralTextures {
     return texture;
   }
 
+  /** Gravel / ghiaia texture: multicolored pebbles on grey ground */
+  static gravel(width = 512, height = 512): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+
+    // Base grey-brown
+    ctx.fillStyle = '#8a8a7c';
+    ctx.fillRect(0, 0, width, height);
+
+    // Noise grain for fine texture
+    const imageData = ctx.getImageData(0, 0, width, height);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 35;
+      imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + noise));
+      imageData.data[i + 1] = Math.min(255, Math.max(0, imageData.data[i + 1] + noise));
+      imageData.data[i + 2] = Math.min(255, Math.max(0, imageData.data[i + 2] + noise));
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // Draw random pebbles/stones of varying sizes and colors
+    const pebbleColors = [
+      '#9e9e8e', '#b0a89a', '#8e8a7a', '#a09888', '#7a7a6e',
+      '#c4b8a8', '#968e80', '#aaa290', '#828272', '#b8b0a0',
+      '#6e6e60', '#9a9282', '#aea698', '#868478', '#a4a090',
+    ];
+
+    for (let i = 0; i < 400; i++) {
+      const px = Math.random() * width;
+      const py = Math.random() * height;
+      const r = 3 + Math.random() * 8; // radius 3-11px
+
+      // Pebble shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.ellipse(px + 1, py + 1, r, r * 0.7, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pebble body
+      ctx.fillStyle = pebbleColors[Math.floor(Math.random() * pebbleColors.length)];
+      ctx.beginPath();
+      ctx.ellipse(px, py, r, r * 0.7, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Subtle highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.beginPath();
+      ctx.ellipse(px - r * 0.2, py - r * 0.2, r * 0.4, r * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Fine mortar/dirt between pebbles
+    ctx.fillStyle = 'rgba(100,95,85,0.10)';
+    for (let i = 0; i < 150; i++) {
+      const px = Math.random() * width;
+      const py = Math.random() * height;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.5 + Math.random() * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(3, 3);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }
+
   /** Dirt path texture */
   static dirt(width = 256, height = 256): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
