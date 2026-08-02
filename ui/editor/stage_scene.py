@@ -2035,7 +2035,6 @@ class StageScene(QGraphicsScene):
             if hasattr(g, "wrapper"):
                 self.selectionChangedWrapper.emit(g.wrapper)
                 self._hide_engagement_area()
-                self._sync_selection_to_navigator(g.wrapper.item.id)
             elif isinstance(g, ShootingPositionMarker):
                 self.selectionChangedWrapper.emit(None)
                 self.markerSelected.emit(
@@ -2289,22 +2288,6 @@ class StageScene(QGraphicsScene):
         if self._engagement_area:
             self.removeItem(self._engagement_area)
             self._engagement_area = None
-
-    def _sync_selection_to_navigator(self, item_id: int):
-        """Scrive l'ID dell'item selezionato in un file JSON per il navigator 3D."""
-        import json
-        import os
-
-        try:
-            dist_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "navigator", "dist"
-            )
-            sel_path = os.path.join(dist_dir, "selection.json")
-            data = {"selected_id": item_id, "timestamp": __import__("time").time()}
-            with open(sel_path, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-        except Exception:
-            pass  # silenzioso: il navigator potrebbe non essere in esecuzione
 
     def toggle_safety_zones(self, visible: bool | None = None) -> bool:
         """Mostra/nasconde le zone di sicurezza (coni 180°) da tutte

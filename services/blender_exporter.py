@@ -61,7 +61,7 @@ STICK_RADIUS = 0.02
 STICK_OFFSET = 0.245  # distanza stecche dal centro del pannello
 BOARD_THICKNESS = 0.02  # spessore pannello bersaglio
 
-# Metallici: palo + disco (come il navigatore Three.js).
+# Metallici: palo + disco (dimensioni IPSC).
 STEEL_POLE_RADIUS = 0.04
 STEEL_POLE_HEIGHT = 1.2
 STEEL_DISC_RADIUS = 0.15
@@ -79,7 +79,7 @@ BOUNDARY_COLOR = "#6b7280"
 GROUND_COLOR = "#8f8f8f"  # pavimento in cemento
 GRAVEL_COLOR = "#b0a898"  # overlay area di tiro
 
-# Colori posizioni di tiro (come il navigatore).
+# Colori posizioni di tiro (verde = start, blu = normale).
 POSITION_START_COLOR = "#22c55e"
 POSITION_COLOR = "#3b82f6"
 
@@ -389,7 +389,7 @@ def _shooting_position_objects(item: StageItem) -> list[dict[str, Any]]:
 def _split_composite(item: StageItem) -> list[StageItem]:
     """Espande i bersagli compositi in singoli item virtuali.
 
-    Mimetizza la logica del navigatore Three.js (OpenTDSLoader.ts).
+    Mimetizza la logica di espansione dei compositi dell'editor 2D.
     """
     results: list[StageItem] = []
 

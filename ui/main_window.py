@@ -1,8 +1,6 @@
 # ui/main_window.py
 from __future__ import annotations
 
-import json
-import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, QUrl, Signal, Slot
@@ -27,10 +25,6 @@ from scripts.render_stage_preview import find_blender, run_render
 from services.blender_exporter import BlenderExportOptions, export_scene
 from services.exporter import export_pdf, export_png
 from services.library import StageLibrary
-from services.navigator_server import (
-    export_stage_for_navigator,
-    get_navigator_server,
-)
 from services.openscad_exporter import (
     ScadExportOptions,
     export_scad,
@@ -39,7 +33,7 @@ from services.openscad_exporter import (
     render_scad_to_png,
     render_scad_to_stl,
 )
-from services.serializer import load_stage, save_stage, stage_to_dict
+from services.serializer import load_stage, save_stage
 from ui.dialogs.library_dialog import LibraryDialog
 from ui.dialogs.target_config_dialog import TargetConfigDialog
 from ui.editor.generator_panel import GeneratorPanel
@@ -202,13 +196,6 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        btn_navigate_3d = QPushButton("3D")
-        btn_navigate_3d.setToolTip("Naviga lo stage in 3D (Ctrl+3) — apre il browser")
-        btn_navigate_3d.clicked.connect(self._on_navigate_3d)
-        toolbar.addWidget(btn_navigate_3d)
-
-        toolbar.addSeparator()
-
         self._btn_safety = QPushButton(load_icon("check"), "Sic")
         self._btn_safety.setCheckable(True)
         self._btn_safety.setToolTip("Mostra/nasconde zone di sicurezza (coni di ingaggio)")
@@ -356,11 +343,6 @@ class MainWindow(QMainWindow):
         # ── Strumenti ──
         tools_menu = menubar.addMenu("&Strumenti")
 
-        navigate_3d_action = QAction("Naviga in &3D", self)
-        navigate_3d_action.setShortcut(QKeySequence("Ctrl+3"))
-        navigate_3d_action.triggered.connect(self._on_navigate_3d)
-        tools_menu.addAction(navigate_3d_action)
-
         tools_menu.addSeparator()
 
         svg_editor_action = QAction(load_icon("edit"), "Editor Bersagli &SVG…", self)
@@ -464,35 +446,8 @@ class MainWindow(QMainWindow):
             # Re-render scena con colori aggiornati
             self._scene._update_shooting_area()
 
-    def _on_navigate_3d(self):
-        """Esporta lo stage corrente e apre il navigatore 3D nel browser."""
-        try:
-            # Serializza lo stage corrente in JSON
-            data = stage_to_dict(self._stage)
-            stage_json = json.dumps(data, indent=2, ensure_ascii=False)
-
-            # Scrivi il JSON nella directory dist/ del navigator
-            target = export_stage_for_navigator(stage_json)
-
-            # Avvia il server HTTP (se non già attivo)
-            server = get_navigator_server()
-            if not server.is_running:
-                server.start()
-
-            url = server.stage_url(target.name)
-            webbrowser.open(url)
-
-            self._status.showMessage(
-                f"🌐 Navigatore 3D aperto nel browser: {url}  (server su porta {server.port})"
-            )
-        except Exception as e:
-            self._status.showMessage(f"❌ Errore navigatore 3D: {e}")
-
     def closeEvent(self, event):
-        """Arresta il server HTTP alla chiusura dell'applicazione."""
-        server = get_navigator_server()
-        if server.is_running:
-            server.stop()
+        """Pulisce le risorse alla chiusura dell'applicazione."""
         super().closeEvent(event)
 
     # ── Azioni Strumenti ───────────────────────────────────────────────
