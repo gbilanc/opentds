@@ -31,8 +31,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.constants import ITEM_COLORS
 from core.models import ItemType, Stage, StageItem
-from services.openscad_exporter import ITEM_COLORS
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Costanti di geometria

@@ -15,7 +15,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 - **Disegnare stage IPSC** in un editor 2D con griglia metrica e snap
 - **Generare automaticamente** layout random rispettando vincoli geometrici IPSC
 - **Configurare l'aspetto dei bersagli** (colore centralizzato per tipo, rendering SVG vettoriale)
-- **Esportare** il progetto in JSON, PNG, PDF e OpenSCAD (3D)
+- **Esportare** il progetto in JSON, PNG, PDF e anteprima 3D (Blender)
 - **Validare** lo stage contro le regole IPSC (distanze, angoli, colpi per posizione, divisioni)
 
 ---
@@ -28,7 +28,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 | UI / Editor 2D | PySide6 Qt Widgets (`QGraphicsView`) |
 | Rendering bersagli | SVG vettoriale (`QSvgRenderer`) |
 | Geometria / Collisioni | `shapely` |
-| Export 3D | OpenSCAD (`.scad` / PNG / STL / 3MF) |
+| Export 3D | Blender (anteprima PNG + file `.blend`) |
 | Testing | `pytest` |
 
 ---
@@ -39,7 +39,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installato
 - Python 3.11+ (uv lo scarica automaticamente se mancante)
-- OpenSCAD (opzionale, per rendering 3D e STL)
+- Blender 4.2+ (opzionale, per l'anteprima 3D dello stage)
 
 ### Setup
 
@@ -104,9 +104,8 @@ uv run ruff check .  # linting (opzionale)
 | **JSON** | Schema v1 completo, caricabile e modificabile |
 | **PNG** | Piantina 2D ad alta risoluzione (150 DPI) |
 | **PDF** | Piantina + lista bersagli + dettagli mobili |
-| **OpenSCAD (.scad)** | Modello 3D parametrico editabile |
-| **PNG (OpenSCAD)** | Rendering 3D via `openscad` CLI |
-| **STL / 3MF** | Stampa 3D dello stage |
+| **PNG (Blender)** | Anteprima 3D renderizzata con Blender EEVEE |
+| **Blend (Blender)** | File `.blend` editabile per modifiche manuali |
 
 ---
 
@@ -128,7 +127,7 @@ opentds/
 ├── services/
 │   ├── serializer.py             # JSON schema v1 (salva/carica)
 │   ├── exporter.py               # PNG + PDF multi-pagina
-│   └── openscad_exporter.py      # OpenSCAD 3D export (.scad/PNG/STL/3MF)
+│   └── blender_exporter.py      # Scena 3D per il render Blender (EEVEE)
 ├── ui/
 │   ├── editor/
 │   │   ├── stage_scene.py        # QGraphicsScene + undo/redo + factory grafica

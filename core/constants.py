@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from core.models import ItemType
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Distanze minime (Cap. 2 — Sicurezza e Regole Generali)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -285,4 +287,36 @@ MATCH_MIN_ROUNDS: Final[dict[int, int]] = {
     3: 150,
     4: 300,
     5: 450,
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Colori per ItemType (per exporter 3D: Blender, ecc.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Colori IPSC-conformi (Reg. 4.1.2, 4.1.3, 4.1.4) — keyed by ItemType.
+ITEM_COLORS: Final[dict[ItemType, str]] = {
+    ItemType.WALL: "#475569",  # grigio ardesia
+    ItemType.PAPER_TARGET: "#8B4513",  # marrone IPSC carta (Reg. 4.1.2.1)
+    ItemType.STEEL_TARGET: "#d1d5db",  # grigio chiaro metallo (Reg. 4.1.2.2)
+    ItemType.POPPER: "#d1d5db",  # bianco metallico (App. C1-C2)
+    ItemType.METAL_PLATE: "#d1d5db",  # bianco metallico (App. C3)
+    ItemType.MINI_TARGET: "#8B4513",  # marrone carta ridotto
+    ItemType.MICRO_TARGET: "#8B4513",  # marrone carta micro
+    ItemType.FAULT_LINE: "#dc2626",  # rosso fault line (Reg. 2.2.1.4)
+    ItemType.NO_SHOOT: "#eab308",  # giallo no-shoot (Reg. 4.1.3)
+    ItemType.BARRIER: "#fbbf24",  # ambra barriera
+    ItemType.DOOR: "#92400e",  # marrone scuro porta
+    ItemType.HARD_COVER: "#1e293b",  # grigio antracite (Reg. 4.1.4.1)
+    ItemType.SOFT_COVER: "#94a3b8",  # grigio soft cover (Reg. 4.1.4.2)
+    ItemType.SWINGER: "#A0522D",  # marrone scuro mobile
+    ItemType.DROP_TURNER: "#8B6914",  # marrone dorato mobile
+    ItemType.MOVER: "#CD853F",  # marrone chiaro mobile
+    # Compositi
+    ItemType.DOUBLET_SIDE: "#8B4513",
+    ItemType.DOUBLET_OVERLAP: "#8B4513",
+    ItemType.DOUBLET_SIDE_HOSTAGE: "#8B4513",
+    ItemType.DOUBLET_OVERLAP_HOSTAGE: "#8B4513",
+    ItemType.BOBBER_PLATE: "#f97316",
+    ItemType.DOUBLE_BOBBER: "#f97316",
+    ItemType.TARGET_PLUS_NOSHOOT: "#8B4513",
 }

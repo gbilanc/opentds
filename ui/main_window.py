@@ -25,14 +25,6 @@ from scripts.render_stage_preview import find_blender, run_render
 from services.blender_exporter import BlenderExportOptions, export_scene
 from services.exporter import export_pdf, export_png
 from services.library import StageLibrary
-from services.openscad_exporter import (
-    ScadExportOptions,
-    export_scad,
-    openscad_available,
-    render_scad_to_3mf,
-    render_scad_to_png,
-    render_scad_to_stl,
-)
 from services.serializer import load_stage, save_stage
 from ui.dialogs.library_dialog import LibraryDialog
 from ui.dialogs.target_config_dialog import TargetConfigDialog
@@ -260,27 +252,6 @@ class MainWindow(QMainWindow):
         export_pdf_action = QAction("Esporta &PDF\u2026", self)
         export_pdf_action.triggered.connect(self._on_export_pdf)
         file_menu.addAction(export_pdf_action)
-
-        file_menu.addSeparator()
-
-        # ── OpenSCAD Export ──
-        export_scad_action = QAction("OpenSCAD (&.scad)\u2026", self)
-        export_scad_action.triggered.connect(self._on_export_scad)
-        file_menu.addAction(export_scad_action)
-
-        self._has_openscad = openscad_available()
-        if self._has_openscad:
-            export_scad_png_action = QAction("Rendering OpenSCAD (&PNG)\u2026", self)
-            export_scad_png_action.triggered.connect(self._on_export_scad_png)
-            file_menu.addAction(export_scad_png_action)
-
-            export_stl_action = QAction("STL 3D (&.stl)\u2026", self)
-            export_stl_action.triggered.connect(self._on_export_stl)
-            file_menu.addAction(export_stl_action)
-
-            export_3mf_action = QAction("3MF (&.3mf)\u2026", self)
-            export_3mf_action.triggered.connect(self._on_export_3mf)
-            file_menu.addAction(export_3mf_action)
 
         file_menu.addSeparator()
 
@@ -559,102 +530,6 @@ class MainWindow(QMainWindow):
         if path:
             export_pdf(self._stage, self._scene, Path(path))
             self._status.showMessage(f"PDF esportato: {path}")
-
-    # ── OpenSCAD Export ──────────────────────────────────────────────────
-
-    def _on_export_scad(self):
-        from PySide6.QtWidgets import QFileDialog
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Esporta OpenSCAD", "stage.scad", "OpenSCAD (*.scad)"
-        )
-        if path:
-            opts = ScadExportOptions()
-            export_scad(self._stage, Path(path), opts)
-            self._status.showMessage(f"OpenSCAD esportato: {path}")
-
-    def _on_export_scad_png(self):
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-
-        if not self._has_openscad:
-            QMessageBox.warning(
-                self,
-                "OpenSCAD non trovato",
-                "Installa OpenSCAD per il rendering automatico:\n"
-                "  sudo apt install openscad  # Linux\n"
-                "  brew install openscad      # macOS",
-            )
-            return
-        # Prima salva .scad temporaneo
-        scad_path = Path("__openscad_export_temp.scad")
-        try:
-            opts = ScadExportOptions()
-            export_scad(self._stage, scad_path, opts)
-            png_path, _ = QFileDialog.getSaveFileName(
-                self, "Salva rendering OpenSCAD", "stage.png", "PNG (*.png)"
-            )
-            if png_path:
-                self._status.showMessage("Rendering OpenSCAD in corso...")
-                result = render_scad_to_png(scad_path, Path(png_path))
-                if result:
-                    self._status.showMessage(f"Rendering OpenSCAD salvato: {png_path}")
-                else:
-                    self._status.showMessage("Rendering OpenSCAD fallito")
-        finally:
-            if scad_path.exists():
-                scad_path.unlink()
-
-    def _on_export_stl(self):
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-
-        if not self._has_openscad:
-            QMessageBox.warning(
-                self, "OpenSCAD non trovato", "Installa OpenSCAD per l'esportazione STL."
-            )
-            return
-        scad_path = Path("__openscad_export_temp.scad")
-        try:
-            opts = ScadExportOptions(scale_for_3d_print=True)
-            export_scad(self._stage, scad_path, opts)
-            stl_path, _ = QFileDialog.getSaveFileName(
-                self, "Salva STL 3D", "stage.stl", "STL (*.stl)"
-            )
-            if stl_path:
-                self._status.showMessage("Esportazione STL in corso...")
-                result = render_scad_to_stl(scad_path, Path(stl_path))
-                if result:
-                    self._status.showMessage(f"STL esportato: {stl_path}")
-                else:
-                    self._status.showMessage("Esportazione STL fallita")
-        finally:
-            if scad_path.exists():
-                scad_path.unlink()
-
-    def _on_export_3mf(self):
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-
-        if not self._has_openscad:
-            QMessageBox.warning(
-                self, "OpenSCAD non trovato", "Installa OpenSCAD per l'esportazione 3MF."
-            )
-            return
-        scad_path = Path("__openscad_export_temp.scad")
-        try:
-            opts = ScadExportOptions(scale_for_3d_print=True)
-            export_scad(self._stage, scad_path, opts)
-            threemf_path, _ = QFileDialog.getSaveFileName(
-                self, "Salva 3MF", "stage.3mf", "3MF (*.3mf)"
-            )
-            if threemf_path:
-                self._status.showMessage("Esportazione 3MF in corso...")
-                result = render_scad_to_3mf(scad_path, Path(threemf_path))
-                if result:
-                    self._status.showMessage(f"3MF esportato: {threemf_path}")
-                else:
-                    self._status.showMessage("Esportazione 3MF fallita")
-        finally:
-            if scad_path.exists():
-                scad_path.unlink()
 
     # ── Blender Render ──────────────────────────────────────────────────
 

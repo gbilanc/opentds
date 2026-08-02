@@ -107,7 +107,7 @@ def parse_resolution(value: str) -> tuple[int, int]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render 3D dell'anteprima stage con Blender")
-    parser.add_argument("stage", type=Path, help="file stage JSON (v3) o .scad")
+    parser.add_argument("stage", type=Path, help="file stage JSON (v3)")
     parser.add_argument("-o", "--output", type=Path, default=Path(".build/preview.png"))
     parser.add_argument("--blend", type=Path, default=None, help="salva anche il .blend")
     parser.add_argument("--no-boundary", action="store_true", help="salta i muri perimetrali")
