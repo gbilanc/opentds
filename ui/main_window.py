@@ -67,7 +67,8 @@ class _BlenderRenderThread(QThread):
                 resolution="1920x1080",
             )
             self.rendered.emit(
-                str(self._png_path), str(self._blend_path) if self._blend_path else ""
+                str(self._png_path) if self._png_path else "",
+                str(self._blend_path) if self._blend_path else "",
             )
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
         self._library = StageLibrary()
         self._base_poly = None  # poligono base (senza rotazione/scala) per update live
         self._current_poly = None
+        self._last_blend_path: Path | None = None  # ultimo .blend navigabile generato
         self._setup_ui()
         self._setup_toolbar()
         self._setup_menu()
@@ -216,6 +218,17 @@ class MainWindow(QMainWindow):
         )
         toolbar.addWidget(btn_redo)
 
+        toolbar.addSeparator()
+
+        # Apre il .blend navigabile generato con Blender.
+        self._btn_open_blend = QPushButton(load_icon("open"), "Apri .blend")
+        self._btn_open_blend.setEnabled(False)
+        self._btn_open_blend.setToolTip(
+            "Apre il file .blend navigabile generato (File → Scene 3D navigabile…)"
+        )
+        self._btn_open_blend.clicked.connect(self._on_open_blend)
+        toolbar.addWidget(self._btn_open_blend)
+
     def _setup_menu(self):
         menubar = self.menuBar()
 
@@ -256,7 +269,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
 
         # ── Blender Render ──
-        blender_action = QAction("Anteprima 3D (Blender)…", self)
+        blender_action = QAction("Scene 3D navigabile (Blender)…", self)
         blender_action.triggered.connect(self._on_export_blender)
         file_menu.addAction(blender_action)
 
@@ -534,7 +547,7 @@ class MainWindow(QMainWindow):
     # ── Blender Render ──────────────────────────────────────────────────
 
     def _on_export_blender(self):
-        """Renderizza l'anteprima 3D dello stage con Blender (EEVEE)."""
+        """Genera il file .blend navigabile (senza render PNG)."""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         try:
@@ -543,45 +556,61 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Blender non trovato", str(exc))
             return
 
-        png_path, _ = QFileDialog.getSaveFileName(
-            self, "Salva anteprima 3D (Blender)", "stage_preview.png", "PNG (*.png)"
+        blend_path, _ = QFileDialog.getSaveFileName(
+            self, "Genera scene 3D navigabile (Blender)", "stage.blend", "Blender (*.blend)"
         )
-        if not png_path:
+        if not blend_path:
             return
 
-        png = Path(png_path)
+        blend = Path(blend_path)
         try:
             opts = BlenderExportOptions(svg_dir=Path(".build/svg"))
-            scene_path = png.parent / f"{png.stem}_scene.json"
+            scene_path = blend.parent / f"{blend.stem}_scene.json"
             export_scene(self._stage, scene_path, opts)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Errore", f"Impossibile generare la scena 3D: {exc}")
             return
 
-        blend_path = png.with_suffix(".blend")
-        self._status.showMessage("🎬 Rendering Blender in corso (EEVEE)...")
-        self._blender_thread = _BlenderRenderThread(
-            blender, scene_path, png, blend_path, self
-        )
+        self._status.showMessage("🎬 Generazione scene 3D Blender in corso...")
+        self._blender_thread = _BlenderRenderThread(blender, scene_path, None, blend, self)
         self._blender_thread.rendered.connect(self._on_blender_rendered)
         self._blender_thread.failed.connect(self._on_blender_failed)
         self._blender_thread.start()
 
     @Slot(str, str)
     def _on_blender_rendered(self, png: str, blend: str):
-        """Apre il PNG generato e aggiorna la barra di stato."""
-        self._status.showMessage(f"✅ Anteprima 3D salvata: {png}")
-        QDesktopServices.openUrl(QUrl.fromLocalFile(png))
+        """Abilita il bottone per aprire il .blend generato."""
         if blend and Path(blend).exists():
-            self._status.showMessage(f"✅ Anteprima 3D salvata: {png}  (.blend: {blend})")
+            self._last_blend_path = Path(blend)
+            self._btn_open_blend.setEnabled(True)
+            self._status.showMessage(f"✅ Scene 3D navigabile salvata: {blend}")
+        else:
+            self._status.showMessage("✅ Scene 3D generata (file non trovato)")
 
     @Slot(str)
     def _on_blender_failed(self, message: str):
         """Segnala il fallimento del render senza bloccare la UI."""
         from PySide6.QtWidgets import QMessageBox
 
-        self._status.showMessage("❌ Render Blender fallito")
-        QMessageBox.warning(self, "Render Blender fallito", message)
+        self._status.showMessage("❌ Generazione scene 3D fallita")
+        QMessageBox.warning(self, "Generazione scene 3D fallita", message)
+
+    def _on_open_blend(self):
+        """Apre l'ultimo .blend generato (o un file scelto dall'utente)."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        last = self._last_blend_path
+        path = last if last is not None and last.exists() else None
+        if path is None:
+            path_str, _ = QFileDialog.getOpenFileName(
+                self, "Apri file .blend", "", "Blender (*.blend)"
+            )
+            if not path_str:
+                return
+            path = Path(path_str)
+        ok = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        if not ok:
+            QMessageBox.warning(self, "Apri .blend", f"Impossibile aprire: {path}")
 
     def _on_add_paper_target(self):
         """Aggiunge un Paper Target al centro dello stage."""

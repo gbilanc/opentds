@@ -12,6 +12,7 @@ Navigation configurati (Shift+~ nel viewport, WASD per muoversi).
 
 Esecuzione (da root del progetto):
     blender -b -P scripts/blender_render.py -- scene.json out.png [out.blend]
+    blender -b -P scripts/blender_render.py -- scene.json out.blend   # blend-only
 
 Dipende solo dall'API bpy di Blender: nessun import dal venv del progetto.
 """
@@ -484,22 +485,57 @@ def setup_render(out_png: str) -> None:
 
 
 def main() -> int:
-    """Esegue il render dello stage descritto da scene.json."""
+    """Costruisce la scena (e opzionalmente renderizza) lo stage da scene.json.
+
+    Argomenti (dopo ``--``): scene.json [out.png] [out.blend] [no-nav] [no-png]
+    oppure con flag espliciti: scene.json [--png out.png] [--blend out.blend] [no-nav]
+    - senza ``out.png`` viene generato solo il .blend, senza render EEVEE
+      (molto più veloce).
+    """
     argv = sys.argv
     if "--" in argv:
         argv = argv[argv.index("--") + 1 :]
-    if len(argv) < 2:
-        print("Uso: blender -b -P scripts/blender_render.py -- scene.json out.png [out.blend]")
+    if not argv:
+        print(
+            "Uso: blender -b -P scripts/blender_render.py -- "
+            "scene.json [--png out.png] [--blend out.blend] [no-nav] [no-png]"
+        )
         return 1
 
-    scene_path, out_png = argv[0], argv[1]
-    out_blend = argv[2] if len(argv) > 2 else None
-    no_nav = len(argv) > 3 and argv[3] == "no-nav"
+    scene_path = argv[0]
+    rest = argv[1:]
+    out_png: str | None = None
+    out_blend: str | None = None
+    no_nav = False
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        if arg == "no-nav":
+            no_nav = True
+        elif arg == "no-png":
+            out_png = None
+        elif arg == "--png" and i + 1 < len(rest):
+            out_png = rest[i + 1]
+            i += 1
+        elif arg == "--blend" and i + 1 < len(rest):
+            out_blend = rest[i + 1]
+            i += 1
+        elif out_png is None:
+            out_png = arg  # compat: posizionale out.png
+        elif out_blend is None:
+            out_blend = arg  # compat: posizionale out.blend
+        else:
+            print(f"⚠ argomento ignorato: {arg}")
+        i += 1
+
+    if out_png is None and out_blend is None:
+        print("✗ Serve almeno --png o --blend")
+        return 1
 
     with open(scene_path, encoding="utf-8") as f:
         scene = json.load(f)
 
-    print(f"🎬 Render stage: {scene.get('name', '?')} ({len(scene['objects'])} oggetti)")
+    print(f"🎬 Stage: {scene.get('name', '?')} ({len(scene['objects'])} oggetti)")
     bpy.context.preferences.edit.use_global_undo = False
     clean_scene()
     setup_world()
@@ -512,14 +548,23 @@ def main() -> int:
 
     setup_lights(scene["lights"])
     setup_camera(scene["camera"])
-    setup_render(out_png)
 
-    bpy.ops.render.render(write_still=True)
-    if out_blend and not no_nav:
-        # La navigazione è utile solo nel .blend: il PNG usa la camera statica.
-        setup_navigation(scene, persist_prefs=True)
+    if out_png is not None:
+        setup_render(out_png)
+        bpy.ops.render.render(write_still=True)
+    else:
+        print("⏭ Render PNG saltato (modalità blend-only)")
+
+    if out_blend:
+        if not no_nav:
+            # La navigazione è utile solo nel .blend: il PNG usa la camera statica.
+            setup_navigation(scene, persist_prefs=True)
         bpy.ops.wm.save_as_mainfile(filepath=out_blend)
-    print(f"✅ Render completato: {out_png}")
+
+    if out_png:
+        print(f"✅ Render completato: {out_png}")
+    if out_blend:
+        print(f"✅ File .blend salvato: {out_blend}")
     return 0
 
 

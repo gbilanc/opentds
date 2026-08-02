@@ -64,15 +64,17 @@ def find_blender(explicit: str | None) -> str:
 
 def run_render(
     scene_path: Path,
-    out_png: Path,
+    out_png: Path | None,
     out_blend: Path | None,
     blender: str,
     resolution: str,
     timeout: int = 600,
     no_nav: bool = False,
-) -> Path:
-    """Lancia Blender headless e renderizza la scena."""
-    out_png.parent.mkdir(parents=True, exist_ok=True)
+) -> Path | None:
+    """Lancia Blender headless e renderizza la scena (o genera solo .blend).
+
+    Con ``out_png=None`` salta il render EEVEE e genera solo il .blend.
+    """
     cmd = [
         blender,
         "-b",
@@ -80,10 +82,13 @@ def run_render(
         str(PROJECT_ROOT / "scripts" / "blender_render.py"),
         "--",
         str(scene_path),
-        str(out_png),
     ]
+    if out_png is not None:
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        cmd += ["--png", str(out_png)]
     if out_blend:
-        cmd.append(str(out_blend))
+        out_blend.parent.mkdir(parents=True, exist_ok=True)
+        cmd += ["--blend", str(out_blend)]
         # Il marker è significativo solo se viene salvato il .blend.
         if no_nav:
             cmd.append("no-nav")
@@ -95,7 +100,7 @@ def run_render(
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip().splitlines()
         raise RuntimeError("Render Blender fallito:\n" + "\n".join(detail[-20:]))
-    if not out_png.exists():
+    if out_png is not None and not out_png.exists():
         raise RuntimeError("Blender è terminato senza produrre il PNG")
     if out_blend and not Path(out_blend).exists():
         raise RuntimeError("Blender è terminato senza produrre il file .blend")
@@ -116,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("stage", type=Path, help="file stage JSON (v3)")
     parser.add_argument("-o", "--output", type=Path, default=Path(".build/preview.png"))
     parser.add_argument("--blend", type=Path, default=None, help="salva anche il .blend")
+    parser.add_argument("--blend-only", action="store_true",
+                        help="genera solo il .blend navigabile, senza render PNG")
     parser.add_argument("--no-nav", action="store_true",
                         help=".blend senza telecamere di navigazione (solo render)")
     parser.add_argument("--no-boundary", action="store_true", help="salta i muri perimetrali")
@@ -128,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.stage.exists():
         print(f"✗ Stage non trovato: {args.stage}", file=sys.stderr)
+        return 1
+    if args.blend_only and not args.blend:
+        print("✗ --blend-only richiede --blend PATH.blend", file=sys.stderr)
         return 1
 
     blender = find_blender(args.blender)
@@ -150,17 +160,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"🎬 Scena generata: {scene_path} ({len(stage.items)} item)")
 
     # 2. Render headless.
+    out_png = None if args.blend_only else args.output
     try:
         run_render(
-            scene_path, args.output, args.blend, blender, args.resolution, no_nav=args.no_nav
+            scene_path, out_png, args.blend, blender, args.resolution, no_nav=args.no_nav
         )
     except (FileNotFoundError, TimeoutError, RuntimeError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
 
-    print(f"✅ Anteprima: {args.output.resolve()}")
-    if args.blend:
-        print(f"   File .blend: {args.blend.resolve()}")
+    if args.blend_only:
+        print(f"✅ File .blend navigabile: {args.blend.resolve()}")
+    else:
+        print(f"✅ Anteprima: {args.output.resolve()}")
+        if args.blend:
+            print(f"   File .blend: {args.blend.resolve()}")
     return 0
 
 

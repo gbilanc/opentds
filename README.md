@@ -15,7 +15,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 - **Disegnare stage IPSC** in un editor 2D con griglia metrica e snap
 - **Generare automaticamente** layout random rispettando vincoli geometrici IPSC
 - **Configurare l'aspetto dei bersagli** (colore centralizzato per tipo, rendering SVG vettoriale)
-- **Esportare** il progetto in JSON, PNG, PDF e anteprima 3D (Blender)
+- **Esportare** il progetto in JSON, PNG, PDF e scene 3D navigabile (Blender)
 - **Validare** lo stage contro le regole IPSC (distanze, angoli, colpi per posizione, divisioni)
 
 ---
@@ -28,7 +28,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 | UI / Editor 2D | PySide6 Qt Widgets (`QGraphicsView`) |
 | Rendering bersagli | SVG vettoriale (`QSvgRenderer`) |
 | Geometria / Collisioni | `shapely` |
-| Export 3D | Blender (anteprima PNG + file `.blend`) |
+| Export 3D | Blender (scene `.blend` navigabile, opzionale PNG via CLI) |
 | Testing | `pytest` |
 
 ---
@@ -39,7 +39,7 @@ OpenTDS consente a Range Officer, Match Director e tiratori di:
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) installato
 - Python 3.11+ (uv lo scarica automaticamente se mancante)
-- Blender 4.2+ (opzionale, per l'anteprima 3D dello stage)
+- Blender 4.2+ (opzionale, per la scene 3D navigabile dello stage)
 
 ### Setup
 
@@ -104,12 +104,14 @@ uv run ruff check .  # linting (opzionale)
 | **JSON** | Schema v1 completo, caricabile e modificabile |
 | **PNG** | Piantina 2D ad alta risoluzione (150 DPI) |
 | **PDF** | Piantina + lista bersagli + dettagli mobili |
-| **PNG (Blender)** | Anteprima 3D renderizzata con Blender EEVEE |
-| **Blend (Blender)** | File `.blend` editabile, **navigabile in prima persona** |
+| **Blend (Blender)** | Scene 3D **navigabile in prima persona** (via menu File o CLI `--blend-only`) |
+| **PNG (Blender)** | Anteprima renderizzata EEVEE, solo via CLI (`render_stage_preview.py`) |
 
 #### Navigare il file `.blend`
 
-Aprendo il `.blend` generato, il viewport parte dalla posizione di tiro
+Dal menu **File → Scene 3D navigabile (Blender)…** scegli dove salvare
+il `.blend`; il bottone **"Apri .blend"** in toolbar lo apre in Blender.
+Aprendo il `.blend`, il viewport parte dalla posizione di tiro
 **start** e lo stage è esplorabile in prima persona con la Walk
 Navigation nativa di Blender:
 
