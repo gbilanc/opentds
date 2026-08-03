@@ -114,7 +114,7 @@ def dict_to_stage(data: dict) -> Stage:
             y=sp_data.get("y", 0.0),
             label=sp_data.get("label", ""),
             is_start=sp_data.get("is_start", False),
-            angle=sp_data.get("angle", 0.0),
+            angle=sp_data.get("angle", 90.0),
             properties=sp_data.get("properties", {}),
         )
         stage.shooting_positions.append(sp)

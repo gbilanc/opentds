@@ -356,3 +356,21 @@ class TestSerializerEdgeCases:
         data = {"name": "Empty", "width": 10.0, "depth": 10.0, "items": []}
         stage = dict_to_stage(data)
         assert len(stage.items) == 0
+
+    def test_shooting_position_missing_angle_defaults_toward_backstop(self):
+        """Posizione senza campo angle (file vecchi) → 90° = verso il parapalle.
+
+        Un default 0° sposterebbe il cono di ingaggio di 90° e produrrebbe
+        falsi 'fuori cono' per i bersagli su un lato (Reg. 2.1.2).
+        """
+        data = {
+            "name": "Vecchio",
+            "width": 20.0,
+            "depth": 15.0,
+            "items": [],
+            "shooting_positions": [
+                {"id": 1, "x": 10.0, "y": 4.5, "label": "Start", "is_start": True}
+            ],
+        }
+        stage = dict_to_stage(data)
+        assert stage.shooting_positions[0].angle == 90.0

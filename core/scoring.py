@@ -146,7 +146,13 @@ def is_obstacle(t: ItemType) -> bool:
 
 def is_blocking_wall(t: ItemType) -> bool:
     """True per item che bloccano la visuale."""
-    return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
+    return t in (
+        ItemType.WALL,
+        ItemType.BARRIER,
+        ItemType.DOOR,
+        ItemType.HARD_COVER,
+        ItemType.SOFT_COVER,  # copertura visiva: nasconde i bersagli (Reg. 4.1.4.2)
+    )
 
 
 def is_custom_svg(item: StageItem) -> bool:

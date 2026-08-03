@@ -21,7 +21,8 @@ class TestShootingPositionModel:
         assert sp.y == 0.0
         assert sp.label == ""
         assert sp.is_start is False
-        assert sp.angle == 0.0
+        # default: direzione verso il parapalle di fondo (Reg. 2.1.2)
+        assert sp.angle == 90.0
 
     def test_start_position(self):
         sp = ShootingPosition(id=1, x=5.0, y=3.0, label="Start", is_start=True)

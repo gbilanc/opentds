@@ -514,10 +514,12 @@ class IPSCRulesEngine:
         Da qualsiasi singola posizione di tiro, il tiratore non deve poter
         mettere a segno più di 9 colpi su bersagli che assegnano punti.
         Conta solo i bersagli entro il cono di ingaggio frontale (180°)
-        e con linea di vista non ostruita da muri/barriere.
+        e con linea di vista NON ostruita da muri, barriere, porte o
+        coperture (hard/soft cover, Reg. 4.1.4.1/4.1.4.2): i bersagli
+        nascosti non sono conteggiabili da quella posizione.
         """
         v = []
-        from core.scoring import is_paper_like, is_steel_like, resolve_item_counts
+        from core.scoring import is_blocking_wall, is_paper_like, is_steel_like, resolve_item_counts
 
         targets = [
             it
@@ -534,12 +536,10 @@ class IPSCRulesEngine:
             if obb:
                 target_obbs[t.id] = obb
 
-        walls = [
-            it
-            for it in self.stage.items
-            if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR)
-        ]
-        wall_obbs = [wob for w in walls if (wob := item_obb(w)) is not None]
+        # Tutti gli ostacoli che bloccano la visuale (muri, barriere, porte,
+        # hard/soft cover) — i bersagli dietro di essi non sono conteggiabili
+        blockers = [it for it in self.stage.items if is_blocking_wall(it.item_type)]
+        blocker_obbs = [wob for b in blockers if (wob := item_obb(b)) is not None]
 
         from shapely.geometry import LineString as ShapelyLineString
 
@@ -559,8 +559,8 @@ class IPSCRulesEngine:
                 # Linea di vista dalla posizione al centro del bersaglio
                 line = ShapelyLineString([(pos.x, pos.y), (t.x, t.y)])
 
-                # Verifica se la linea interseca muri/barriere
-                blocked = any(line.intersects(wob) for wob in wall_obbs)
+                # Esclude i bersagli nascosti da barriere/ostacoli
+                blocked = any(line.intersects(wob) for wob in blocker_obbs)
                 if not blocked:
                     # Risolve i sub-target reali (compositi e SVG custom)
                     p, s, _ = resolve_item_counts(t)
@@ -654,7 +654,7 @@ class IPSCRulesEngine:
 
         # Calcola il numero di colpi richiesti dallo stage
         total_rounds = 0
-        from core.scoring import is_scoring_target, resolve_item_counts
+        from core.scoring import is_blocking_wall, is_scoring_target, resolve_item_counts
 
         for it in self.stage.items:
             # Risolve i sub-target reali (compositi e SVG custom)
@@ -674,8 +674,7 @@ class IPSCRulesEngine:
                 walls = [
                     it
                     for it in self.stage.items
-                    if it.item_type
-                    in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
+                    if is_blocking_wall(it.item_type)
                 ]
                 from shapely.geometry import LineString as SLine
 
@@ -831,13 +830,20 @@ class IPSCRulesEngine:
             # Direzione verso l'area di tiro (normalizzata)
             to_shooter_angle = math.degrees(math.atan2(dy, dx)) % 360
 
-            # Rotazione del bersaglio: per IPSC la rotation rappresenta
-            # l'orientamento della faccia del bersaglio (normale uscente)
-            target_facing = t.rotation % 360
+            # Direzione della faccia (normale uscente).
+            # Convenzione: rotation=0 = asse lungo del bersaglio verso il
+            # parapalle di fondo. Per i bersagli verticali (h > w) la faccia
+            # è perpendicolare all'asse lungo → normale = rotation - 90°;
+            # per gli altri (quadrati/piatti) la rotation indica direttamente
+            # la direzione della faccia.
+            if t.height > t.width:
+                face_normal = (t.rotation - 90.0) % 360
+            else:
+                face_normal = t.rotation % 360
 
-            # Differenza angolare tra dove punta il bersaglio e dove
-            # si trova l'area di tiro
-            diff = abs(target_facing - to_shooter_angle)
+            # Differenza angolare tra dove punta la faccia del bersaglio e
+            # dove si trova l'area di tiro (0° = faccia rivolta al tiratore)
+            diff = abs(face_normal - to_shooter_angle)
             diff = min(diff, 360 - diff)
 
             if diff > self.MAX_FIXED_TARGET_ANGLE:

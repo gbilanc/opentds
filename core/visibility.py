@@ -18,12 +18,10 @@ from core.scoring import is_scoring_target
 
 
 def get_blocking_walls(items: List[StageItem]) -> List[StageItem]:
-    """Return items that block line of sight (walls, barriers, doors, hard cover)."""
-    return [
-        it
-        for it in items
-        if it.item_type in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
-    ]
+    """Return items that block line of sight (walls, barriers, doors, covers)."""
+    from core.scoring import is_blocking_wall
+
+    return [it for it in items if is_blocking_wall(it.item_type)]
 
 
 def is_target_visible(

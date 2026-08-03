@@ -5,7 +5,7 @@ Test unitari per core/ipsc_rules.py — IPSCRulesEngine.
 from __future__ import annotations
 
 from core.ipsc_rules import ConstraintResult, IPSCRulesEngine
-from core.models import ItemType, Stage, StageItem
+from core.models import ItemType, ShootingPosition, Stage, StageItem
 
 # ─── ConstraintResult ────────────────────────────────────────────────────────
 
@@ -406,6 +406,166 @@ class TestFixedTargetsAngle:
         engine = IPSCRulesEngine(stage)
         v = engine._validate_fixed_targets_angle()
         assert len(v) == 0
+
+    def test_no_violation_for_vertical_paper_on_both_sides(self):
+        """Paper verticale (h>w) con rotazione 0 valido sia a sx che a dx.
+
+        Regressione: prima della correzione il bersaglio a destra della
+        direzione di tiro veniva segnalato a ~132° (falso positivo)
+        perché la rotation veniva confusa con la direzione della faccia
+        (per h>w la faccia è perpendicolare all'asse lungo).
+        """
+        stage = Stage(width=20.0, depth=15.0)
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 10, 0.45, 0.75, rotation=0))
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 15, 10, 0.45, 0.75, rotation=0))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert len(v) == 0, f"Violazioni inaspettate: {v}"
+
+    def test_no_violation_for_auto_oriented_vertical_papers(self):
+        """Paper verticali auto-orientati (compute_target_rotation) su entrambi i lati.
+
+        Regressione: prima finivano a esattamente 90° di presentazione e
+        l'errore floating point produceva violazioni spurie su un lato.
+        """
+        from core.placement import compute_target_rotation
+
+        stage = Stage(width=20.0, depth=15.0)
+        for tx, ty in [(5, 10), (15, 10)]:
+            rot = compute_target_rotation(tx, ty, 10, 4.5, 0.45, 0.75)
+            stage.add_item(StageItem(0, ItemType.PAPER_TARGET, tx, ty, 0.45, 0.75, rotation=rot))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert len(v) == 0, f"Violazioni inaspettate: {v}"
+
+    def test_violation_when_vertical_paper_faces_away(self):
+        """Paper verticale con la faccia opposta all'area di tiro → violazione a 180°."""
+        stage = Stage(width=20.0, depth=15.0)
+        # faccia-on = rotation 42.27° (per (5,10)); +180° = spalle al tiratore
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 5, 10, 0.45, 0.75, rotation=222.27))
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_fixed_targets_angle()
+        assert any("2.1.8.4" in x and "180" in x for x in v), f"Violazione attesa: {v}"
+
+
+# ─── Reg. 2.1.2 — Cono di sicurezza ±90° (simmetria) ─────────────────────────
+
+
+class TestSafetyConeSymmetry:
+    """Il cono di ingaggio è ±90° rispetto alla direzione verso il parapalle
+    (Reg. 2.1.2): deve essere simmetrico per bersagli a sinistra e a destra."""
+
+    @staticmethod
+    def _stage_with_position(tx: float, ty: float) -> Stage:
+        stage = Stage(width=20.0, depth=15.0)
+        stage.shooting_positions = [ShootingPosition(1, 10.0, 4.5, is_start=True, angle=90.0)]
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, tx, ty, 0.45, 0.45))
+        return stage
+
+    def test_symmetric_inside_cone(self):
+        """Bersagli a ±70° dalla direzione verso il parapalle: entrambi dentro."""
+        import math
+
+        def point(deg: float) -> tuple[float, float]:
+            rad = math.radians(deg)
+            return (10.0 + math.sin(rad) * 7, 4.5 + math.cos(rad) * 7)
+
+        v_left = IPSCRulesEngine(self._stage_with_position(*point(-70)))._validate_safety_angles()
+        v_right = IPSCRulesEngine(self._stage_with_position(*point(70)))._validate_safety_angles()
+        assert v_left == []
+        assert v_right == []
+
+    def test_symmetric_outside_cone(self):
+        """Bersagli oltre ±90° (es. -120°/120°): entrambi fuori, stesso esito."""
+        import math
+
+        def point(deg: float) -> tuple[float, float]:
+            rad = math.radians(deg)
+            return (10.0 + math.sin(rad) * 7, 4.5 + math.cos(rad) * 7)
+
+        v_left = IPSCRulesEngine(self._stage_with_position(*point(-120)))._validate_safety_angles()
+        v_right = IPSCRulesEngine(self._stage_with_position(*point(120)))._validate_safety_angles()
+        assert len(v_left) == 1
+        assert len(v_right) == 1
+
+    def test_target_behind_position_out_of_cone(self):
+        """Bersaglio dietro la posizione (180° dal parapalle): fuori cono."""
+        stage = self._stage_with_position(10.0, 1.0)
+        v = IPSCRulesEngine(stage)._validate_safety_angles()
+        assert len(v) == 1
+
+    def test_target_ahead_in_cone(self):
+        """Bersaglio davanti alla posizione (verso il parapalle): dentro cono."""
+        stage = self._stage_with_position(10.0, 12.0)
+        v = IPSCRulesEngine(stage)._validate_safety_angles()
+        assert v == []
+
+
+# ─── Reg. 1.2.1 — Colpi per posizione: esclusi bersagli non visibili ────────
+
+
+class TestMaxHitsVisibility:
+    """I colpi conteggiabili per posizione escludono i bersagli nascosti
+    da barriere, muri o coperture (linea di vista ostruita)."""
+
+    @staticmethod
+    def _stage(position_y: float = 4.5, blocker_type: ItemType | None = None) -> Stage:
+        stage = Stage(width=20.0, depth=15.0)
+        stage.shooting_positions = [
+            ShootingPosition(1, 10.0, position_y, is_start=True, angle=90.0)
+        ]
+        # Bersaglio davanti alla posizione (nel cono 180°)
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 10.0, 12.0, 0.45, 0.75))
+        # Ostacolo tra posizione e bersaglio (se richiesto)
+        if blocker_type is not None:
+            stage.add_item(StageItem(0, blocker_type, 10.0, 7.0, 3.0, 0.2))
+        return stage
+
+    def test_visible_target_counts(self):
+        """Senza ostacoli il bersaglio conta (2 colpi per un paper)."""
+        stage = self._stage()
+        engine = IPSCRulesEngine(stage)
+        v = engine._validate_max_hits_per_position()
+        assert v == [], f"Violazioni inattese: {v}"
+
+    def test_target_behind_wall_excluded(self):
+        """Bersaglio dietro un muro: non visibile, non conteggiato."""
+        stage = self._stage(blocker_type=ItemType.WALL)
+        v = IPSCRulesEngine(stage)._validate_max_hits_per_position()
+        assert v == []  # 0 colpi conteggiabili → nessuna violazione
+
+    def test_target_behind_barrier_excluded(self):
+        """Bersaglio dietro una barriera: escluso."""
+        stage = self._stage(blocker_type=ItemType.BARRIER)
+        v = IPSCRulesEngine(stage)._validate_max_hits_per_position()
+        assert v == []
+
+    def test_target_behind_hard_cover_excluded(self):
+        """Bersaglio dietro hard cover (Reg. 4.1.4.1): escluso."""
+        stage = self._stage(blocker_type=ItemType.HARD_COVER)
+        v = IPSCRulesEngine(stage)._validate_max_hits_per_position()
+        assert v == []
+
+    def test_target_behind_soft_cover_excluded(self):
+        """Bersaglio dietro soft cover (Reg. 4.1.4.2): escluso."""
+        stage = self._stage(blocker_type=ItemType.SOFT_COVER)
+        v = IPSCRulesEngine(stage)._validate_max_hits_per_position()
+        assert v == []
+
+    def test_hidden_targets_not_counted_toward_limit(self):
+        """5 paper visibili (10 colpi) = violazione; gli altri dietro cover no."""
+        stage = Stage(width=20.0, depth=15.0)
+        stage.shooting_positions = [ShootingPosition(1, 10.0, 4.5, is_start=True, angle=90.0)]
+        # 5 paper visibili affiancati (10 colpi > 9)
+        for i, x in enumerate([8.0, 9.0, 10.0, 11.0, 12.0]):
+            stage.add_item(StageItem(0, ItemType.PAPER_TARGET, x, 11.5, 0.45, 0.75))
+        # 2 paper nascosti dietro un muro (non conteggiabili): il muro è
+        # centrato sulla linea di vista posizione→bersagli
+        stage.add_item(StageItem(0, ItemType.WALL, 12.4, 9.0, 2.0, 0.2))
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 14.0, 12.0, 0.45, 0.75))
+        stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 15.0, 12.0, 0.45, 0.75))
+        v = IPSCRulesEngine(stage)._validate_max_hits_per_position()
+        assert any("10 colpi" in x for x in v), f"Violazione 9 colpi attesa: {v}"
 
 
 # ─── Reg. 4.3.3.3 — Piatti metallici con carta/popper ───────────────────────

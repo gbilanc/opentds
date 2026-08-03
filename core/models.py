@@ -100,7 +100,7 @@ class ShootingPosition:
     y: float = 0.0
     label: str = ""
     is_start: bool = False  # True = posizione di partenza
-    angle: float = 0.0  # direzione di ingaggio preferita (gradi)
+    angle: float = 90.0  # direzione di ingaggio in gradi; 90° = verso il parapalle di fondo
     properties: Dict[str, Any] = field(default_factory=dict)
 
 
