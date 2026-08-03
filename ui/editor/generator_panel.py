@@ -690,6 +690,12 @@ class StageWizard(QWidget):
             full_path = os.path.join(CUSTOM_TARGETS_DIR, fname)
             portable = SvgTargetGraphicsItem._make_path_portable(full_path)
             label = os.path.splitext(fname)[0].replace("_", " ").replace("-", " ").title()
+            # Metadati: numero e tipo dei bersagli contenuti nell'SVG
+            from core.target_designer import parse_custom_target_meta
+
+            meta = parse_custom_target_meta(portable)
+            if not (meta.count == 1 and meta.paper == 1):
+                label = f"{label} ({meta.label})"
             def_w, def_h = 0.45, 0.75
             try:
                 from xml.etree import ElementTree as ET
@@ -711,7 +717,7 @@ class StageWizard(QWidget):
                 (
                     "paper",
                     label,
-                    f"SVG personalizzato: {fname}",
+                    f"SVG personalizzato: {fname} — {meta.label}",
                     ItemType.PAPER_TARGET,
                     (def_w, def_h),
                     portable,  # percorso relativo per portabilità

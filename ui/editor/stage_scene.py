@@ -11,7 +11,6 @@ Architettura:
 from __future__ import annotations
 
 import math
-import os
 from typing import Optional
 
 from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
@@ -38,6 +37,7 @@ from shapely.geometry import box as shapely_box
 from core.collision import item_obb, make_obb
 from core.collision import overlaps as shapely_overlaps
 from core.models import ItemType, Stage, StageItem
+from core.target_designer import make_custom_path_portable, resolve_custom_svg_path
 from ui.editor.path_editor import PathPolylineItem
 from ui.editor.target_images import TargetSvgManager
 
@@ -1476,37 +1476,12 @@ class SvgTargetGraphicsItem(StageItemMixin, QGraphicsItem):
         - Percorsi relativi a resources/ (es. targets/custom/ipsc_target.svg)
         - Nome file semplice (es. ipsc_target.svg) -> cerca in targets/custom/
         """
-        if not custom_path:
-            return ""
-        if os.path.isabs(custom_path) and os.path.isfile(custom_path):
-            return custom_path
-        # Risolvi relativamente a resources/
-        resources_dir = TargetSvgManager.instance()._resources_dir
-        resolved = os.path.join(resources_dir, custom_path)
-        if os.path.isfile(resolved):
-            return resolved
-        # Prova in targets/custom/
-        resolved = os.path.join(resources_dir, "targets", "custom", custom_path)
-        if os.path.isfile(resolved):
-            return resolved
-        # Fallback: il percorso originale (potrebbe essere assoluto)
-        if os.path.isfile(custom_path):
-            return custom_path
-        return ""
+        return resolve_custom_svg_path(custom_path)
 
     @staticmethod
     def _make_path_portable(absolute_path: str) -> str:
         """Converte un percorso assoluto in relativo a resources/ se possibile."""
-        if not absolute_path or not os.path.isabs(absolute_path):
-            return absolute_path
-        resources_dir = TargetSvgManager.instance()._resources_dir
-        try:
-            rel = os.path.relpath(absolute_path, resources_dir)
-            if not rel.startswith(".."):
-                return rel
-        except ValueError:
-            pass
-        return absolute_path
+        return make_custom_path_portable(absolute_path)
 
     def _get_pixmap(self) -> QPixmap | None:
         """Ottiene il pixmap SVG renderizzato per le dimensioni correnti.

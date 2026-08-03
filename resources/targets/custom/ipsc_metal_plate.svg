@@ -2,6 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100.0 100.0">
   <!-- Ipsc Metal Plate -->
   <desc>Bersaglio personalizzato</desc>
+  <metadata id="opentds">{"targets":[{"kind":"plate"}]}</metadata>
 
   <!-- Silhouette principale (tintabile con currentColor) -->
   <rect x="2" y="2" width="96.0" height="96.0" rx="8" fill="none"/>

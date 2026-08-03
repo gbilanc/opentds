@@ -517,7 +517,7 @@ class IPSCRulesEngine:
         e con linea di vista non ostruita da muri/barriere.
         """
         v = []
-        from core.scoring import is_paper_like, is_steel_like
+        from core.scoring import is_paper_like, is_steel_like, resolve_item_counts
 
         targets = [
             it
@@ -562,7 +562,9 @@ class IPSCRulesEngine:
                 # Verifica se la linea interseca muri/barriere
                 blocked = any(line.intersects(wob) for wob in wall_obbs)
                 if not blocked:
-                    hits += 2 if t.item_type == ItemType.PAPER_TARGET else 1
+                    # Risolve i sub-target reali (compositi e SVG custom)
+                    p, s, _ = resolve_item_counts(t)
+                    hits += p * 2 + s
 
             if hits > self.MAX_HITS_PER_POSITION:
                 v.append(
@@ -652,13 +654,12 @@ class IPSCRulesEngine:
 
         # Calcola il numero di colpi richiesti dallo stage
         total_rounds = 0
-        from core.scoring import is_paper_like, is_scoring_target, is_steel_like
+        from core.scoring import is_scoring_target, resolve_item_counts
 
         for it in self.stage.items:
-            if is_paper_like(it.item_type):
-                total_rounds += 2
-            elif is_steel_like(it.item_type):
-                total_rounds += 1
+            # Risolve i sub-target reali (compositi e SVG custom)
+            p, s, _ = resolve_item_counts(it)
+            total_rounds += p * 2 + s
 
         if total_rounds > max_rounds:
             v.append(
@@ -1092,9 +1093,9 @@ class IPSCRulesEngine:
         return v
 
     def count_targets(self) -> dict:
-        """Conta i bersagli per tipo, risolvendo i compositi nei sub-target."""
+        """Conta i bersagli per tipo, risolvendo compositi e SVG custom."""
 
-        from core.scoring import get_composite_info, is_composite, is_paper_like, is_steel_like
+        from core.scoring import resolve_item_counts
 
         paper = 0
         steel = 0
@@ -1102,24 +1103,12 @@ class IPSCRulesEngine:
         moving = 0
 
         for it in self.stage.items:
-            if is_composite(it.item_type):
-                info = get_composite_info(it.item_type)
-                if info:
-                    for _, _, sub_type, _ in info.get("sub_targets", []):
-                        if sub_type == ItemType.PAPER_TARGET:
-                            paper += 1
-                        elif sub_type == ItemType.METAL_PLATE:
-                            steel += 1
-                        elif sub_type == ItemType.NO_SHOOT:
-                            no_shoots += 1
-            elif is_paper_like(it.item_type):
-                paper += 1
-                if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
-                    moving += 1
-            elif is_steel_like(it.item_type):
-                steel += 1
-            elif it.item_type == ItemType.NO_SHOOT:
-                no_shoots += 1
+            p, s, ns = resolve_item_counts(it)
+            paper += p
+            steel += s
+            no_shoots += ns
+            if it.item_type in (ItemType.SWINGER, ItemType.DROP_TURNER, ItemType.MOVER):
+                moving += 1
 
         return {
             "paper": paper,

@@ -28,6 +28,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QColorDialog,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -50,6 +51,11 @@ from PySide6.QtWidgets import (
 
 from core.target_designer import (
     CUSTOM_TARGETS_DIR,
+    KIND_NO_SHOOT,
+    KIND_PAPER,
+    KIND_PLATE,
+    KIND_POPPER,
+    KIND_STEEL,
     ZONE_COLORS,
     SvgTargetDesign,
     SvgZone,
@@ -389,6 +395,7 @@ class SvgEditorDialog(QDialog):
         self.resize(1100, 750)
         self._setup_ui()
         self._sync_to_scene()
+        self._sync_target_meta_controls()
 
     # ── UI ─────────────────────────────────────────────────────────────
 
@@ -544,6 +551,30 @@ class SvgEditorDialog(QDialog):
         self._desc_input.setPlaceholderText("Opzionale")
         self._desc_input.textChanged.connect(self._on_desc_changed)
         nf.addRow("Descr.:", self._desc_input)
+
+        # Bersagli contenuti nell'SVG (per conteggi corretti dello stage)
+        self._num_targets_spin = QSpinBox()
+        self._num_targets_spin.setRange(1, 8)
+        self._num_targets_spin.setValue(self._design.num_targets)
+        self._num_targets_spin.setToolTip(
+            "Numero di bersagli disegnati in questo SVG "
+            "(es. 2 per un doppio affiancato)"
+        )
+        self._num_targets_spin.valueChanged.connect(self._on_targets_changed)
+        nf.addRow("Num. bersagli:", self._num_targets_spin)
+
+        self._kind_combo = QComboBox()
+        self._kind_combo.addItem("Paper", KIND_PAPER)
+        self._kind_combo.addItem("Popper", KIND_POPPER)
+        self._kind_combo.addItem("Piatto", KIND_PLATE)
+        self._kind_combo.addItem("Steel", KIND_STEEL)
+        self._kind_combo.addItem("No-Shoot", KIND_NO_SHOOT)
+        self._kind_combo.setToolTip(
+            "Tipo dei bersagli contenuti. Per SVG con tipi misti "
+            "(es. doppio + ostaggio) modifica il file SVG a mano."
+        )
+        self._kind_combo.currentIndexChanged.connect(self._on_targets_changed)
+        nf.addRow("Tipo:", self._kind_combo)
         rl.addWidget(name_gb)
 
         rl.addWidget(QLabel("Zone (click per selezionare):"))
@@ -927,6 +958,29 @@ class SvgEditorDialog(QDialog):
     def _on_desc_changed(self, text: str):
         self._design.description = text
 
+    def _on_targets_changed(self, *_):
+        """Aggiorna numero e tipo dei bersagli contenuti nel design."""
+        num = self._num_targets_spin.value()
+        kind = self._kind_combo.currentData() or KIND_PAPER
+        self._design.num_targets = num
+        self._design.target_kinds = [kind] * num
+
+    def _sync_target_meta_controls(self):
+        """Sincronizza i controlli numero/tipo dal design corrente.
+
+        Per SVG con tipi misti (es. 2 paper + 1 no-shoot) mostra il numero
+        totale e il tipo del primo bersaglio.
+        """
+        kinds = self._design.effective_kinds()
+        kind = kinds[0] if kinds else KIND_PAPER
+        idx = self._kind_combo.findData(kind)
+        self._num_targets_spin.blockSignals(True)
+        self._kind_combo.blockSignals(True)
+        self._num_targets_spin.setValue(len(kinds))
+        self._kind_combo.setCurrentIndex(max(0, idx))
+        self._kind_combo.blockSignals(False)
+        self._num_targets_spin.blockSignals(False)
+
     # ── Load / Save ────────────────────────────────────────────────────
 
     def _load_svg(self):
@@ -945,6 +999,7 @@ class SvgEditorDialog(QDialog):
         self._design = design
         self._name_input.setText(design.name)
         self._desc_input.setText(design.description)
+        self._sync_target_meta_controls()
         self._sync_to_scene()
         self.setWindowTitle(f"Editor Bersagli SVG — {design.name}")
 

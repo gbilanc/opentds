@@ -149,6 +149,62 @@ def is_blocking_wall(t: ItemType) -> bool:
     return t in (ItemType.WALL, ItemType.BARRIER, ItemType.DOOR, ItemType.HARD_COVER)
 
 
+def is_custom_svg(item: StageItem) -> bool:
+    """True se l'item usa un bersaglio SVG personalizzato."""
+    return bool(item.properties.get("custom_svg_path"))
+
+
+def resolve_custom_target_counts(item: StageItem) -> tuple[int, int, int]:
+    """Conteggi (paper, steel, no_shoots) di un item con SVG custom.
+
+    Legge i metadati (numero + tipo dei bersagli contenuti) dal file SVG.
+    Senza metadati ritorna il default: 1 paper.
+    """
+    from core.target_designer import parse_custom_target_meta
+
+    meta = parse_custom_target_meta(item.properties.get("custom_svg_path", ""))
+    return meta.paper, meta.steel, meta.no_shoots
+
+
+def resolve_item_counts(item: StageItem) -> tuple[int, int, int]:
+    """Conteggi (paper, steel, no_shoots) di un item qualunque.
+
+    Risolve sia i bersagli compositi (doppietti, bobber, target+ns) sia
+    gli SVG personalizzati nei loro sub-target reali.
+    """
+    if is_custom_svg(item):
+        return resolve_custom_target_counts(item)
+    if is_composite(item.item_type):
+        info = get_composite_info(item.item_type)
+        paper = steel = no_shoots = 0
+        for _, _, sub_type, _ in info.get("sub_targets", []):
+            if sub_type == ItemType.PAPER_TARGET:
+                paper += 1
+            elif sub_type == ItemType.METAL_PLATE:
+                steel += 1
+            elif sub_type == ItemType.NO_SHOOT:
+                no_shoots += 1
+        return paper, steel, no_shoots
+    if is_paper_like(item.item_type):
+        return 1, 0, 0
+    if is_steel_like(item.item_type):
+        return 0, 1, 0
+    if item.item_type == ItemType.NO_SHOOT:
+        return 0, 0, 1
+    return 0, 0, 0
+
+
+def count_stage_targets(stage: Stage) -> tuple[int, int, int]:
+    """Conteggi totali (paper, steel, no_shoots) di uno stage completo."""
+    paper = steel = no_shoots = 0
+    for it in stage.items:
+        p, s, ns = resolve_item_counts(it)
+        paper += p
+        steel += s
+        no_shoots += ns
+    return paper, steel, no_shoots
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Risoluzione conteggi bersagli
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -424,12 +480,7 @@ def populate_stage_metadata(
     if "procedure" not in stage.properties:
         stage.properties["procedure"] = "Al segnale di partenza ingaggiare tutti i bersagli."
 
-    paper_count = sum(
-        1 for it in stage.items if it.item_type in (ItemType.PAPER_TARGET, ItemType.MINI_TARGET)
-    )
-    steel_count = sum(
-        1 for it in stage.items if it.item_type in (ItemType.POPPER, ItemType.METAL_PLATE)
-    )
+    paper_count, steel_count, _ = count_stage_targets(stage)
     stage.properties["max_points"] = paper_count * 10 + steel_count * 5
 
     stage.properties["angoli_sicurezza"] = "90° laterali e parapalle in verticale"

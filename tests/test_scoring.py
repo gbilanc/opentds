@@ -316,3 +316,45 @@ class TestScoreStage:
             config_difficulty="easy",
         )
         assert score_all_visible > score_none_visible
+
+
+class TestMaxPointsCustomTargets:
+    """max_points deve risolvere i bersagli custom nei sub-target reali."""
+
+    @staticmethod
+    def _custom_item(svg_path: str) -> StageItem:
+        return StageItem(
+            0,
+            ItemType.PAPER_TARGET,
+            5.0,
+            5.0,
+            properties={"custom_svg_path": svg_path},
+        )
+
+    def test_custom_double_contribues_20_points(self, empty_stage):
+        from core.scoring import populate_stage_metadata
+
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_target_2a.svg"))
+        populate_stage_metadata(
+            empty_stage, difficulty="easy", num_poppers=0, num_plates=0, num_moving=0
+        )
+        assert empty_stage.properties["max_points"] == 20  # 2 paper × 10
+
+    def test_custom_popper_contribues_5_points(self, empty_stage):
+        from core.scoring import populate_stage_metadata
+
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_popper.svg"))
+        populate_stage_metadata(
+            empty_stage, difficulty="easy", num_poppers=0, num_plates=0, num_moving=0
+        )
+        assert empty_stage.properties["max_points"] == 5  # 1 popper × 5
+
+    def test_mixed_custom_and_standard(self, empty_stage):
+        from core.scoring import populate_stage_metadata
+
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_target_2a+ns.svg"))
+        empty_stage.add_item(StageItem(0, ItemType.POPPER, 6, 6))
+        populate_stage_metadata(
+            empty_stage, difficulty="easy", num_poppers=0, num_plates=0, num_moving=0
+        )
+        assert empty_stage.properties["max_points"] == 25  # 2 paper × 10 + 1 popper × 5

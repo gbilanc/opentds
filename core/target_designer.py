@@ -8,6 +8,7 @@ e reimportarle per modifica.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from dataclasses import dataclass, field
@@ -86,6 +87,11 @@ class SvgTargetDesign:
     """Un bersaglio SVG personalizzato completo.
 
     Può essere esportato come file SVG valido per l'uso nell'app.
+
+    `num_targets` e `target_kinds` descrivono i bersagli CONTENUTI
+    nell'SVG (un file può disegnare più sagome, es. doppio affiancato
+    o doppio + ostaggio). Vengono serializzati come `<metadata>` dentro
+    l'SVG stesso e usati dal motore per conteggi corretti.
     """
 
     name: str = "Nuovo Bersaglio"
@@ -94,6 +100,21 @@ class SvgTargetDesign:
     silhouette_path: str = ""  # path del contorno principale (fill="currentColor")
     zones: List[SvgZone] = field(default_factory=list)
     description: str = ""
+    num_targets: int = 1  # numero di bersagli contenuti
+    target_kinds: List[str] = field(default_factory=list)  # tipo per bersaglio
+
+    def effective_kinds(self) -> List[str]:
+        """Tipi effettivi dei bersagli contenuti.
+
+        Priorità a `target_kinds` (per-target); altrimenti `num_targets`
+        ripetizioni del tipo di default (paper). Ritorna sempre almeno
+        un elemento valido.
+        """
+        if self.target_kinds:
+            kinds = [k for k in self.target_kinds if k in VALID_TARGET_KINDS]
+            if kinds:
+                return kinds
+        return [KIND_PAPER] * max(1, self.num_targets)
 
     def add_zone(self, zone: SvgZone) -> None:
         self.zones.append(zone)
@@ -109,6 +130,7 @@ class SvgTargetDesign:
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.width} {self.height}">',
             f"  <!-- {self.name} -->",
             f"  <desc>{self.description or 'Bersaglio personalizzato'}</desc>",
+            _metadata_xml(self.effective_kinds()),
             "",
             "  <!-- Silhouette principale (tintabile con currentColor) -->",
         ]
@@ -165,6 +187,12 @@ class SvgTargetDesign:
                 name = name.replace("_", " ").replace("-", " ").title()
 
             design = SvgTargetDesign(name=name, width=w, height=h)
+
+            # Metadati bersagli contenuti (numero e tipo)
+            meta = _read_metadata(root)
+            if meta:
+                design.target_kinds = list(meta)
+                design.num_targets = len(meta)
 
             # Trova il path principale (fill="currentColor")
             ns = {"svg": "http://www.w3.org/2000/svg"}
@@ -268,6 +296,8 @@ class SvgTargetDesign:
             "height": self.height,
             "silhouette_path": self.silhouette_path,
             "description": self.description,
+            "num_targets": len(self.effective_kinds()),
+            "target_kinds": list(self.effective_kinds()),
             "zones": [
                 {
                     "label": z.label,
@@ -292,6 +322,8 @@ class SvgTargetDesign:
             height=data.get("height", 100),
             silhouette_path=data.get("silhouette_path", ""),
             description=data.get("description", ""),
+            num_targets=data.get("num_targets", 1),
+            target_kinds=list(data.get("target_kinds", [])),
         )
         for zd in data.get("zones", []):
             design.zones.append(
@@ -344,6 +376,171 @@ def list_custom_targets() -> List[str]:
         if f.lower().endswith(".svg"):
             svgs.append(os.path.join(CUSTOM_TARGETS_DIR, f))
     return svgs
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Metadati bersagli contenuti (numero + tipo)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Tipi di bersaglio contenuti in un SVG custom (uno per sagoma disegnata)
+KIND_PAPER = "paper"
+KIND_STEEL = "steel"
+KIND_POPPER = "popper"
+KIND_PLATE = "plate"
+KIND_NO_SHOOT = "no_shoot"
+
+VALID_TARGET_KINDS: tuple[str, ...] = (
+    KIND_PAPER,
+    KIND_STEEL,
+    KIND_POPPER,
+    KIND_PLATE,
+    KIND_NO_SHOOT,
+)
+
+# Tipi che contano come acciaio per le statistiche
+STEEL_KINDS: frozenset[str] = frozenset({KIND_STEEL, KIND_POPPER, KIND_PLATE})
+
+KIND_LABELS: dict[str, str] = {
+    KIND_PAPER: "paper",
+    KIND_STEEL: "steel",
+    KIND_POPPER: "popper",
+    KIND_PLATE: "plate",
+    KIND_NO_SHOOT: "no-shoot",
+}
+
+# ID dell'elemento <metadata> usato per i metadati OpenTDS dentro l'SVG
+META_ELEMENT_ID = "opentds"
+
+
+@dataclass(frozen=True)
+class CustomTargetMeta:
+    """Metadati dei bersagli contenuti in un SVG custom.
+
+    `kinds` è la lista dei tipi, uno per sagoma disegnata
+    (es. ("paper", "paper", "no_shoot") per un doppio + ostaggio).
+    """
+
+    kinds: tuple[str, ...] = (KIND_PAPER,)
+
+    @property
+    def count(self) -> int:
+        return len(self.kinds)
+
+    @property
+    def paper(self) -> int:
+        return sum(1 for k in self.kinds if k == KIND_PAPER)
+
+    @property
+    def steel(self) -> int:
+        return sum(1 for k in self.kinds if k in STEEL_KINDS)
+
+    @property
+    def no_shoots(self) -> int:
+        return sum(1 for k in self.kinds if k == KIND_NO_SHOOT)
+
+    @property
+    def label(self) -> str:
+        """Rappresentazione leggibile, es. '2 paper + 1 no-shoot'."""
+        parts = []
+        for kind in dict.fromkeys(self.kinds):  # conserva l'ordine, senza duplicati
+            parts.append(f"{sum(1 for k in self.kinds if k == kind)} {KIND_LABELS.get(kind, kind)}")
+        return " + ".join(parts) if parts else "1 paper"
+
+
+def _metadata_xml(kinds: list[str]) -> str:
+    """Genera l'elemento <metadata> con il payload JSON dei bersagli contenuti."""
+    payload = json.dumps({"targets": [{"kind": k} for k in kinds]}, separators=(",", ":"))
+    return f'  <metadata id="{META_ELEMENT_ID}">{payload}</metadata>'
+
+
+def _read_metadata(root: ET.Element) -> tuple[str, ...] | None:
+    """Estrae i tipi bersaglio dal <metadata> di un albero SVG."""
+    for elem in root.iter():
+        if elem.tag.rsplit("}", 1)[-1] != "metadata":
+            continue
+        text = (elem.text or "").strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except (ValueError, TypeError):
+            continue
+        kinds = tuple(
+            k
+            for t in payload.get("targets", [])
+            if isinstance(t, dict) and (k := t.get("kind")) in VALID_TARGET_KINDS
+        )
+        if kinds:
+            return kinds
+    return None
+
+
+def _project_resources_dir() -> str:
+    """Cartella resources/ del progetto, indipendente dal cwd."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)  # core/ → progetto
+    res = os.path.join(root, "resources")
+    if os.path.isdir(res):
+        return res
+    return os.path.join(os.getcwd(), "resources")
+
+
+def resolve_custom_svg_path(custom_path: str) -> str:
+    """Risolve un percorso SVG custom in un percorso assoluto.
+
+    Supporta:
+    - Percorsi assoluti (es. /home/user/mio.svg)
+    - Percorsi relativi a resources/ (es. targets/custom/ipsc_target.svg)
+    - Nome file semplice (es. ipsc_target.svg) -> cerca in targets/custom/
+
+    Ritorna "" se il file non esiste.
+    """
+    if not custom_path:
+        return ""
+    if os.path.isabs(custom_path) and os.path.isfile(custom_path):
+        return custom_path
+    resources_dir = _project_resources_dir()
+    resolved = os.path.join(resources_dir, custom_path)
+    if os.path.isfile(resolved):
+        return resolved
+    resolved = os.path.join(resources_dir, "targets", "custom", custom_path)
+    if os.path.isfile(resolved):
+        return resolved
+    if os.path.isfile(custom_path):
+        return custom_path
+    return ""
+
+
+def make_custom_path_portable(absolute_path: str) -> str:
+    """Converte un percorso assoluto in relativo a resources/ se possibile."""
+    if not absolute_path or not os.path.isabs(absolute_path):
+        return absolute_path
+    resources_dir = _project_resources_dir()
+    try:
+        rel = os.path.relpath(absolute_path, resources_dir)
+        if not rel.startswith(".."):
+            return rel
+    except ValueError:
+        pass
+    return absolute_path
+
+
+def parse_custom_target_meta(svg_path: str) -> CustomTargetMeta:
+    """Legge i metadati dei bersagli contenuti da un file SVG.
+
+    Ritorna il default (1 paper) se il file non esiste o non ha metadati.
+    """
+    resolved = resolve_custom_svg_path(svg_path)
+    if not resolved or not os.path.isfile(resolved):
+        return CustomTargetMeta()
+    try:
+        tree = ET.parse(resolved)
+    except (ET.ParseError, OSError):
+        return CustomTargetMeta()
+    kinds = _read_metadata(tree.getroot())
+    if kinds:
+        return CustomTargetMeta(kinds=kinds)
+    return CustomTargetMeta()
 
 
 def make_ipsc_silhouette(w: float = 100, h: float = 100) -> str:

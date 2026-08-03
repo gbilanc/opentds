@@ -2,6 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100.0 100.0">
   <!-- Ipsc Popper -->
   <desc>Bersaglio personalizzato</desc>
+  <metadata id="opentds">{"targets":[{"kind":"popper"}]}</metadata>
 
   <!-- Silhouette principale (tintabile con currentColor) -->
   <path d="     M 35 2     L 65 2     L 72 50     L 70 70     C 68 78, 60 85, 50 88     C 40 85, 32 78, 30 70     L 28 50     Z   " fill="none"/>

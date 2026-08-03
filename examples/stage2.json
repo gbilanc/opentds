@@ -163,22 +163,22 @@
     {
       "id": 9,
       "type": "PAPER_TARGET",
-      "x": 5.534239313769932,
-      "y": 13.5,
+      "x": 6.0,
+      "y": 11.0,
       "width": 0.75,
       "height": 0.75,
       "rotation": 0,
       "color": "#8B4513",
       "label": "Paper",
       "properties": {
-        "custom_svg_path": "targets/custom/ipsc_target_2s+ns .svg"
+        "custom_svg_path": "targets/custom/ipsc_target_2s+ns.svg"
       }
     },
     {
       "id": 10,
       "type": "PAPER_TARGET",
-      "x": 16.5,
-      "y": 13.5,
+      "x": 14.074584290975077,
+      "y": 11.0,
       "width": 0.75,
       "height": 0.75,
       "rotation": 0,
@@ -191,8 +191,8 @@
     {
       "id": 11,
       "type": "BARRIER",
-      "x": 11.5,
-      "y": 4.5,
+      "x": 10.8625,
+      "y": 4.425,
       "width": 2.0,
       "height": 0.15,
       "rotation": 90.0,
@@ -203,8 +203,8 @@
     {
       "id": 12,
       "type": "BARRIER",
-      "x": 8.5,
-      "y": 4.5,
+      "x": 9.1375,
+      "y": 4.425,
       "width": 2.0,
       "height": 0.15,
       "rotation": 90.0,
@@ -215,8 +215,8 @@
     {
       "id": 13,
       "type": "BARRIER",
-      "x": 7.095223666219942,
-      "y": 5.541456734206674,
+      "x": 7.0,
+      "y": 5.5,
       "width": 2.0,
       "height": 0.15,
       "rotation": 0,
@@ -227,8 +227,8 @@
     {
       "id": 14,
       "type": "BARRIER",
-      "x": 12.997499999999999,
-      "y": 5.6,
+      "x": 13.0,
+      "y": 5.5,
       "width": 2.0,
       "height": 0.15,
       "rotation": 0,
@@ -239,8 +239,8 @@
     {
       "id": 15,
       "type": "PAPER_TARGET",
-      "x": 6.457723666219943,
-      "y": 4.025,
+      "x": 7.6375,
+      "y": 4.1375,
       "width": 0.75,
       "height": 0.75,
       "rotation": 0,
@@ -253,8 +253,8 @@
     {
       "id": 16,
       "type": "PAPER_TARGET",
-      "x": 14.074584290975077,
-      "y": 4.025,
+      "x": 12.3625,
+      "y": 4.1375,
       "width": 0.75,
       "height": 0.75,
       "rotation": 0,
@@ -267,8 +267,8 @@
     {
       "id": 17,
       "type": "BARRIER",
-      "x": 9.9725,
-      "y": 9.5,
+      "x": 9.925,
+      "y": 10.4125,
       "width": 4.0,
       "height": 0.15,
       "rotation": 90.0,
@@ -279,7 +279,7 @@
     {
       "id": 18,
       "type": "PAPER_TARGET",
-      "x": 16.5,
+      "x": 14.074584290975077,
       "y": 15.5,
       "width": 0.75,
       "height": 0.75,
@@ -293,7 +293,7 @@
     {
       "id": 19,
       "type": "PAPER_TARGET",
-      "x": 5.866043265793325,
+      "x": 6.3625,
       "y": 15.5,
       "width": 0.75,
       "height": 0.75,
@@ -307,7 +307,7 @@
     {
       "id": 20,
       "type": "PAPER_TARGET",
-      "x": 8.482723666219943,
+      "x": 8.3875,
       "y": 11.0,
       "width": 0.75,
       "height": 0.75,
@@ -315,13 +315,13 @@
       "color": "#8B4513",
       "label": "Paper",
       "properties": {
-        "custom_svg_path": "targets/custom/ipsc_target_2s+ns .svg"
+        "custom_svg_path": "targets/custom/ipsc_target_2s+ns.svg"
       }
     },
     {
       "id": 21,
       "type": "PAPER_TARGET",
-      "x": 11.61,
+      "x": 11.5,
       "y": 11.0,
       "width": 0.75,
       "height": 0.75,
@@ -329,14 +329,26 @@
       "color": "#8B4513",
       "label": "Paper",
       "properties": {
-        "custom_svg_path": "targets/custom/ipsc_target_2s+ns .svg"
+        "custom_svg_path": "targets/custom/ipsc_target_2s+ns.svg"
       }
+    },
+    {
+      "id": 23,
+      "type": "WALL",
+      "x": 9.925,
+      "y": 7.575,
+      "width": 3.0,
+      "height": 0.2,
+      "rotation": 0,
+      "color": "#475569",
+      "label": "Muro",
+      "properties": {}
     }
   ],
   "shooting_positions": [
     {
       "id": 1,
-      "x": 9.5,
+      "x": 10.0,
       "y": 1.5,
       "label": "Start",
       "is_start": true,
@@ -345,7 +357,7 @@
     },
     {
       "id": 2,
-      "x": 6.5,
+      "x": 7.5,
       "y": 7.0,
       "label": "Pos 2",
       "is_start": false,
@@ -354,7 +366,7 @@
     },
     {
       "id": 3,
-      "x": 13.5,
+      "x": 12.0,
       "y": 7.0,
       "label": "Pos 3",
       "is_start": false,

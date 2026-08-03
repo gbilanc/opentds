@@ -265,9 +265,72 @@ class TestCountTargets:
         empty_stage.add_item(StageItem(0, ItemType.NO_SHOOT, 8, 8))
         engine = IPSCRulesEngine(empty_stage)
         c = engine.count_targets()
-        assert c["paper"] == 1
+        # SWINGER è un bersaglio cartaceo (is_paper_like)
+        assert c["paper"] == 2
         assert c["steel"] == 1
         assert c["moving"] == 1
+        assert c["no_shoots"] == 1
+
+
+class TestCountTargetsCustom:
+    """Conteggio bersagli custom (SVG) con metadati numero/tipo."""
+
+    @staticmethod
+    def _custom_item(svg_path: str) -> StageItem:
+        return StageItem(
+            0,
+            ItemType.PAPER_TARGET,
+            5.0,
+            5.0,
+            properties={"custom_svg_path": svg_path},
+        )
+
+    def test_single_custom_paper(self, empty_stage):
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_target.svg"))
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["paper"] == 1
+        assert c["steel"] == 0
+        assert c["no_shoots"] == 0
+
+    def test_double_custom_counts_two_paper(self, empty_stage):
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_target_2a.svg"))
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["paper"] == 2
+        assert c["total_scoring"] == 2
+
+    def test_double_with_hostage_counts_noshoot(self, empty_stage):
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_target_2a+ns.svg"))
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["paper"] == 2
+        assert c["no_shoots"] == 1
+        assert c["total_scoring"] == 2
+
+    def test_custom_popper_counts_steel(self, empty_stage):
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_popper.svg"))
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["steel"] == 1
+        assert c["paper"] == 0
+
+    def test_custom_no_shoot_counts_noshoot(self, empty_stage):
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_no_shoot.svg"))
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["no_shoots"] == 1
+        assert c["paper"] == 0
+
+    def test_custom_missing_meta_falls_back_to_one_paper(self, empty_stage):
+        empty_stage.add_item(
+            self._custom_item("targets/custom/does_not_exist.svg")
+        )
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["paper"] == 1
+        assert c["no_shoots"] == 0
+
+    def test_mixed_custom_and_standard(self, empty_stage):
+        empty_stage.add_item(self._custom_item("targets/custom/ipsc_target_2a.svg"))
+        empty_stage.add_item(StageItem(0, ItemType.PAPER_TARGET, 6, 6))
+        empty_stage.add_item(StageItem(0, ItemType.NO_SHOOT, 7, 7))
+        c = IPSCRulesEngine(empty_stage).count_targets()
+        assert c["paper"] == 3
         assert c["no_shoots"] == 1
 
 
